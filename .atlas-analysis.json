@@ -1,0 +1,201 @@
+{
+  "projectType": "frontend",
+  "projectName": "Visual Studio Code",
+  "projectDescription": "A powerful, extensible code editor built with TypeScript, Electron, and web technologies",
+  "theme": "aspen",
+  "primaryColor": "#007ACC",
+  "lightColor": "#61DAFB",
+  "darkColor": "#005A9E",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/layers",
+              "architecture/dependency-injection",
+              "architecture/contribution-model"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/workbench",
+              "concepts/editor",
+              "concepts/extensions",
+              "concepts/services"
+            ]
+          },
+          {
+            "group": "Building from Source",
+            "pages": [
+              "building/setup",
+              "building/compile",
+              "building/debugging",
+              "building/tests"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing/guidelines",
+              "contributing/code-style",
+              "contributing/pull-requests",
+              "contributing/issue-tracking"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Extension API",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "api/overview",
+              "api/your-first-extension",
+              "api/extension-structure"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "pages": [
+              "api/commands",
+              "api/text-editor",
+              "api/workspace",
+              "api/languages",
+              "api/debug",
+              "api/scm"
+            ]
+          },
+          {
+            "group": "Extension Guides",
+            "pages": [
+              "api/guides/command-palette",
+              "api/guides/webviews",
+              "api/guides/tree-views",
+              "api/guides/language-server",
+              "api/guides/debugger-extension"
+            ]
+          },
+          {
+            "group": "Publishing",
+            "pages": [
+              "api/publishing/overview",
+              "api/publishing/marketplace"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Components",
+        "groups": [
+          {
+            "group": "Core Layers",
+            "pages": [
+              "components/base",
+              "components/platform",
+              "components/editor",
+              "components/workbench"
+            ]
+          },
+          {
+            "group": "Workbench Features",
+            "pages": [
+              "components/debug",
+              "components/terminal",
+              "components/search",
+              "components/git",
+              "components/tasks",
+              "components/testing"
+            ]
+          },
+          {
+            "group": "Built-in Extensions",
+            "pages": [
+              "components/language-features",
+              "components/themes",
+              "components/snippets"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Deep Dives",
+            "pages": [
+              "advanced/electron-integration",
+              "advanced/monaco-editor",
+              "advanced/language-services",
+              "advanced/remote-development"
+            ]
+          },
+          {
+            "group": "Performance",
+            "pages": [
+              "advanced/performance/startup",
+              "advanced/performance/memory",
+              "advanced/performance/profiling"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "advanced/security/overview",
+              "advanced/security/sandboxing"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "IntelliSense code completion",
+    "Integrated debugging",
+    "Git integration",
+    "Extensible architecture with 100+ built-in extensions",
+    "Cross-platform support (Windows, macOS, Linux)",
+    "Integrated terminal",
+    "Monaco editor core",
+    "Language Server Protocol support",
+    "Remote development capabilities",
+    "Customizable themes and keybindings",
+    "Multi-root workspaces",
+    "Web and desktop support"
+  ],
+  "publicApiSurface": [
+    "vscode.commands",
+    "vscode.window",
+    "vscode.workspace",
+    "vscode.languages",
+    "vscode.debug",
+    "vscode.scm",
+    "vscode.tasks",
+    "vscode.extensions",
+    "vscode.env",
+    "vscode.Uri",
+    "vscode.Range",
+    "vscode.Position",
+    "vscode.TextDocument",
+    "vscode.TextEditor",
+    "vscode.TreeDataProvider",
+    "vscode.Webview",
+    "vscode.Terminal",
+    "vscode.QuickPick",
+    "vscode.StatusBarItem",
+    "vscode.DiagnosticCollection"
+  ]
+}

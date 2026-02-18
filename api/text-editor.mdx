@@ -1,0 +1,672 @@
+---
+title: 'Text Editor API'
+description: 'Work with text editors, documents, and selections in VS Code extensions'
+---
+
+# Text Editor API
+
+The Text Editor API provides interfaces for working with text documents, editors, selections, and making text edits in Visual Studio Code.
+
+## window Namespace
+
+The `vscode.window` namespace provides access to text editors and UI elements:
+
+```typescript
+import * as vscode from 'vscode';
+
+// Get the active text editor
+const editor = vscode.window.activeTextEditor;
+if (editor) {
+  const document = editor.document;
+  console.log('Active file:', document.fileName);
+}
+```
+
+## Accessing Editors
+
+### activeTextEditor
+
+The currently active text editor or `undefined`:
+
+```typescript
+const editor = vscode.window.activeTextEditor;
+if (editor) {
+  console.log('File:', editor.document.fileName);
+  console.log('Language:', editor.document.languageId);
+}
+```
+
+### visibleTextEditors
+
+Array of all visible text editors:
+
+```typescript
+const editors = vscode.window.visibleTextEditors;
+console.log(`Open editors: ${editors.length}`);
+
+editors.forEach(editor => {
+  console.log(editor.document.fileName);
+});
+```
+
+### Editor Events
+
+Listen for editor changes:
+
+<Tabs>
+  <Tab title="Active Editor">
+    ```typescript
+    vscode.window.onDidChangeActiveTextEditor(editor => {
+      if (editor) {
+        console.log('Switched to:', editor.document.fileName);
+      } else {
+        console.log('No active editor');
+      }
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Selection">
+    ```typescript
+    vscode.window.onDidChangeTextEditorSelection(event => {
+      const { textEditor, selections, kind } = event;
+      console.log('Selection changed:', selections[0]);
+      
+      // kind indicates how selection changed
+      if (kind === vscode.TextEditorSelectionChangeKind.Keyboard) {
+        console.log('Changed via keyboard');
+      }
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Visible Ranges">
+    ```typescript
+    vscode.window.onDidChangeTextEditorVisibleRanges(event => {
+      console.log('Visible ranges:', event.visibleRanges);
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Options">
+    ```typescript
+    vscode.window.onDidChangeTextEditorOptions(event => {
+      console.log('Editor options changed:', event.options);
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## TextEditor Interface
+
+Represents a text editor with an associated document:
+
+<ResponseField name="document" type="TextDocument" required>
+  The document associated with this editor
+</ResponseField>
+
+<ResponseField name="selection" type="Selection" required>
+  The primary cursor selection
+</ResponseField>
+
+<ResponseField name="selections" type="Selection[]" required>
+  All cursor selections (supports multiple cursors)
+</ResponseField>
+
+<ResponseField name="visibleRanges" type="Range[]" required>
+  Currently visible ranges in the editor
+</ResponseField>
+
+<ResponseField name="options" type="TextEditorOptions" required>
+  Editor options (tab size, insert spaces, etc.)
+</ResponseField>
+
+<ResponseField name="viewColumn" type="ViewColumn | undefined">
+  The column in which this editor is shown
+</ResponseField>
+
+### Making Text Edits
+
+#### edit()
+
+Make edits to the document:
+
+```typescript
+await editor.edit(editBuilder => {
+  // Insert text
+  editBuilder.insert(new vscode.Position(0, 0), 'Hello\n');
+  
+  // Replace text
+  const range = new vscode.Range(0, 0, 0, 5);
+  editBuilder.replace(range, 'Hi');
+  
+  // Delete text
+  editBuilder.delete(range);
+});
+```
+
+<ParamField path="callback" type="(editBuilder: TextEditorEdit) => void" required>
+  Function that receives an edit builder
+</ParamField>
+
+<ParamField path="options" type="object">
+  Options for undo/redo behavior:
+  - `undoStopBefore`: Add undo stop before (default: true)
+  - `undoStopAfter`: Add undo stop after (default: true)
+</ParamField>
+
+#### Example: Insert at Cursor
+
+```typescript
+const editor = vscode.window.activeTextEditor;
+if (editor) {
+  await editor.edit(editBuilder => {
+    const position = editor.selection.active;
+    editBuilder.insert(position, 'Inserted text');
+  });
+}
+```
+
+#### Example: Replace Selection
+
+```typescript
+await editor.edit(editBuilder => {
+  editor.selections.forEach(selection => {
+    const text = editor.document.getText(selection);
+    editBuilder.replace(selection, text.toUpperCase());
+  });
+});
+```
+
+### insertSnippet()
+
+Insert a snippet with placeholders:
+
+```typescript
+const snippet = new vscode.SnippetString('console.log(${1:variable});');
+await editor.insertSnippet(snippet);
+```
+
+#### Example: Multi-line Snippet
+
+```typescript
+const snippet = new vscode.SnippetString([
+  'function ${1:name}(${2:params}) {',
+  '\t${3:// body}',
+  '}'
+].join('\n'));
+
+await editor.insertSnippet(snippet, editor.selection.start);
+```
+
+### setDecorations()
+
+Add visual decorations to text:
+
+```typescript
+const decorationType = vscode.window.createTextEditorDecorationType({
+  backgroundColor: 'rgba(255, 0, 0, 0.3)',
+  border: '1px solid red'
+});
+
+const ranges = [new vscode.Range(0, 0, 0, 10)];
+editor.setDecorations(decorationType, ranges);
+
+// Clean up when done
+context.subscriptions.push(decorationType);
+```
+
+### revealRange()
+
+Scroll to reveal a specific range:
+
+```typescript
+const range = new vscode.Range(100, 0, 100, 10);
+editor.revealRange(
+  range,
+  vscode.TextEditorRevealType.InCenter
+);
+```
+
+## TextDocument Interface
+
+Represents a text document:
+
+<ResponseField name="uri" type="Uri" required>
+  The URI of the document
+</ResponseField>
+
+<ResponseField name="fileName" type="string" required>
+  The file system path
+</ResponseField>
+
+<ResponseField name="isUntitled" type="boolean" required>
+  Whether this is an unsaved file
+</ResponseField>
+
+<ResponseField name="languageId" type="string" required>
+  The language identifier (e.g., 'javascript')
+</ResponseField>
+
+<ResponseField name="version" type="number" required>
+  Version number (increases with each change)
+</ResponseField>
+
+<ResponseField name="isDirty" type="boolean" required>
+  Whether the document has unsaved changes
+</ResponseField>
+
+<ResponseField name="isClosed" type="boolean" required>
+  Whether the document has been closed
+</ResponseField>
+
+<ResponseField name="lineCount" type="number" required>
+  Total number of lines
+</ResponseField>
+
+### Document Methods
+
+#### getText()
+
+Get text from the document:
+
+```typescript
+// Get all text
+const fullText = document.getText();
+
+// Get text in a range
+const range = new vscode.Range(0, 0, 10, 0);
+const rangeText = document.getText(range);
+```
+
+#### lineAt()
+
+Get a line by number or position:
+
+```typescript
+// By line number (zero-based)
+const line = document.lineAt(5);
+console.log(line.text);
+
+// By position
+const position = new vscode.Position(5, 10);
+const lineAtPos = document.lineAt(position);
+```
+
+#### offsetAt() and positionAt()
+
+Convert between positions and offsets:
+
+```typescript
+// Position to offset
+const position = new vscode.Position(5, 10);
+const offset = document.offsetAt(position);
+
+// Offset to position
+const pos = document.positionAt(100);
+```
+
+#### getWordRangeAtPosition()
+
+Get the word range at a position:
+
+```typescript
+const position = new vscode.Position(5, 10);
+const range = document.getWordRangeAtPosition(position);
+if (range) {
+  const word = document.getText(range);
+  console.log('Word:', word);
+}
+```
+
+#### save()
+
+Save the document:
+
+```typescript
+const saved = await document.save();
+if (saved) {
+  vscode.window.showInformationMessage('File saved!');
+}
+```
+
+## Position Class
+
+Represents a line and character position:
+
+```typescript
+class Position {
+  constructor(
+    line: number,      // Zero-based line number
+    character: number  // Zero-based character offset
+  )
+}
+```
+
+<ParamField path="line" type="number" required>
+  Zero-based line number
+</ParamField>
+
+<ParamField path="character" type="number" required>
+  Zero-based character offset (UTF-16 code units)
+</ParamField>
+
+### Position Methods
+
+```typescript
+const pos1 = new vscode.Position(5, 10);
+const pos2 = new vscode.Position(5, 20);
+
+// Comparison
+if (pos1.isBefore(pos2)) {
+  console.log('pos1 is before pos2');
+}
+
+// Create new position
+const newPos = pos1.translate(1, 0);  // Move down one line
+const withPos = pos1.with(undefined, 0);  // Move to start of line
+```
+
+## Range Class
+
+Represents a range between two positions:
+
+```typescript
+class Range {
+  constructor(
+    start: Position,
+    end: Position
+  )
+  
+  // Or with line/character numbers
+  constructor(
+    startLine: number,
+    startCharacter: number,
+    endLine: number,
+    endCharacter: number
+  )
+}
+```
+
+### Range Properties and Methods
+
+```typescript
+const range = new vscode.Range(5, 0, 10, 20);
+
+// Properties
+console.log('Start:', range.start);
+console.log('End:', range.end);
+console.log('Is empty:', range.isEmpty);
+console.log('Single line:', range.isSingleLine);
+
+// Methods
+const contains = range.contains(new vscode.Position(7, 5));
+const intersection = range.intersection(otherRange);
+const union = range.union(otherRange);
+```
+
+## Selection Class
+
+Extends Range with anchor and active positions:
+
+```typescript
+class Selection extends Range {
+  constructor(
+    anchor: Position,  // Where selection starts
+    active: Position   // Where cursor is
+  )
+}
+```
+
+<ParamField path="anchor" type="Position" required>
+  The position where the selection started
+</ParamField>
+
+<ParamField path="active" type="Position" required>
+  The position of the cursor
+</ParamField>
+
+<ParamField path="isReversed" type="boolean" required>
+  Whether anchor is after active (backward selection)
+</ParamField>
+
+### Example: Create Selection
+
+```typescript
+// Forward selection
+const selection = new vscode.Selection(
+  new vscode.Position(5, 0),
+  new vscode.Position(5, 10)
+);
+
+// Set editor selection
+editor.selection = selection;
+```
+
+## TextLine Interface
+
+Represents a line of text:
+
+<ResponseField name="lineNumber" type="number" required>
+  Zero-based line number
+</ResponseField>
+
+<ResponseField name="text" type="string" required>
+  Text without line separator
+</ResponseField>
+
+<ResponseField name="range" type="Range" required>
+  Range covering the line
+</ResponseField>
+
+<ResponseField name="rangeIncludingLineBreak" type="Range" required>
+  Range including line separator
+</ResponseField>
+
+<ResponseField name="firstNonWhitespaceCharacterIndex" type="number" required>
+  Index of first non-whitespace character
+</ResponseField>
+
+<ResponseField name="isEmptyOrWhitespace" type="boolean" required>
+  Whether line is empty or only whitespace
+</ResponseField>
+
+```typescript
+const line = document.lineAt(5);
+console.log('Line text:', line.text);
+console.log('Is empty:', line.isEmptyOrWhitespace);
+console.log('Indent:', line.firstNonWhitespaceCharacterIndex);
+```
+
+## Opening and Showing Documents
+
+### showTextDocument()
+
+Show a text document in an editor:
+
+```typescript
+// Open a file
+const uri = vscode.Uri.file('/path/to/file.txt');
+const document = await vscode.workspace.openTextDocument(uri);
+const editor = await vscode.window.showTextDocument(document);
+
+// Open with options
+await vscode.window.showTextDocument(document, {
+  viewColumn: vscode.ViewColumn.Two,
+  preview: false,
+  selection: new vscode.Range(5, 0, 5, 10)
+});
+```
+
+<ParamField path="viewColumn" type="ViewColumn">
+  Editor column to show in
+</ParamField>
+
+<ParamField path="preserveFocus" type="boolean">
+  Keep focus on current editor
+</ParamField>
+
+<ParamField path="preview" type="boolean">
+  Open in preview mode
+</ParamField>
+
+<ParamField path="selection" type="Range">
+  Selection to set in the editor
+</ParamField>
+
+## Real-World Examples
+
+### Example: Add Line Numbers
+
+```typescript
+vscode.commands.registerTextEditorCommand(
+  'extension.addLineNumbers',
+  async (editor, edit) => {
+    const document = editor.document;
+    const lineCount = document.lineCount;
+    const maxDigits = lineCount.toString().length;
+    
+    for (let i = 0; i < lineCount; i++) {
+      const line = document.lineAt(i);
+      const lineNum = (i + 1).toString().padStart(maxDigits, '0');
+      edit.insert(line.range.start, `${lineNum}: `);
+    }
+  }
+);
+```
+
+### Example: Sort Lines
+
+```typescript
+vscode.commands.registerTextEditorCommand(
+  'extension.sortLines',
+  async (editor, edit) => {
+    const selection = editor.selection;
+    const text = editor.document.getText(selection);
+    const lines = text.split('\n');
+    const sorted = lines.sort().join('\n');
+    edit.replace(selection, sorted);
+  }
+);
+```
+
+### Example: Highlight Word Occurrences
+
+```typescript
+const decorationType = vscode.window.createTextEditorDecorationType({
+  backgroundColor: 'rgba(255, 255, 0, 0.3)'
+});
+
+vscode.window.onDidChangeTextEditorSelection(event => {
+  const editor = event.textEditor;
+  const position = editor.selection.active;
+  const range = editor.document.getWordRangeAtPosition(position);
+  
+  if (!range) {
+    editor.setDecorations(decorationType, []);
+    return;
+  }
+  
+  const word = editor.document.getText(range);
+  const text = editor.document.getText();
+  const regex = new RegExp(`\\b${word}\\b`, 'g');
+  const matches: vscode.Range[] = [];
+  
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const startPos = editor.document.positionAt(match.index);
+    const endPos = editor.document.positionAt(match.index + match[0].length);
+    matches.push(new vscode.Range(startPos, endPos));
+  }
+  
+  editor.setDecorations(decorationType, matches);
+});
+```
+
+### Example: Insert at Multiple Positions
+
+```typescript
+vscode.commands.registerTextEditorCommand(
+  'extension.insertPrefix',
+  async (editor, edit) => {
+    const prefix = await vscode.window.showInputBox({
+      prompt: 'Enter prefix to insert'
+    });
+    
+    if (!prefix) return;
+    
+    // Insert at all selections
+    editor.selections.forEach(selection => {
+      edit.insert(selection.start, prefix);
+    });
+  }
+);
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Check for Active Editor">
+    Always verify an editor exists:
+    
+    ```typescript
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showWarningMessage('No active editor');
+      return;
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use edit() for Modifications">
+    Use `editor.edit()` instead of WorkspaceEdit for simple changes:
+    
+    ```typescript
+    // Good
+    await editor.edit(edit => {
+      edit.insert(position, text);
+    });
+    
+    // Avoid for simple edits
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    workspaceEdit.insert(document.uri, position, text);
+    await vscode.workspace.applyEdit(workspaceEdit);
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle Multiple Cursors">
+    Support multiple selections:
+    
+    ```typescript
+    editor.selections.forEach(selection => {
+      // Process each selection
+    });
+    ```
+  </Accordion>
+  
+  <Accordion title="Clean Up Decorations">
+    Dispose decoration types when done:
+    
+    ```typescript
+    const decorationType = vscode.window.createTextEditorDecorationType({...});
+    context.subscriptions.push(decorationType);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Workspace" icon="folder" href="/api/workspace">
+    Access workspace files and folders
+  </Card>
+  <Card title="Languages" icon="code" href="/api/languages">
+    Provide language-specific features
+  </Card>
+  <Card title="Commands" icon="terminal" href="/api/commands">
+    Register and execute commands
+  </Card>
+  <Card title="Debug" icon="bug" href="/api/debug">
+    Integrate debugging features
+  </Card>
+</CardGroup>

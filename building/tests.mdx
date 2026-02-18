@@ -1,0 +1,621 @@
+---
+title: "Running Tests"
+description: "Learn how to run Visual Studio Code's comprehensive test suite including unit tests, integration tests, and smoke tests."
+---
+
+## Test Overview
+
+VS Code has multiple test suites to ensure code quality:
+
+- **Unit Tests**: Fast tests for individual functions and classes
+- **Integration Tests**: Test extensions and API interactions
+- **Browser Tests**: Tests for web platform support
+- **Smoke Tests**: End-to-end UI automation tests
+- **Sanity Tests**: Platform and environment verification
+
+<Warning>Always fix compilation errors before running tests. Use `npm run watch` to monitor for errors.</Warning>
+
+## Quick Start
+
+<Steps>
+  <Step title="Ensure Code is Compiled">
+    Start watch mode to compile continuously:
+
+    ```bash
+    npm run watch
+    ```
+  </Step>
+
+  <Step title="Run Unit Tests">
+    Execute the main unit test suite:
+
+    <CodeGroup>
+      ```bash macOS/Linux
+      ./scripts/test.sh
+      ```
+
+      ```cmd Windows
+      .\scripts\test.bat
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="View Results">
+    Tests run in an Electron window. Results appear in the console.
+  </Step>
+</Steps>
+
+## Unit Tests
+
+Unit tests run inside Electron with access to both DOM and Node.js APIs.
+
+### Run All Unit Tests
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/test.sh
+  ```
+
+  ```cmd Windows
+  .\scripts\test.bat
+  ```
+</CodeGroup>
+
+### Run Specific Tests
+
+Use `--glob` or `--run` to filter tests:
+
+<Tabs>
+  <Tab title="By Pattern">
+    Run tests matching a glob pattern:
+
+    ```bash
+    ./scripts/test.sh --glob "**/extHost*.test.js"
+    ```
+
+    This runs all tests in files matching the pattern.
+  </Tab>
+
+  <Tab title="By File">
+    Run tests from a specific file:
+
+    ```bash
+    ./scripts/test.sh --run src/vs/editor/test/browser/controller/cursor.test.ts
+    ```
+  </Tab>
+
+  <Tab title="By Name">
+    Run tests with specific names using `--grep`:
+
+    ```bash
+    ./scripts/test.sh --grep "should handle undo"
+    ```
+  </Tab>
+</Tabs>
+
+### Debug Unit Tests
+
+Open tests in a visible Electron window with DevTools:
+
+```bash
+./scripts/test.sh --debug --glob "**/extHost*.test.js"
+```
+
+Features:
+- DevTools automatically open
+- Set breakpoints in test code
+- Inspect test failures interactively
+- Step through test execution
+
+<Tip>Use `--debug` to understand test failures. You can set breakpoints and inspect state.</Tip>
+
+### Node.js Unit Tests
+
+Run tests in pure Node.js (faster, no Electron):
+
+```bash
+npm run test-node -- --run src/vs/editor/test/browser/controller/cursor.test.ts
+```
+
+Use for:
+- Pure logic tests
+- Algorithm testing
+- Utility function tests
+- Faster CI builds
+
+## Browser Tests
+
+Test VS Code in real browsers using Playwright.
+
+### Run Browser Tests
+
+```bash
+npm run test-browser -- --browser chromium --browser webkit
+```
+
+Supported browsers:
+- `chromium` - Chrome/Edge
+- `webkit` - Safari
+- `firefox` - Firefox (coming soon)
+
+### Debug Browser Tests
+
+Open the test runner HTML directly:
+
+```
+file:///path/to/vscode/test/unit/browser/renderer.html?m=vs/base/test/common/strings.test
+```
+
+Replace module path to test different files:
+- `m=vs/base/test/common/strings.test` - strings tests
+- `m=vs/editor/test/common/core/range.test` - range tests
+
+<Info>Browser tests run code from `common` and `browser` layers only. They cannot test Electron-specific features.</Info>
+
+### Enable Playwright Logging
+
+Set `DEBUG` environment variable for verbose output:
+
+```bash
+DEBUG=pw:browser npm run test-browser -- --browser webkit
+```
+
+## Integration Tests
+
+Integration tests verify extensions, APIs, and cross-component interactions.
+
+### Run All Integration Tests
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/test-integration.sh
+  ```
+
+  ```cmd Windows
+  .\scripts\test-integration.bat
+  ```
+</CodeGroup>
+
+This runs:
+1. Node.js integration tests (`**/*.integrationTest.js`)
+2. Extension API tests (vscode-api-tests)
+3. Built-in extension tests (TypeScript, Git, Markdown, etc.)
+
+### Integration Test Suites
+
+The integration test script runs multiple test suites:
+
+<AccordionGroup>
+  <Accordion title="API Tests">
+    Test the VS Code Extension API:
+
+    ```bash
+    # Folder tests
+    ./scripts/code.sh extensions/vscode-api-tests/testWorkspace \
+      --extensionDevelopmentPath=extensions/vscode-api-tests \
+      --extensionTestsPath=extensions/vscode-api-tests/out/singlefolder-tests
+
+    # Workspace tests
+    ./scripts/code.sh extensions/vscode-api-tests/testworkspace.code-workspace \
+      --extensionDevelopmentPath=extensions/vscode-api-tests \
+      --extensionTestsPath=extensions/vscode-api-tests/out/workspace-tests
+    ```
+  </Accordion>
+
+  <Accordion title="Extension Tests">
+    Test built-in extensions:
+
+    ```bash
+    # TypeScript extension
+    ./scripts/code.sh extensions/typescript-language-features/test-workspace \
+      --extensionDevelopmentPath=extensions/typescript-language-features \
+      --extensionTestsPath=extensions/typescript-language-features/out/test/unit
+
+    # Markdown extension
+    npm run test-extension -- -l markdown-language-features
+
+    # Git extension
+    ./scripts/code.sh $(mktemp -d) \
+      --extensionDevelopmentPath=extensions/git \
+      --extensionTestsPath=extensions/git/out/test
+    ```
+  </Accordion>
+
+  <Accordion title="Language Server Tests">
+    Test standalone language servers:
+
+    ```bash
+    # CSS language server
+    cd extensions/css-language-features/server
+    ../../scripts/node-electron.sh test/index.js
+
+    # HTML language server
+    cd extensions/html-language-features/server
+    ../../scripts/node-electron.sh test/index.js
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Run Specific Extension Tests
+
+Test individual extensions:
+
+```bash
+# Using test-extension command
+npm run test-extension -- -l extension-name
+
+# Examples:
+npm run test-extension -- -l git-base
+npm run test-extension -- -l emmet
+npm run test-extension -- -l ipynb
+```
+
+## Smoke Tests
+
+End-to-end UI automation tests using Playwright.
+
+### Setup Smoke Tests
+
+<Steps>
+  <Step title="Build Extensions">
+    Compile all extensions:
+
+    ```bash
+    npm i && npm run compile
+    ```
+  </Step>
+
+  <Step title="Navigate to Smoke Test Directory">
+    ```bash
+    cd test/smoke
+    npm install
+    ```
+  </Step>
+
+  <Step title="Run Smoke Tests">
+    Test development build:
+
+    ```bash
+    npm run smoketest
+    ```
+
+    Test a release build:
+
+    ```bash
+    npm run smoketest -- --build "/Applications/Visual Studio Code.app"
+    ```
+  </Step>
+</Steps>
+
+### Smoke Test Variants
+
+<Tabs>
+  <Tab title="Electron">
+    Test desktop Electron build:
+
+    ```bash
+    # Development
+    npm run smoketest
+
+    # Release build
+    npm run smoketest -- --build <path-to-app>
+    ```
+  </Tab>
+
+  <Tab title="Web">
+    Test browser version:
+
+    ```bash
+    npm run smoketest -- --web --browser chromium
+    npm run smoketest -- --web --browser webkit
+    ```
+
+    <Note>Web smoke tests must run on a distro build.</Note>
+  </Tab>
+
+  <Tab title="Remote">
+    Test remote development:
+
+    ```bash
+    npm run smoketest -- --build <path-to-app> --remote
+    ```
+  </Tab>
+</Tabs>
+
+### Debug Smoke Tests
+
+Run with additional logging:
+
+```bash
+# Verbose output
+npm run smoketest -- --verbose
+
+# Filter tests
+npm run smoketest -- -f "Terminal"
+npm run smoketest -- -g "should create terminal"
+
+# Headless mode (for web)
+npm run smoketest -- --web --browser chromium --headless
+```
+
+Enable Playwright debug logging:
+
+```bash
+DEBUG=pw:browser npm run smoketest
+```
+
+## Test Coverage
+
+Generate code coverage reports:
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/test.sh --coverage
+  ```
+
+  ```cmd Windows
+  .\scripts\test.bat --coverage
+  ```
+</CodeGroup>
+
+Coverage reports are saved to `.build/coverage/`:
+
+```bash
+# View coverage report
+open .build/coverage/index.html
+```
+
+## Continuous Integration Tests
+
+Run the same tests as CI/CD pipelines:
+
+### Core Tests
+
+```bash
+# Full core CI suite
+npm run core-ci
+
+# Core CI for pull requests (faster)
+npm run core-ci-pr
+```
+
+### Extension Tests
+
+```bash
+# Full extension CI suite
+npm run extensions-ci
+
+# Extension CI for pull requests
+npm run extensions-ci-pr
+```
+
+### Build Script Tests
+
+Test the build scripts themselves:
+
+```bash
+npm run test-build-scripts
+```
+
+## Test Writing Guidelines
+
+### Test Structure
+
+Follow existing patterns:
+
+```typescript
+import * as assert from 'assert';
+import { TestClass } from 'vs/path/to/code';
+
+suite('TestClass', () => {
+	test('should handle basic operation', () => {
+		const instance = new TestClass();
+		const result = instance.doSomething();
+		assert.strictEqual(result, expectedValue);
+	});
+
+	test('should handle edge cases', () => {
+		// Test edge case
+	});
+});
+```
+
+### Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use describe and test Consistently">
+    Always use `suite()` and `test()` from the test framework:
+
+    ```typescript
+    suite('Feature Name', () => {
+      test('should do X', () => { /* ... */ });
+      test('should do Y', () => { /* ... */ });
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Minimize Assertions">
+    Prefer one comprehensive assertion over many small ones:
+
+    ```typescript
+    // Good: Single snapshot assertion
+    assert.deepStrictEqual(result, expectedObject);
+
+    // Avoid: Multiple precise assertions
+    assert.strictEqual(result.prop1, expected1);
+    assert.strictEqual(result.prop2, expected2);
+    assert.strictEqual(result.prop3, expected3);
+    ```
+  </Accordion>
+
+  <Accordion title="Add Tests to Correct Suite">
+    Don't append tests to the end of files. Add them to the relevant `suite()` block.
+
+    ```typescript
+    // Good: Inside relevant suite
+    suite('Parser', () => {
+      test('existing test', () => { /* ... */ });
+      test('new test', () => { /* ... */ }); // Added here
+    });
+
+    // Bad: At end of file
+    suite('Parser', () => {
+      test('existing test', () => { /* ... */ });
+    });
+    test('new test', () => { /* ... */ }); // Wrong location
+    ```
+  </Accordion>
+
+  <Accordion title="Clean Up Resources">
+    Always dispose of resources:
+
+    ```typescript
+    test('should use disposable', () => {
+      const disposable = createDisposable();
+      try {
+        // Test code
+      } finally {
+        disposable.dispose();
+      }
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Validation Before Testing
+
+### Check for Compilation Errors
+
+Always validate TypeScript before testing:
+
+```bash
+# Watch for compilation errors
+npm run watch
+
+# Check layers
+npm run valid-layers-check
+
+# Check cyclic dependencies
+npm run check-cyclic-dependencies
+```
+
+### Run Hygiene Checks
+
+Validate code quality:
+
+```bash
+# Full hygiene check
+npm run hygiene
+
+# Precommit checks
+npm run precommit
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Tests Fail Due to Compilation Errors">
+    **Error**: Tests fail with module not found or type errors
+
+    **Solution**:
+    1. Stop tests
+    2. Fix compilation errors: `npm run watch`
+    3. Wait for clean compilation
+    4. Retry tests
+
+    <Warning>Never run tests with active compilation errors.</Warning>
+  </Accordion>
+
+  <Accordion title="Tests Timeout">
+    **Error**: Tests exceed timeout
+
+    **Solutions**:
+    - Increase timeout in test:
+      ```typescript
+      test('slow test', async function() {
+        this.timeout(10000); // 10 seconds
+        // ...
+      });
+      ```
+
+    - Check for deadlocks or infinite loops
+    - Profile slow tests with `--debug`
+  </Accordion>
+
+  <Accordion title="Flaky Tests">
+    **Symptom**: Tests pass sometimes, fail others
+
+    **Common causes**:
+    - Race conditions
+    - Timing dependencies
+    - Shared global state
+    - Focus/timing issues (see smoke test pitfalls)
+
+    **Solutions**:
+    - Use `waitForActiveElement` instead of checking focus
+    - Avoid `setTimeout` - wait for DOM conditions
+    - Clean up state in test teardown
+  </Accordion>
+
+  <Accordion title="Browser Tests Not Running">
+    **Error**: Playwright not installed
+
+    **Solution**:
+    ```bash
+    npx playwright install
+    ```
+  </Accordion>
+
+  <Accordion title="Extension Tests Fail">
+    **Error**: Extension host crashes or API errors
+
+    **Solutions**:
+    1. Rebuild extensions:
+       ```bash
+       npm run watch-extensions
+       ```
+
+    2. Clear extension cache:
+       ```bash
+       rm -rf ~/.config/Code/extensions
+       ```
+
+    3. Check for API changes in your code
+  </Accordion>
+</AccordionGroup>
+
+## Performance Testing
+
+Measure and optimize performance:
+
+```bash
+# Run performance tests
+node scripts/code-perf.js
+```
+
+This measures:
+- Startup time
+- Memory usage
+- Rendering performance
+- Extension load time
+
+## Test Configuration Files
+
+Key test configuration locations:
+
+- `test/unit/electron/index.js` - Electron test runner
+- `test/unit/browser/index.js` - Browser test runner
+- `test/unit/node/index.js` - Node.js test runner
+- `test/smoke/src/main.ts` - Smoke test entry point
+- `extensions/*/package.json` - Extension test configuration
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Contributing" icon="code-pull-request" href="/contributing/overview">
+    Learn how to contribute your changes back to VS Code
+  </Card>
+  <Card title="Debugging" icon="bug" href="/building/debugging">
+    Debug tests and development issues
+  </Card>
+</CardGroup>

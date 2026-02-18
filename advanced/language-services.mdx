@@ -1,0 +1,727 @@
+---
+title: Language Services
+description: Deep dive into VS Code's language service architecture and provider APIs
+---
+
+# Language Services
+
+VS Code's language services provide IntelliSense, validation, navigation, and refactoring features. Understanding the language service architecture is essential for implementing language support or extending existing languages.
+
+## Architecture Overview
+
+<Info>
+**Language Service Components:**
+- **Language Service** (`ILanguageService`): Core registry for language definitions
+- **Language Features**: Provider-based APIs for editor features
+- **Tokenization**: Syntax highlighting via TextMate grammars or Monarch
+- **Language Configurations**: Bracket matching, auto-closing, indentation rules
+</Info>
+
+### Language Service Interface
+
+From `src/vs/editor/common/languages/language.ts:12`:
+
+```typescript
+export const ILanguageService = createDecorator<ILanguageService>('languageService');
+
+export interface ILanguageService {
+  readonly _serviceBrand: undefined;
+  
+  // Language ID codec
+  readonly languageIdCodec: ILanguageIdCodec;
+  
+  // Events
+  readonly onDidRequestBasicLanguageFeatures: Event<string>;
+  readonly onDidRequestRichLanguageFeatures: Event<string>;
+  readonly onDidChange: Event<void>;
+  
+  // Registration
+  registerLanguage(def: ILanguageExtensionPoint): IDisposable;
+  isRegisteredLanguageId(languageId: string): boolean;
+  getRegisteredLanguageIds(): string[];
+  
+  // Language detection
+  guessLanguageIdByFilepathOrFirstLine(resource: URI): string;
+  createById(languageId: string): ILanguageSelection;
+}
+```
+
+## Language Registration
+
+### Basic Language Definition
+
+```typescript
+export interface ILanguageExtensionPoint {
+  id: string;
+  extensions?: string[];        // ['.ts', '.tsx']
+  filenames?: string[];         // ['Dockerfile', 'Makefile']
+  filenamePatterns?: string[];  // ['*.config.js']
+  firstLine?: string;           // Regex to match first line
+  aliases?: string[];           // ['TypeScript', 'ts']
+  mimetypes?: string[];         // ['text/typescript']
+  configuration?: URI;          // Language configuration file
+  icon?: ILanguageIcon;         // Language icon
+}
+```
+
+### Register a Language
+
+```typescript
+// In extension activation
+const disposable = languageService.registerLanguage({
+  id: 'mylang',
+  extensions: ['.ml'],
+  aliases: ['MyLanguage', 'mylang'],
+  firstLine: '^#!/.*\\bmylang\\b',
+  configuration: URI.file('/path/to/language-configuration.json')
+});
+
+// Cleanup on deactivation
+disposable.dispose();
+```
+
+## Language Configuration
+
+Language configurations define structural properties:
+
+```json
+{
+  "comments": {
+    "lineComment": "//",
+    "blockComment": ["/*", "*/"]
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] },
+    { "open": "\"", "close": "\"", "notIn": ["string"] }
+  ],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["'", "'"],
+    ["\"", "\""]
+  ],
+  "folding": {
+    "markers": {
+      "start": "^\\s*//\\s*#?region\\b",
+      "end": "^\\s*//\\s*#?endregion\\b"
+    }
+  },
+  "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)",
+  "indentationRules": {
+    "increaseIndentPattern": "^((?!\\/\\/).)*(\\{[^}\"'`]*|\\([^)\"'`]*|\\[[^\\]\"'`]*)$",
+    "decreaseIndentPattern": "^((?!.*?\\/\\*).*\\*/)?\\s*[\\}\\]].*$"
+  },
+  "onEnterRules": [
+    {
+      "beforeText": "^\\s*\\/\\*\\*(?!\\/)([^\\*]|\\*(?!\\/))*$",
+      "afterText": "^\\s*\\*\\/$",
+      "action": { "indent": "indentOutdent", "appendText": " *" }
+    }
+  ]
+}
+```
+
+<Expandable title="Language Configuration Properties">
+**Key Properties:**
+- **comments**: Line and block comment tokens
+- **brackets**: Bracket pairs for matching
+- **autoClosingPairs**: Auto-close pairs when typing
+- **surroundingPairs**: Pairs for surround-with commands
+- **folding**: Code folding patterns
+- **wordPattern**: Regex defining word boundaries
+- **indentationRules**: Auto-indentation rules
+- **onEnterRules**: Behavior when pressing Enter
+</Expandable>
+
+## Language Feature Providers
+
+### Completion Provider
+
+```typescript
+import * as vscode from 'vscode';
+
+class MyCompletionProvider implements vscode.CompletionItemProvider {
+  provideCompletionItems(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token: vscode.CancellationToken,
+    context: vscode.CompletionContext
+  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+    
+    const linePrefix = document.lineAt(position).text.substr(0, position.character);
+    
+    // Provide function completion
+    const funcCompletion = new vscode.CompletionItem(
+      'myFunction',
+      vscode.CompletionItemKind.Function
+    );
+    funcCompletion.detail = 'My custom function';
+    funcCompletion.documentation = new vscode.MarkdownString(
+      'Performs **important** operation\n\n```typescript\nmyFunction(param: string): void\n```'
+    );
+    funcCompletion.insertText = new vscode.SnippetString(
+      'myFunction(${1:param})'
+    );
+    funcCompletion.sortText = '0'; // Sort priority
+    
+    // Provide keyword completion
+    const keywordCompletion = new vscode.CompletionItem(
+      'if',
+      vscode.CompletionItemKind.Keyword
+    );
+    keywordCompletion.insertText = new vscode.SnippetString(
+      'if (${1:condition}) {\n\t$0\n}'
+    );
+    
+    return [funcCompletion, keywordCompletion];
+  }
+  
+  // Optional: resolve additional information
+  resolveCompletionItem(
+    item: vscode.CompletionItem,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CompletionItem> {
+    // Lazy load documentation or additional details
+    return item;
+  }
+}
+
+// Register provider
+vscode.languages.registerCompletionItemProvider(
+  'mylang',
+  new MyCompletionProvider(),
+  '.', // Trigger characters
+  ':'
+);
+```
+
+### Hover Provider
+
+```typescript
+class MyHoverProvider implements vscode.HoverProvider {
+  provideHover(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.Hover> {
+    
+    const range = document.getWordRangeAtPosition(position);
+    const word = document.getText(range);
+    
+    if (word === 'myFunction') {
+      const contents = new vscode.MarkdownString();
+      contents.appendCodeblock('function myFunction(param: string): void', 'typescript');
+      contents.appendMarkdown('\n\nPerforms important operation.\n\n');
+      contents.appendMarkdown('[Documentation](https://example.com)');
+      
+      return new vscode.Hover(contents, range);
+    }
+    
+    return null;
+  }
+}
+
+vscode.languages.registerHoverProvider('mylang', new MyHoverProvider());
+```
+
+### Definition Provider
+
+```typescript
+class MyDefinitionProvider implements vscode.DefinitionProvider {
+  provideDefinition(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.Definition> {
+    
+    const word = document.getText(document.getWordRangeAtPosition(position));
+    
+    // Search for definition
+    const definitionLocation = this.findDefinition(word);
+    
+    if (definitionLocation) {
+      return new vscode.Location(
+        vscode.Uri.file(definitionLocation.file),
+        new vscode.Position(definitionLocation.line, definitionLocation.column)
+      );
+    }
+    
+    return null;
+  }
+  
+  private findDefinition(symbol: string) {
+    // Implement symbol lookup logic
+    return { file: '/path/to/file.ts', line: 10, column: 5 };
+  }
+}
+
+vscode.languages.registerDefinitionProvider('mylang', new MyDefinitionProvider());
+```
+
+### Reference Provider
+
+```typescript
+class MyReferenceProvider implements vscode.ReferenceProvider {
+  provideReferences(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    context: vscode.ReferenceContext,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.Location[]> {
+    
+    const word = document.getText(document.getWordRangeAtPosition(position));
+    const references: vscode.Location[] = [];
+    
+    // Search workspace for references
+    const files = this.searchReferences(word);
+    
+    files.forEach(file => {
+      file.occurrences.forEach(occurrence => {
+        references.push(
+          new vscode.Location(
+            vscode.Uri.file(file.path),
+            new vscode.Range(
+              occurrence.line,
+              occurrence.startCol,
+              occurrence.line,
+              occurrence.endCol
+            )
+          )
+        );
+      });
+    });
+    
+    return references;
+  }
+  
+  private searchReferences(symbol: string) {
+    // Implement reference search
+    return [];
+  }
+}
+
+vscode.languages.registerReferenceProvider('mylang', new MyReferenceProvider());
+```
+
+## Diagnostics (Validation)
+
+```typescript
+import * as vscode from 'vscode';
+
+const diagnosticCollection = vscode.languages.createDiagnosticCollection('mylang');
+
+function validateDocument(document: vscode.TextDocument): void {
+  const diagnostics: vscode.Diagnostic[] = [];
+  const text = document.getText();
+  
+  // Example: Check for TODO comments
+  const todoPattern = /TODO:/gi;
+  let match;
+  
+  while ((match = todoPattern.exec(text)) !== null) {
+    const startPos = document.positionAt(match.index);
+    const endPos = document.positionAt(match.index + match[0].length);
+    
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(startPos, endPos),
+      'TODO comment found',
+      vscode.DiagnosticSeverity.Information
+    );
+    diagnostic.code = 'todo-comment';
+    diagnostic.source = 'mylang';
+    
+    diagnostics.push(diagnostic);
+  }
+  
+  // Example: Check for unused variables
+  const unusedPattern = /const\s+(\w+)\s*=/gi;
+  while ((match = unusedPattern.exec(text)) !== null) {
+    const varName = match[1];
+    if (!new RegExp(`\\b${varName}\\b`, 'g').test(text.slice(match.index + match[0].length))) {
+      const startPos = document.positionAt(match.index + match[0].indexOf(varName));
+      const endPos = document.positionAt(match.index + match[0].indexOf(varName) + varName.length);
+      
+      const diagnostic = new vscode.Diagnostic(
+        new vscode.Range(startPos, endPos),
+        `Variable '${varName}' is never used`,
+        vscode.DiagnosticSeverity.Warning
+      );
+      diagnostic.tags = [vscode.DiagnosticTag.Unnecessary];
+      
+      diagnostics.push(diagnostic);
+    }
+  }
+  
+  diagnosticCollection.set(document.uri, diagnostics);
+}
+
+// Validate on document change
+vscode.workspace.onDidChangeTextDocument(e => {
+  if (e.document.languageId === 'mylang') {
+    validateDocument(e.document);
+  }
+});
+
+// Validate on document open
+vscode.workspace.onDidOpenTextDocument(document => {
+  if (document.languageId === 'mylang') {
+    validateDocument(document);
+  }
+});
+```
+
+<Warning>
+**Performance Considerations:**
+- Debounce validation for large documents
+- Use `CancellationToken` to cancel long operations
+- Implement incremental validation when possible
+- Clear diagnostics when documents close
+</Warning>
+
+## Code Actions (Quick Fixes)
+
+```typescript
+class MyCodeActionProvider implements vscode.CodeActionProvider {
+  provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range | vscode.Selection,
+    context: vscode.CodeActionContext,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CodeAction[]> {
+    
+    const actions: vscode.CodeAction[] = [];
+    
+    // Quick fix for diagnostics
+    context.diagnostics.forEach(diagnostic => {
+      if (diagnostic.code === 'todo-comment') {
+        const action = new vscode.CodeAction(
+          'Remove TODO comment',
+          vscode.CodeActionKind.QuickFix
+        );
+        action.diagnostics = [diagnostic];
+        action.edit = new vscode.WorkspaceEdit();
+        action.edit.delete(document.uri, diagnostic.range);
+        action.isPreferred = true;
+        
+        actions.push(action);
+      }
+    });
+    
+    // Refactoring action
+    const refactorAction = new vscode.CodeAction(
+      'Extract to function',
+      vscode.CodeActionKind.Refactor
+    );
+    refactorAction.command = {
+      command: 'mylang.extractFunction',
+      title: 'Extract Function',
+      arguments: [document, range]
+    };
+    actions.push(refactorAction);
+    
+    return actions;
+  }
+}
+
+vscode.languages.registerCodeActionsProvider(
+  'mylang',
+  new MyCodeActionProvider(),
+  {
+    providedCodeActionKinds: [
+      vscode.CodeActionKind.QuickFix,
+      vscode.CodeActionKind.Refactor
+    ]
+  }
+);
+```
+
+## Document Symbols (Outline)
+
+```typescript
+class MyDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
+  provideDocumentSymbols(
+    document: vscode.TextDocument,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.DocumentSymbol[]> {
+    
+    const symbols: vscode.DocumentSymbol[] = [];
+    const text = document.getText();
+    
+    // Parse functions
+    const functionPattern = /function\s+(\w+)\s*\(/g;
+    let match;
+    
+    while ((match = functionPattern.exec(text)) !== null) {
+      const name = match[1];
+      const startPos = document.positionAt(match.index);
+      const endPos = this.findFunctionEnd(text, match.index);
+      
+      const symbol = new vscode.DocumentSymbol(
+        name,
+        'Function',
+        vscode.SymbolKind.Function,
+        new vscode.Range(startPos, document.positionAt(endPos)),
+        new vscode.Range(startPos, startPos.translate(0, match[0].length))
+      );
+      
+      symbols.push(symbol);
+    }
+    
+    return symbols;
+  }
+  
+  private findFunctionEnd(text: string, start: number): number {
+    // Implement bracket matching to find function end
+    return start + 100; // Simplified
+  }
+}
+
+vscode.languages.registerDocumentSymbolProvider(
+  'mylang',
+  new MyDocumentSymbolProvider()
+);
+```
+
+## Formatting
+
+```typescript
+class MyFormattingProvider implements vscode.DocumentFormattingEditProvider {
+  provideDocumentFormattingEdits(
+    document: vscode.TextDocument,
+    options: vscode.FormattingOptions,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.TextEdit[]> {
+    
+    const edits: vscode.TextEdit[] = [];
+    const formatted = this.formatCode(document.getText(), options);
+    
+    // Replace entire document
+    const fullRange = new vscode.Range(
+      document.positionAt(0),
+      document.positionAt(document.getText().length)
+    );
+    edits.push(vscode.TextEdit.replace(fullRange, formatted));
+    
+    return edits;
+  }
+  
+  private formatCode(code: string, options: vscode.FormattingOptions): string {
+    // Implement formatting logic
+    const indentStr = options.insertSpaces 
+      ? ' '.repeat(options.tabSize)
+      : '\t';
+    
+    // Apply formatting rules
+    return code;
+  }
+}
+
+vscode.languages.registerDocumentFormattingEditProvider(
+  'mylang',
+  new MyFormattingProvider()
+);
+
+// Range formatting
+class MyRangeFormattingProvider implements vscode.DocumentRangeFormattingEditProvider {
+  provideDocumentRangeFormattingEdits(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    options: vscode.FormattingOptions,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.TextEdit[]> {
+    
+    const text = document.getText(range);
+    const formatted = this.formatCode(text, options);
+    
+    return [vscode.TextEdit.replace(range, formatted)];
+  }
+  
+  private formatCode(code: string, options: vscode.FormattingOptions): string {
+    return code;
+  }
+}
+
+vscode.languages.registerDocumentRangeFormattingEditProvider(
+  'mylang',
+  new MyRangeFormattingProvider()
+);
+```
+
+## Language Server Protocol (LSP)
+
+For complex language support, implement a Language Server:
+
+### Language Server Structure
+
+```typescript
+import {
+  createConnection,
+  TextDocuments,
+  ProposedFeatures,
+  InitializeParams,
+  TextDocumentSyncKind
+} from 'vscode-languageserver/node';
+import { TextDocument } from 'vscode-languageserver-textdocument';
+
+// Create connection
+const connection = createConnection(ProposedFeatures.all);
+const documents = new TextDocuments(TextDocument);
+
+// Initialize
+connection.onInitialize((params: InitializeParams) => {
+  return {
+    capabilities: {
+      textDocumentSync: TextDocumentSyncKind.Incremental,
+      completionProvider: {
+        resolveProvider: true,
+        triggerCharacters: ['.', ':']
+      },
+      hoverProvider: true,
+      definitionProvider: true,
+      referencesProvider: true,
+      documentSymbolProvider: true,
+      codeActionProvider: true,
+      documentFormattingProvider: true
+    }
+  };
+});
+
+// Completion
+connection.onCompletion((params) => {
+  const document = documents.get(params.textDocument.uri);
+  // Return completion items
+  return [];
+});
+
+// Hover
+connection.onHover((params) => {
+  const document = documents.get(params.textDocument.uri);
+  // Return hover info
+  return null;
+});
+
+// Start listening
+documents.listen(connection);
+connection.listen();
+```
+
+### Language Client
+
+```typescript
+import * as path from 'path';
+import { workspace, ExtensionContext } from 'vscode';
+import {
+  LanguageClient,
+  LanguageClientOptions,
+  ServerOptions,
+  TransportKind
+} from 'vscode-languageclient/node';
+
+let client: LanguageClient;
+
+export function activate(context: ExtensionContext) {
+  const serverModule = context.asAbsolutePath(
+    path.join('server', 'out', 'server.js')
+  );
+  
+  const serverOptions: ServerOptions = {
+    run: { module: serverModule, transport: TransportKind.ipc },
+    debug: {
+      module: serverModule,
+      transport: TransportKind.ipc,
+      options: { execArgv: ['--nolazy', '--inspect=6009'] }
+    }
+  };
+  
+  const clientOptions: LanguageClientOptions = {
+    documentSelector: [{ scheme: 'file', language: 'mylang' }],
+    synchronize: {
+      fileEvents: workspace.createFileSystemWatcher('**/.mylangrc')
+    }
+  };
+  
+  client = new LanguageClient(
+    'mylangServer',
+    'MyLang Language Server',
+    serverOptions,
+    clientOptions
+  );
+  
+  client.start();
+}
+
+export function deactivate(): Thenable<void> | undefined {
+  if (!client) {
+    return undefined;
+  }
+  return client.stop();
+}
+```
+
+<Info>
+**LSP Benefits:**
+- Language logic runs in separate process
+- Better performance for complex analysis
+- Reusable across multiple editors
+- Standard protocol for editor integration
+</Info>
+
+## Testing Language Features
+
+```typescript
+import * as assert from 'assert';
+import * as vscode from 'vscode';
+
+suite('Language Features Test Suite', () => {
+  test('Completion Provider', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'mylang',
+      content: 'my'
+    });
+    
+    const position = new vscode.Position(0, 2);
+    const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      position
+    );
+    
+    assert.ok(completions);
+    assert.ok(completions.items.length > 0);
+    assert.strictEqual(completions.items[0].label, 'myFunction');
+  });
+  
+  test('Hover Provider', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'mylang',
+      content: 'myFunction()'
+    });
+    
+    const position = new vscode.Position(0, 5);
+    const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+      'vscode.executeHoverProvider',
+      doc.uri,
+      position
+    );
+    
+    assert.ok(hovers);
+    assert.ok(hovers.length > 0);
+  });
+});
+```
+
+## Related Files
+
+- `src/vs/editor/common/languages/language.ts:12` - Language service interface
+- `src/vs/workbench/services/language/` - Language service implementation
+- `src/vs/editor/common/languages/` - Language feature interfaces
+- `src/vs/workbench/contrib/codeEditor/browser/languageConfigurationExtensionPoint.ts` - Language configuration

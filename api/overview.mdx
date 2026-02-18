@@ -1,0 +1,249 @@
+---
+title: 'Extension API Overview'
+description: 'Comprehensive guide to the Visual Studio Code Extension API'
+---
+
+# Extension API Overview
+
+The Visual Studio Code Extension API allows you to extend VS Code's functionality by creating extensions that integrate seamlessly with the editor. This API provides access to the editor's core features, including text editing, workspace management, language services, debugging, and source control.
+
+## Core API Namespaces
+
+The VS Code Extension API is organized into several namespaces, each providing specific functionality:
+
+<CardGroup cols={2}>
+  <Card title="commands" icon="terminal" href="/api/commands">
+    Register and execute commands
+  </Card>
+  <Card title="window" icon="window" href="/api/text-editor">
+    Interact with the editor window and UI
+  </Card>
+  <Card title="workspace" icon="folder" href="/api/workspace">
+    Access and manipulate workspace files and folders
+  </Card>
+  <Card title="languages" icon="code" href="/api/languages">
+    Provide language features like completion and diagnostics
+  </Card>
+  <Card title="debug" icon="bug" href="/api/debug">
+    Integrate debugging functionality
+  </Card>
+  <Card title="scm" icon="git-branch" href="/api/scm">
+    Implement source control providers
+  </Card>
+</CardGroup>
+
+## API Version
+
+The Extension API is versioned using the `engines.vscode` field in your `package.json`:
+
+```json
+{
+  "engines": {
+    "vscode": "^1.5.0"
+  }
+}
+```
+
+## Core Concepts
+
+### Activation Events
+
+Extensions are activated based on activation events declared in `package.json`:
+
+```json
+{
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onCommand:myExtension.doSomething",
+    "onFileSystem:git",
+    "*"
+  ]
+}
+```
+
+<Note>
+Use specific activation events instead of `"*"` to improve VS Code's startup performance.
+</Note>
+
+### Extension Context
+
+The `activate` function receives an `ExtensionContext` object that provides:
+
+- **subscriptions**: Disposables that are cleaned up when the extension is deactivated
+- **extensionUri**: The absolute file path of the extension
+- **globalState**: Workspace-independent state storage
+- **workspaceState**: Workspace-specific state storage
+- **secrets**: Secure storage for sensitive data
+- **extensionPath**: Deprecated, use `extensionUri` instead
+
+```typescript
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext) {
+  // Store a value
+  await context.globalState.update('myKey', 'myValue');
+  
+  // Register a command
+  const disposable = vscode.commands.registerCommand(
+    'myExtension.helloWorld',
+    () => {
+      vscode.window.showInformationMessage('Hello World!');
+    }
+  );
+  
+  context.subscriptions.push(disposable);
+}
+```
+
+## Key Interfaces and Classes
+
+### Uri
+
+Represents file and resource locations:
+
+<ParamField path="Uri.file" type="(path: string) => Uri">
+  Creates a URI from a file system path
+</ParamField>
+
+<ParamField path="Uri.parse" type="(value: string) => Uri">
+  Creates a URI from a string (e.g., `http://example.com`)
+</ParamField>
+
+```typescript
+const fileUri = vscode.Uri.file('/path/to/file.txt');
+const webUri = vscode.Uri.parse('https://code.visualstudio.com');
+```
+
+### Position and Range
+
+Represent locations in text documents:
+
+```typescript
+// Position (line and character are zero-based)
+const position = new vscode.Position(5, 10);
+
+// Range (from start to end position)
+const range = new vscode.Range(
+  new vscode.Position(5, 0),
+  new vscode.Position(5, 20)
+);
+
+// Alternative constructor
+const range2 = new vscode.Range(5, 0, 5, 20);
+```
+
+### Disposable
+
+Represents resources that need cleanup:
+
+```typescript
+const disposable = vscode.workspace.onDidChangeTextDocument(event => {
+  console.log('Document changed:', event.document.uri);
+});
+
+// Clean up when no longer needed
+context.subscriptions.push(disposable);
+```
+
+## API Patterns
+
+### Events
+
+Many APIs provide events using the `Event<T>` pattern:
+
+```typescript
+// Subscribe to events
+vscode.window.onDidChangeActiveTextEditor(editor => {
+  if (editor) {
+    console.log('Active editor:', editor.document.fileName);
+  }
+});
+```
+
+### Providers
+
+Extensions register providers to contribute functionality:
+
+```typescript
+// Register a completion provider
+vscode.languages.registerCompletionItemProvider(
+  'javascript',
+  {
+    provideCompletionItems(document, position) {
+      const completionItem = new vscode.CompletionItem('console.log');
+      return [completionItem];
+    }
+  },
+  '.' // Trigger character
+);
+```
+
+### Thenable (Promise)
+
+Many APIs return `Thenable<T>`, which is VS Code's promise-like type:
+
+```typescript
+vscode.window.showQuickPick(['Option 1', 'Option 2']).then(selection => {
+  if (selection) {
+    vscode.window.showInformationMessage(`You picked: ${selection}`);
+  }
+});
+
+// Or use async/await
+const selection = await vscode.window.showQuickPick(['Option 1', 'Option 2']);
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Dispose Resources Properly">
+    Always dispose of resources by adding them to `context.subscriptions`:
+    
+    ```typescript
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*.js');
+    context.subscriptions.push(watcher);
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Activation Events Wisely">
+    Avoid using `"*"` as an activation event. Use specific events like `onLanguage:` or `onCommand:`.
+  </Accordion>
+  
+  <Accordion title="Handle Errors Gracefully">
+    Always handle errors and provide meaningful messages to users:
+    
+    ```typescript
+    try {
+      await someOperation();
+    } catch (error) {
+      vscode.window.showErrorMessage(`Operation failed: ${error.message}`);
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Respect User Settings">
+    Read and respect user configuration:
+    
+    ```typescript
+    const config = vscode.workspace.getConfiguration('myExtension');
+    const enabled = config.get<boolean>('enabled', true);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Your First Extension" icon="rocket" href="/api/your-first-extension">
+    Create your first VS Code extension
+  </Card>
+  <Card title="Extension Structure" icon="folder-tree" href="/api/extension-structure">
+    Learn about extension project structure
+  </Card>
+  <Card title="Commands" icon="terminal" href="/api/commands">
+    Register and execute commands
+  </Card>
+  <Card title="Text Editor" icon="pen" href="/api/text-editor">
+    Work with text editors and documents
+  </Card>
+</CardGroup>

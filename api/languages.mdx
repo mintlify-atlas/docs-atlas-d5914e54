@@ -1,0 +1,643 @@
+---
+title: 'Languages API'
+description: 'Provide language features like completion, hover, and diagnostics in VS Code extensions'
+---
+
+# Languages API
+
+The Languages API allows you to provide language-specific features such as code completion, hover information, diagnostics, and more.
+
+## languages Namespace
+
+The `vscode.languages` namespace provides functions for registering language feature providers:
+
+```typescript
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext) {
+  // Register completion provider
+  const provider = vscode.languages.registerCompletionItemProvider(
+    'javascript',
+    {
+      provideCompletionItems(document, position) {
+        const item = new vscode.CompletionItem('console.log');
+        return [item];
+      }
+    },
+    '.' // Trigger character
+  );
+  
+  context.subscriptions.push(provider);
+}
+```
+
+## Completion Provider
+
+### registerCompletionItemProvider()
+
+Provide code completion suggestions:
+
+```typescript
+function registerCompletionItemProvider(
+  selector: DocumentSelector,
+  provider: CompletionItemProvider,
+  ...triggerCharacters: string[]
+): Disposable
+```
+
+<ParamField path="selector" type="DocumentSelector" required>
+  Document selector defining where provider is applicable
+</ParamField>
+
+<ParamField path="provider" type="CompletionItemProvider" required>
+  Provider implementation
+</ParamField>
+
+<ParamField path="triggerCharacters" type="string[]">
+  Characters that trigger completion
+</ParamField>
+
+#### Example: Basic Completion
+
+```typescript
+vscode.languages.registerCompletionItemProvider(
+  'javascript',
+  {
+    provideCompletionItems(document, position) {
+      // Simple completion
+      const consoleLog = new vscode.CompletionItem('console.log');
+      consoleLog.kind = vscode.CompletionItemKind.Method;
+      consoleLog.detail = 'Log to console';
+      
+      // Snippet completion
+      const forLoop = new vscode.CompletionItem('for');
+      forLoop.kind = vscode.CompletionItemKind.Snippet;
+      forLoop.insertText = new vscode.SnippetString(
+        'for (let ${1:i} = 0; ${1:i} < ${2:length}; ${1:i}++) {\n\t$0\n}'
+      );
+      
+      return [consoleLog, forLoop];
+    }
+  },
+  '.' // Trigger on dot
+);
+```
+
+#### CompletionItem Properties
+
+<Tabs>
+  <Tab title="Basic">
+    ```typescript
+    const item = new vscode.CompletionItem('myFunction');
+    item.kind = vscode.CompletionItemKind.Function;
+    item.detail = 'function myFunction(): void';
+    item.documentation = 'This is my function';
+    ```
+  </Tab>
+  
+  <Tab title="Snippet">
+    ```typescript
+    const item = new vscode.CompletionItem('if');
+    item.insertText = new vscode.SnippetString(
+      'if (${1:condition}) {\n\t$0\n}'
+    );
+    item.documentation = new vscode.MarkdownString(
+      'Insert if statement'
+    );
+    ```
+  </Tab>
+  
+  <Tab title="Advanced">
+    ```typescript
+    const item = new vscode.CompletionItem('myVar');
+    item.kind = vscode.CompletionItemKind.Variable;
+    item.detail = 'string';
+    item.sortText = '0'; // Sort priority
+    item.filterText = 'variable'; // Filter text
+    item.preselect = true; // Pre-select this item
+    item.commitCharacters = ['.', ',']; // Auto-accept on these
+    ```
+  </Tab>
+</Tabs>
+
+## Hover Provider
+
+### registerHoverProvider()
+
+Provide hover information:
+
+```typescript
+vscode.languages.registerHoverProvider('javascript', {
+  provideHover(document, position) {
+    const range = document.getWordRangeAtPosition(position);
+    if (!range) return;
+    
+    const word = document.getText(range);
+    
+    // Simple hover
+    return new vscode.Hover(`Hovering over: ${word}`);
+    
+    // Markdown hover
+    const markdown = new vscode.MarkdownString();
+    markdown.appendCodeblock(`function ${word}(): void`, 'javascript');
+    markdown.appendMarkdown('\n\nThis is a function');
+    return new vscode.Hover(markdown);
+  }
+});
+```
+
+## Definition Provider
+
+### registerDefinitionProvider()
+
+Provide "Go to Definition" functionality:
+
+```typescript
+vscode.languages.registerDefinitionProvider('javascript', {
+  provideDefinition(document, position) {
+    const range = document.getWordRangeAtPosition(position);
+    if (!range) return;
+    
+    const word = document.getText(range);
+    
+    // Find definition location
+    const definitionUri = vscode.Uri.file('/path/to/definition.js');
+    const definitionPosition = new vscode.Position(10, 5);
+    
+    return new vscode.Location(definitionUri, definitionPosition);
+  }
+});
+```
+
+## Reference Provider
+
+### registerReferenceProvider()
+
+Provide "Find All References" functionality:
+
+```typescript
+vscode.languages.registerReferenceProvider('javascript', {
+  provideReferences(document, position, context) {
+    const range = document.getWordRangeAtPosition(position);
+    if (!range) return [];
+    
+    const word = document.getText(range);
+    const references: vscode.Location[] = [];
+    
+    // Find all references across files
+    // Add locations to references array
+    
+    return references;
+  }
+});
+```
+
+## Diagnostics
+
+### createDiagnosticCollection()
+
+Create a collection for reporting problems:
+
+```typescript
+const diagnostics = vscode.languages.createDiagnosticCollection('myLinter');
+context.subscriptions.push(diagnostics);
+
+function updateDiagnostics(document: vscode.TextDocument) {
+  const diagnosticList: vscode.Diagnostic[] = [];
+  
+  // Scan document for issues
+  for (let i = 0; i < document.lineCount; i++) {
+    const line = document.lineAt(i);
+    
+    if (line.text.includes('TODO')) {
+      const diagnostic = new vscode.Diagnostic(
+        line.range,
+        'TODO found in code',
+        vscode.DiagnosticSeverity.Warning
+      );
+      diagnostic.code = 'TODO-001';
+      diagnostic.source = 'myLinter';
+      diagnosticList.push(diagnostic);
+    }
+  }
+  
+  diagnostics.set(document.uri, diagnosticList);
+}
+
+// Update on document change
+vscode.workspace.onDidChangeTextDocument(event => {
+  updateDiagnostics(event.document);
+});
+```
+
+<ParamField path="severity" type="DiagnosticSeverity">
+  - `Error`: Red squiggly line
+  - `Warning`: Yellow squiggly line
+  - `Information`: Blue squiggly line
+  - `Hint`: Gray dots
+</ParamField>
+
+## Code Actions Provider
+
+### registerCodeActionsProvider()
+
+Provide quick fixes and refactorings:
+
+```typescript
+vscode.languages.registerCodeActionsProvider(
+  'javascript',
+  {
+    provideCodeActions(document, range, context) {
+      const actions: vscode.CodeAction[] = [];
+      
+      // Check if there are diagnostics
+      const diagnostics = context.diagnostics;
+      for (const diagnostic of diagnostics) {
+        if (diagnostic.message.includes('TODO')) {
+          const fix = new vscode.CodeAction(
+            'Remove TODO',
+            vscode.CodeActionKind.QuickFix
+          );
+          fix.edit = new vscode.WorkspaceEdit();
+          fix.edit.delete(document.uri, diagnostic.range);
+          actions.push(fix);
+        }
+      }
+      
+      // Add refactoring action
+      const refactor = new vscode.CodeAction(
+        'Extract to function',
+        vscode.CodeActionKind.Refactor
+      );
+      refactor.command = {
+        title: 'Extract',
+        command: 'extension.extractFunction',
+        arguments: [document, range]
+      };
+      actions.push(refactor);
+      
+      return actions;
+    }
+  },
+  {
+    providedCodeActionKinds: [
+      vscode.CodeActionKind.QuickFix,
+      vscode.CodeActionKind.Refactor
+    ]
+  }
+);
+```
+
+## Document Formatting
+
+### registerDocumentFormattingEditProvider()
+
+Provide document formatting:
+
+```typescript
+vscode.languages.registerDocumentFormattingEditProvider('javascript', {
+  provideDocumentFormattingEdits(document) {
+    const edits: vscode.TextEdit[] = [];
+    
+    // Format the entire document
+    for (let i = 0; i < document.lineCount; i++) {
+      const line = document.lineAt(i);
+      const formatted = formatLine(line.text);
+      
+      if (formatted !== line.text) {
+        edits.push(vscode.TextEdit.replace(line.range, formatted));
+      }
+    }
+    
+    return edits;
+  }
+});
+```
+
+### registerDocumentRangeFormattingEditProvider()
+
+Format a specific range:
+
+```typescript
+vscode.languages.registerDocumentRangeFormattingEditProvider('javascript', {
+  provideDocumentRangeFormattingEdits(document, range) {
+    const edits: vscode.TextEdit[] = [];
+    
+    for (let i = range.start.line; i <= range.end.line; i++) {
+      const line = document.lineAt(i);
+      const formatted = formatLine(line.text);
+      edits.push(vscode.TextEdit.replace(line.range, formatted));
+    }
+    
+    return edits;
+  }
+});
+```
+
+## Document Symbols
+
+### registerDocumentSymbolProvider()
+
+Provide outline and breadcrumbs:
+
+```typescript
+vscode.languages.registerDocumentSymbolProvider('javascript', {
+  provideDocumentSymbols(document) {
+    const symbols: vscode.DocumentSymbol[] = [];
+    
+    for (let i = 0; i < document.lineCount; i++) {
+      const line = document.lineAt(i);
+      const match = /function\s+(\w+)/.exec(line.text);
+      
+      if (match) {
+        const symbol = new vscode.DocumentSymbol(
+          match[1],                    // name
+          'Function',                  // detail
+          vscode.SymbolKind.Function,  // kind
+          line.range,                  // range
+          line.range                   // selectionRange
+        );
+        symbols.push(symbol);
+      }
+    }
+    
+    return symbols;
+  }
+});
+```
+
+## Signature Help
+
+### registerSignatureHelpProvider()
+
+Show parameter hints:
+
+```typescript
+vscode.languages.registerSignatureHelpProvider(
+  'javascript',
+  {
+    provideSignatureHelp(document, position) {
+      const signatureHelp = new vscode.SignatureHelp();
+      
+      const signature = new vscode.SignatureInformation(
+        'myFunction(arg1: string, arg2: number): void'
+      );
+      signature.documentation = 'My function description';
+      signature.parameters = [
+        new vscode.ParameterInformation('arg1', 'First argument'),
+        new vscode.ParameterInformation('arg2', 'Second argument')
+      ];
+      
+      signatureHelp.signatures = [signature];
+      signatureHelp.activeSignature = 0;
+      signatureHelp.activeParameter = 0;
+      
+      return signatureHelp;
+    }
+  },
+  '(', ',' // Trigger characters
+);
+```
+
+## Language Configuration
+
+Configure language-specific settings:
+
+```json
+{
+  "contributes": {
+    "languages": [
+      {
+        "id": "mylang",
+        "extensions": [".ml"],
+        "aliases": ["MyLang"],
+        "configuration": "./language-configuration.json"
+      }
+    ]
+  }
+}
+```
+
+### language-configuration.json
+
+```json
+{
+  "comments": {
+    "lineComment": "//",
+    "blockComment": ["/*", "*/"]
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "'", "close": "'", "notIn": ["string"] },
+    { "open": "\"", "close": "\"", "notIn": ["string"] }
+  ],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["'", "'"],
+    ["\"", "\""]
+  ],
+  "folding": {
+    "markers": {
+      "start": "^\\s*//\\s*#?region\\b",
+      "end": "^\\s*//\\s*#?endregion\\b"
+    }
+  },
+  "wordPattern": "(-?\\d*\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)",
+  "indentationRules": {
+    "increaseIndentPattern": "^((?!\\/\\/).)*(\\{[^}\"'`]*|\\([^)\"'`]*|\\[[^\\]\"'`]*)$",
+    "decreaseIndentPattern": "^((?!.*?\\/\\*).*\\*/)?\\s*[\\)\\}\\]].*$"
+  }
+}
+```
+
+## Real-World Examples
+
+### Example: Simple Linter
+
+```typescript
+const diagnosticCollection = vscode.languages.createDiagnosticCollection('simple-linter');
+
+function lint(document: vscode.TextDocument) {
+  const diagnostics: vscode.Diagnostic[] = [];
+  const text = document.getText();
+  
+  // Check for console.log
+  const regex = /console\.log/g;
+  let match;
+  
+  while ((match = regex.exec(text)) !== null) {
+    const start = document.positionAt(match.index);
+    const end = document.positionAt(match.index + match[0].length);
+    const range = new vscode.Range(start, end);
+    
+    const diagnostic = new vscode.Diagnostic(
+      range,
+      'Avoid using console.log in production',
+      vscode.DiagnosticSeverity.Warning
+    );
+    diagnostic.code = 'no-console';
+    diagnostics.push(diagnostic);
+  }
+  
+  diagnosticCollection.set(document.uri, diagnostics);
+}
+
+vscode.workspace.onDidChangeTextDocument(e => lint(e.document));
+vscode.workspace.onDidOpenTextDocument(lint);
+```
+
+### Example: Auto-import Completion
+
+```typescript
+vscode.languages.registerCompletionItemProvider(
+  'javascript',
+  {
+    async provideCompletionItems(document, position) {
+      const items: vscode.CompletionItem[] = [];
+      
+      // Find available exports from other files
+      const files = await vscode.workspace.findFiles('**/*.js');
+      
+      for (const file of files) {
+        const doc = await vscode.workspace.openTextDocument(file);
+        const exports = findExports(doc);
+        
+        exports.forEach(name => {
+          const item = new vscode.CompletionItem(name);
+          item.kind = vscode.CompletionItemKind.Module;
+          
+          // Add auto-import
+          const importPath = getRelativePath(document.uri, file);
+          item.additionalTextEdits = [
+            vscode.TextEdit.insert(
+              new vscode.Position(0, 0),
+              `import { ${name} } from '${importPath}';\n`
+            )
+          ];
+          
+          items.push(item);
+        });
+      }
+      
+      return items;
+    }
+  }
+);
+```
+
+## Document Selectors
+
+Define where providers apply:
+
+<Tabs>
+  <Tab title="Language ID">
+    ```typescript
+    vscode.languages.registerCompletionItemProvider(
+      'javascript',
+      provider
+    );
+    ```
+  </Tab>
+  
+  <Tab title="File Pattern">
+    ```typescript
+    vscode.languages.registerCompletionItemProvider(
+      { pattern: '**/*.config.js' },
+      provider
+    );
+    ```
+  </Tab>
+  
+  <Tab title="Scheme">
+    ```typescript
+    vscode.languages.registerCompletionItemProvider(
+      { scheme: 'file', language: 'typescript' },
+      provider
+    );
+    ```
+  </Tab>
+  
+  <Tab title="Multiple">
+    ```typescript
+    vscode.languages.registerCompletionItemProvider(
+      [
+        { language: 'javascript' },
+        { language: 'typescript' },
+        { pattern: '**/*.jsx' }
+      ],
+      provider
+    );
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Return Results Quickly">
+    Language providers should return results quickly. Use `resolveCompletionItem` for expensive operations:
+    
+    ```typescript
+    {
+      provideCompletionItems() {
+        // Return items quickly without documentation
+        return items;
+      },
+      resolveCompletionItem(item) {
+        // Add expensive documentation only when needed
+        item.documentation = getExpensiveDocumentation();
+        return item;
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle Cancellation">
+    Check cancellation tokens for long operations:
+    
+    ```typescript
+    provideCompletionItems(document, position, token) {
+      if (token.isCancellationRequested) {
+        return [];
+      }
+      // ... compute results
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Clear Diagnostics">
+    Clean up diagnostics when files close:
+    
+    ```typescript
+    vscode.workspace.onDidCloseTextDocument(doc => {
+      diagnosticCollection.delete(doc.uri);
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Debug" icon="bug" href="/api/debug">
+    Integrate debugging functionality
+  </Card>
+  <Card title="SCM" icon="git-branch" href="/api/scm">
+    Implement source control providers
+  </Card>
+  <Card title="Commands" icon="terminal" href="/api/commands">
+    Register and execute commands
+  </Card>
+  <Card title="Workspace" icon="folder" href="/api/workspace">
+    Access workspace files and folders
+  </Card>
+</CardGroup>

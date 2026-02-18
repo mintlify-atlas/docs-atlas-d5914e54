@@ -1,0 +1,623 @@
+---
+title: 'Themes'
+description: 'Color themes - syntax highlighting, UI colors, and theme customization'
+---
+
+## Overview
+
+Themes in VS Code control the visual appearance of the editor, including syntax highlighting, UI colors, and icon themes. VS Code includes built-in themes and supports custom theme extensions.
+
+**Locations:**
+- `extensions/theme-*/` - Built-in color themes
+- `src/vs/platform/theme/` - Theme infrastructure
+- `src/vs/editor/common/editorTheme.ts` - Editor theming
+
+## Architecture
+
+### Theme System
+
+```
+┌───────────────────────────────────┐
+│      Workbench Theme               │
+│    (UI Colors & Styles)           │
+├───────────────────────────────────┤
+│      Editor Theme                 │
+│   (Syntax Highlighting)           │
+├───────────────────────────────────┤
+│       Icon Theme                  │
+│    (File & Folder Icons)          │
+└───────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="Color Themes" icon="palette" href="#color-themes">
+    UI and syntax colors
+  </Card>
+  <Card title="Token Colors" icon="code" href="#token-colors">
+    Syntax highlighting rules
+  </Card>
+  <Card title="Icon Themes" icon="icons" href="#icon-themes">
+    File and folder icons
+  </Card>
+  <Card title="Theme Customization" icon="wrench" href="#customization">
+    User theme overrides
+  </Card>
+</CardGroup>
+
+## Color Themes {#color-themes}
+
+**Location:** `extensions/theme-*/themes/*.json`
+
+### Theme Structure
+
+```json
+{
+    "$schema": "vscode://schemas/color-theme",
+    "name": "My Theme",
+    "type": "dark",
+    "colors": {
+        // Workbench colors
+        "editor.background": "#1F1F1F",
+        "editor.foreground": "#CCCCCC",
+        "activityBar.background": "#181818",
+        "statusBar.background": "#007ACC",
+        "sideBar.background": "#252526"
+    },
+    "tokenColors": [
+        // Syntax highlighting
+        {
+            "scope": "comment",
+            "settings": {
+                "foreground": "#6A9955",
+                "fontStyle": "italic"
+            }
+        },
+        {
+            "scope": "keyword",
+            "settings": {
+                "foreground": "#569CD6",
+                "fontStyle": "bold"
+            }
+        }
+    ]
+}
+```
+
+### Built-in Themes
+
+<CardGroup cols={2}>
+  <Card title="Dark Modern" icon="moon">
+    **File:** `theme-defaults/themes/dark_modern.json`
+    
+    Modern dark theme (default)
+  </Card>
+  
+  <Card title="Dark+" icon="moon">
+    **File:** `theme-defaults/themes/dark_plus.json`
+    
+    Classic VS Code dark theme
+  </Card>
+  
+  <Card title="Light Modern" icon="sun">
+    **File:** `theme-defaults/themes/light_modern.json`
+    
+    Modern light theme
+  </Card>
+  
+  <Card title="Light+" icon="sun">
+    **File:** `theme-defaults/themes/light_plus.json`
+    
+    Classic VS Code light theme
+  </Card>
+  
+  <Card title="High Contrast" icon="circle-half-stroke">
+    **File:** `theme-defaults/themes/hc_*.json`
+    
+    High contrast themes for accessibility
+  </Card>
+  
+  <Card title="Community Themes" icon="users">
+    Monokai, Solarized, Abyss, Kimbie Dark, etc.
+  </Card>
+</CardGroup>
+
+## Workbench Colors
+
+**Location:** `src/vs/platform/theme/common/colorRegistry.ts`
+
+### Common Color Keys
+
+<Accordion title="Workbench Color Reference">
+
+```json
+{
+    // Base colors
+    "foreground": "#CCCCCC",
+    "errorForeground": "#F85149",
+    "descriptionForeground": "#9D9D9D",
+    "icon.foreground": "#CCCCCC",
+    
+    // Window
+    "window.activeBorder": "#0078D4",
+    "window.inactiveBorder": "#2B2B2B",
+    
+    // Focus
+    "focusBorder": "#0078D4",
+    
+    // Editor
+    "editor.background": "#1F1F1F",
+    "editor.foreground": "#CCCCCC",
+    "editor.lineHighlightBackground": "#282828",
+    "editor.selectionBackground": "#264F78",
+    "editor.findMatchBackground": "#9E6A03",
+    "editor.findMatchHighlightBackground": "#EA5C0055",
+    
+    // Editor gutter
+    "editorLineNumber.foreground": "#6E7681",
+    "editorLineNumber.activeForeground": "#CCCCCC",
+    "editorGutter.addedBackground": "#2EA043",
+    "editorGutter.modifiedBackground": "#0078D4",
+    "editorGutter.deletedBackground": "#F85149",
+    
+    // Activity Bar
+    "activityBar.background": "#181818",
+    "activityBar.foreground": "#D7D7D7",
+    "activityBar.inactiveForeground": "#868686",
+    "activityBar.activeBorder": "#0078D4",
+    "activityBarBadge.background": "#0078D4",
+    "activityBarBadge.foreground": "#FFFFFF",
+    
+    // Side Bar
+    "sideBar.background": "#252526",
+    "sideBar.foreground": "#CCCCCC",
+    "sideBar.border": "#2B2B2B",
+    "sideBarTitle.foreground": "#CCCCCC",
+    "sideBarSectionHeader.background": "#2B2B2B",
+    
+    // Title Bar
+    "titleBar.activeBackground": "#181818",
+    "titleBar.activeForeground": "#CCCCCC",
+    "titleBar.inactiveBackground": "#1F1F1F",
+    "titleBar.inactiveForeground": "#9D9D9D",
+    "titleBar.border": "#2B2B2B",
+    
+    // Status Bar
+    "statusBar.background": "#007ACC",
+    "statusBar.foreground": "#FFFFFF",
+    "statusBar.noFolderBackground": "#68217A",
+    "statusBar.debuggingBackground": "#CC6633",
+    
+    // Tabs
+    "tab.activeBackground": "#1F1F1F",
+    "tab.activeForeground": "#FFFFFF",
+    "tab.inactiveBackground": "#2D2D2D",
+    "tab.inactiveForeground": "#969696",
+    "tab.border": "#2B2B2B",
+    
+    // Panel
+    "panel.background": "#1F1F1F",
+    "panel.border": "#2B2B2B",
+    "panelTitle.activeBorder": "#0078D4",
+    "panelTitle.activeForeground": "#CCCCCC",
+    "panelTitle.inactiveForeground": "#9D9D9D",
+    
+    // Terminal
+    "terminal.background": "#1F1F1F",
+    "terminal.foreground": "#CCCCCC",
+    "terminal.ansiBlack": "#000000",
+    "terminal.ansiRed": "#CD3131",
+    "terminal.ansiGreen": "#0DBC79",
+    "terminal.ansiYellow": "#E5E510",
+    "terminal.ansiBlue": "#2472C8",
+    "terminal.ansiMagenta": "#BC3FBC",
+    "terminal.ansiCyan": "#11A8CD",
+    "terminal.ansiWhite": "#E5E5E5",
+    
+    // Buttons
+    "button.background": "#0078D4",
+    "button.foreground": "#FFFFFF",
+    "button.hoverBackground": "#026EC1",
+    
+    // Input
+    "input.background": "#313131",
+    "input.foreground": "#CCCCCC",
+    "input.border": "#3C3C3C",
+    "input.placeholderForeground": "#9D9D9D",
+    
+    // Dropdown
+    "dropdown.background": "#313131",
+    "dropdown.foreground": "#CCCCCC",
+    "dropdown.border": "#3C3C3C",
+    
+    // Lists
+    "list.activeSelectionBackground": "#04395E",
+    "list.activeSelectionForeground": "#FFFFFF",
+    "list.hoverBackground": "#2A2D2E",
+    "list.focusBackground": "#062F4A",
+    "list.inactiveSelectionBackground": "#37373D",
+    
+    // Badges
+    "badge.background": "#616161",
+    "badge.foreground": "#F8F8F8",
+    
+    // Scrollbar
+    "scrollbarSlider.background": "#79797966",
+    "scrollbarSlider.hoverBackground": "#646464B3",
+    "scrollbarSlider.activeBackground": "#BFBFBF66"
+}
+```
+
+</Accordion>
+
+## Token Colors {#token-colors}
+
+**Location:** Theme files `tokenColors` section
+
+### TextMate Scopes
+
+Syntax highlighting uses TextMate grammar scopes:
+
+```json
+{
+    "tokenColors": [
+        {
+            "scope": ["comment", "punctuation.definition.comment"],
+            "settings": {
+                "foreground": "#6A9955",
+                "fontStyle": "italic"
+            }
+        },
+        {
+            "scope": ["keyword", "storage.type", "storage.modifier"],
+            "settings": {
+                "foreground": "#569CD6"
+            }
+        },
+        {
+            "scope": "string",
+            "settings": {
+                "foreground": "#CE9178"
+            }
+        },
+        {
+            "scope": "constant.numeric",
+            "settings": {
+                "foreground": "#B5CEA8"
+            }
+        },
+        {
+            "scope": ["entity.name.function", "support.function"],
+            "settings": {
+                "foreground": "#DCDCAA"
+            }
+        },
+        {
+            "scope": "entity.name.type.class",
+            "settings": {
+                "foreground": "#4EC9B0"
+            }
+        },
+        {
+            "scope": "variable",
+            "settings": {
+                "foreground": "#9CDCFE"
+            }
+        }
+    ]
+}
+```
+
+### Common TextMate Scopes
+
+<Accordion title="Scope Reference">
+
+- **comment** - Comments
+- **string** - String literals
+- **constant.numeric** - Numbers
+- **constant.language** - Language constants (true, false, null)
+- **keyword** - Keywords (if, for, return)
+- **storage.type** - Type keywords (int, void, class)
+- **storage.modifier** - Modifiers (public, static, const)
+- **entity.name.function** - Function names
+- **entity.name.type** - Type/class names
+- **entity.name.tag** - HTML/XML tags
+- **variable** - Variables
+- **variable.parameter** - Function parameters
+- **support.function** - Built-in functions
+- **support.class** - Built-in classes
+- **support.type** - Built-in types
+- **meta.function-call** - Function calls
+- **punctuation** - Punctuation characters
+- **invalid** - Invalid/deprecated code
+
+</Accordion>
+
+### Semantic Token Colors
+
+Semantic highlighting from language servers:
+
+```json
+{
+    "semanticHighlighting": true,
+    "semanticTokenColors": {
+        "variable": "#9CDCFE",
+        "variable.readonly": "#4FC1FF",
+        "parameter": "#9CDCFE",
+        "function": "#DCDCAA",
+        "method": "#DCDCAA",
+        "class": "#4EC9B0",
+        "interface": "#B8D7A3",
+        "enum": "#4EC9B0",
+        "enumMember": "#B5CEA8",
+        "type": "#4EC9B0",
+        "namespace": "#4EC9B0",
+        "typeParameter": "#B8D7A3"
+    }
+}
+```
+
+## Icon Themes {#icon-themes}
+
+**Location:** `extensions/theme-seti/`
+
+### Icon Theme Structure
+
+```json
+{
+    "iconDefinitions": {
+        "_file": {
+            "iconPath": "./icons/file.svg"
+        },
+        "_folder": {
+            "iconPath": "./icons/folder.svg"
+        },
+        "_folder_open": {
+            "iconPath": "./icons/folder-open.svg"
+        },
+        "js": {
+            "iconPath": "./icons/javascript.svg"
+        },
+        "ts": {
+            "iconPath": "./icons/typescript.svg"
+        }
+    },
+    "file": "_file",
+    "folder": "_folder",
+    "folderExpanded": "_folder_open",
+    "fileExtensions": {
+        "js": "js",
+        "ts": "ts",
+        "json": "json",
+        "md": "markdown"
+    },
+    "fileNames": {
+        "package.json": "npm",
+        "tsconfig.json": "tsconfig",
+        ".gitignore": "git"
+    },
+    "languageIds": {
+        "javascript": "js",
+        "typescript": "ts"
+    }
+}
+```
+
+## Theme Customization {#customization}
+
+### User Settings
+
+```json
+{
+    // Select theme
+    "workbench.colorTheme": "Default Dark Modern",
+    "workbench.iconTheme": "vs-seti",
+    
+    // Customize colors
+    "workbench.colorCustomizations": {
+        "editor.background": "#1a1a1a",
+        "activityBar.background": "#2D2D30",
+        "statusBar.background": "#007ACC",
+        "statusBar.noFolderBackground": "#68217A"
+    },
+    
+    // Customize per theme
+    "workbench.colorCustomizations": {
+        "[Default Dark Modern]": {
+            "editor.background": "#1a1a1a"
+        },
+        "[Default Light Modern]": {
+            "editor.background": "#f5f5f5"
+        }
+    },
+    
+    // Customize token colors
+    "editor.tokenColorCustomizations": {
+        "comments": "#6A9955",
+        "keywords": "#569CD6",
+        "strings": "#CE9178",
+        "functions": "#DCDCAA",
+        "variables": "#9CDCFE",
+        "numbers": "#B5CEA8"
+    },
+    
+    // Customize per theme
+    "editor.tokenColorCustomizations": {
+        "[Default Dark Modern]": {
+            "comments": "#608B4E"
+        }
+    },
+    
+    // Semantic token customization
+    "editor.semanticTokenColorCustomizations": {
+        "enabled": true,
+        "rules": {
+            "*.declaration": { "bold": true },
+            "*.readonly": { "fontStyle": "italic" },
+            "function": "#DCDCAA",
+            "variable.readonly": "#4FC1FF"
+        }
+    }
+}
+```
+
+## Theme Service
+
+**Location:** `src/vs/platform/theme/common/themeService.ts`
+
+### IThemeService Interface
+
+```typescript
+import { IThemeService, IColorTheme } from 'vs/platform/theme/common/themeService';
+import { Color } from 'vs/base/common/color';
+
+export class ThemedComponent {
+    constructor(
+        @IThemeService private readonly themeService: IThemeService
+    ) {
+        // Listen to theme changes
+        this.themeService.onDidColorThemeChange(theme => {
+            this.updateTheme(theme);
+        });
+        
+        // Get current theme
+        const currentTheme = this.themeService.getColorTheme();
+        this.updateTheme(currentTheme);
+    }
+    
+    private updateTheme(theme: IColorTheme): void {
+        // Get theme colors
+        const editorBg = theme.getColor('editor.background');
+        const foreground = theme.getColor('editor.foreground');
+        
+        if (editorBg && foreground) {
+            // Apply colors
+            this.element.style.backgroundColor = editorBg.toString();
+            this.element.style.color = foreground.toString();
+        }
+    }
+}
+```
+
+### Theme Colors in Code
+
+```typescript
+import { registerColor } from 'vs/platform/theme/common/colorRegistry';
+import { Color, RGBA } from 'vs/base/common/color';
+
+// Register custom color
+export const myCustomColor = registerColor(
+    'myExtension.customColor',
+    { dark: '#FF0000', light: '#00FF00', hcDark: '#0000FF', hcLight: '#00FF00' },
+    'My custom color description'
+);
+
+// Use in code
+const color = this.themeService.getColorTheme().getColor(myCustomColor);
+```
+
+## Creating a Theme Extension
+
+### package.json
+
+```json
+{
+    "name": "my-theme",
+    "displayName": "My Theme",
+    "description": "A beautiful color theme",
+    "version": "1.0.0",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": ["Themes"],
+    "contributes": {
+        "themes": [
+            {
+                "label": "My Dark Theme",
+                "uiTheme": "vs-dark",
+                "path": "./themes/my-dark-theme.json"
+            },
+            {
+                "label": "My Light Theme",
+                "uiTheme": "vs",
+                "path": "./themes/my-light-theme.json"
+            }
+        ],
+        "iconThemes": [
+            {
+                "id": "my-icons",
+                "label": "My Icons",
+                "path": "./icons/icon-theme.json"
+            }
+        ]
+    }
+}
+```
+
+### Theme File
+
+```json
+{
+    "$schema": "vscode://schemas/color-theme",
+    "name": "My Dark Theme",
+    "type": "dark",
+    "colors": {
+        "editor.background": "#1a1a1a",
+        "editor.foreground": "#d4d4d4",
+        "activityBar.background": "#2d2d30",
+        "sideBar.background": "#252526",
+        "statusBar.background": "#007acc"
+    },
+    "tokenColors": "./token-colors.json"
+}
+```
+
+## Best Practices
+
+<Warning>
+**Contrast:** Ensure sufficient contrast between foreground and background colors for readability.
+</Warning>
+
+<Tip>
+**Consistency:** Keep color usage consistent across similar UI elements. Use the same colors for similar purposes.
+</Tip>
+
+<Note>
+**Testing:** Test your theme in different lighting conditions and with various code samples.
+</Note>
+
+## Theme Testing
+
+### Theme Color Tester
+
+```typescript
+// Test theme colors
+import { IThemeService } from 'vs/platform/theme/common/themeService';
+
+function testTheme(themeService: IThemeService): void {
+    const theme = themeService.getColorTheme();
+    
+    console.log('Theme type:', theme.type); // 'dark', 'light', 'hc'
+    console.log('Editor background:', theme.getColor('editor.background'));
+    console.log('Editor foreground:', theme.getColor('editor.foreground'));
+    
+    // Test all colors
+    const allColors = theme.defines(color => color);
+    for (const [key, value] of allColors) {
+        console.log(`${key}: ${value.toString()}`);
+    }
+}
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Editor" href="/components/editor">
+    Syntax highlighting
+  </Card>
+  <Card title="Workbench" href="/components/workbench">
+    UI theming
+  </Card>
+  <Card title="Language Features" href="/components/language-features">
+    Semantic tokens
+  </Card>
+</CardGroup>

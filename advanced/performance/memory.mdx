@@ -1,0 +1,713 @@
+---
+title: Memory Management
+description: Understanding memory usage patterns and optimization in VS Code
+---
+
+# Memory Management
+
+Efficient memory management is crucial for VS Code's performance, especially when working with large files or projects. This guide covers memory patterns, profiling, and optimization techniques.
+
+## Memory Architecture
+
+<Info>
+**Memory Distribution:**
+- **Main Process**: Services, window management, ~100-200MB
+- **Renderer Process**: UI, editor, ~200-400MB per window
+- **Extension Host**: Extensions, language servers, varies greatly
+- **Shared Process**: Background services, ~50-100MB
+</Info>
+
+## Memory Monitoring
+
+### Process Explorer
+
+VS Code includes a built-in process explorer:
+
+```typescript
+// Open process explorer
+vscode.commands.executeCommand('workbench.action.showProcessExplorer');
+
+// Shows:
+// - Process name and PID
+// - CPU usage
+// - Memory usage
+// - Process type (main, renderer, extension host)
+```
+
+### Memory Inspector
+
+```typescript
+class MemoryMonitor {
+  private samples: MemoryUsage[] = [];
+  private readonly maxSamples = 100;
+  
+  takeSample(): MemoryUsage {
+    const usage = process.memoryUsage();
+    
+    this.samples.push({
+      timestamp: Date.now(),
+      heapUsed: usage.heapUsed,
+      heapTotal: usage.heapTotal,
+      external: usage.external,
+      rss: usage.rss
+    });
+    
+    // Keep only recent samples
+    if (this.samples.length > this.maxSamples) {
+      this.samples.shift();
+    }
+    
+    return usage;
+  }
+  
+  getAverageHeapUsage(): number {
+    const total = this.samples.reduce((sum, s) => sum + s.heapUsed, 0);
+    return total / this.samples.length;
+  }
+  
+  detectMemoryLeak(): boolean {
+    if (this.samples.length < this.maxSamples) {
+      return false;
+    }
+    
+    // Check if memory is consistently increasing
+    const firstHalf = this.samples.slice(0, 50);
+    const secondHalf = this.samples.slice(50);
+    
+    const firstAvg = firstHalf.reduce((s, u) => s + u.heapUsed, 0) / 50;
+    const secondAvg = secondHalf.reduce((s, u) => s + u.heapUsed, 0) / 50;
+    
+    // Memory increased by more than 50%
+    return secondAvg > firstAvg * 1.5;
+  }
+}
+
+// Start monitoring
+const monitor = new MemoryMonitor();
+setInterval(() => {
+  monitor.takeSample();
+  
+  if (monitor.detectMemoryLeak()) {
+    console.warn('Potential memory leak detected!');
+  }
+}, 10000); // Every 10 seconds
+```
+
+## Common Memory Issues
+
+### 1. Unclosed Disposables
+
+```typescript
+// BAD - Event listener leak
+class MyClass {
+  constructor() {
+    workspace.onDidChangeTextDocument(e => {
+      this.handleChange(e);
+    });
+  }
+}
+
+// GOOD - Proper disposal
+class MyClass {
+  private disposables: vscode.Disposable[] = [];
+  
+  constructor() {
+    this.disposables.push(
+      workspace.onDidChangeTextDocument(e => {
+        this.handleChange(e);
+      })
+    );
+  }
+  
+  dispose(): void {
+    this.disposables.forEach(d => d.dispose());
+    this.disposables = [];
+  }
+}
+
+// BETTER - Use DisposableStore
+import { DisposableStore } from 'vs/base/common/lifecycle';
+
+class MyClass {
+  private readonly disposables = new DisposableStore();
+  
+  constructor() {
+    this.disposables.add(
+      workspace.onDidChangeTextDocument(e => {
+        this.handleChange(e);
+      })
+    );
+  }
+  
+  dispose(): void {
+    this.disposables.dispose();
+  }
+}
+```
+
+### 2. Large Object Retention
+
+```typescript
+// BAD - Holds reference to large object
+class DocumentCache {
+  private cache = new Map<string, TextDocument>();
+  
+  set(uri: string, doc: TextDocument): void {
+    this.cache.set(uri, doc); // Never cleaned up!
+  }
+}
+
+// GOOD - Use WeakMap for automatic cleanup
+class DocumentCache {
+  private cache = new WeakMap<TextDocument, ParsedData>();
+  
+  set(doc: TextDocument, data: ParsedData): void {
+    this.cache.set(doc, data); // Auto-cleaned when doc is GC'd
+  }
+  
+  get(doc: TextDocument): ParsedData | undefined {
+    return this.cache.get(doc);
+  }
+}
+
+// BETTER - LRU cache with size limit
+import { LRUCache } from 'vs/base/common/map';
+
+class DocumentCache {
+  private cache = new LRUCache<string, ParsedData>(100); // Max 100 items
+  
+  set(uri: string, data: ParsedData): void {
+    this.cache.set(uri, data); // Automatically evicts oldest
+  }
+}
+```
+
+### 3. Circular References
+
+```typescript
+// BAD - Circular reference prevents GC
+class Parent {
+  child: Child;
+  
+  constructor() {
+    this.child = new Child(this);
+  }
+}
+
+class Child {
+  parent: Parent;
+  
+  constructor(parent: Parent) {
+    this.parent = parent;
+  }
+}
+
+// GOOD - Break circular references
+class Parent {
+  private _child: Child | undefined;
+  
+  get child(): Child {
+    if (!this._child) {
+      this._child = new Child();
+    }
+    return this._child;
+  }
+  
+  dispose(): void {
+    this._child?.dispose();
+    this._child = undefined;
+  }
+}
+
+class Child {
+  dispose(): void {
+    // Cleanup
+  }
+}
+```
+
+### 4. Event Listener Accumulation
+
+```typescript
+// BAD - Adds listener on every call
+function setupWatcher(uri: vscode.Uri): void {
+  workspace.onDidChangeTextDocument(e => {
+    if (e.document.uri.toString() === uri.toString()) {
+      handleChange(e);
+    }
+  });
+}
+
+// GOOD - Single listener, dispose properly
+class DocumentWatcher {
+  private watchers = new Map<string, vscode.Disposable>();
+  
+  watch(uri: vscode.Uri): void {
+    const key = uri.toString();
+    
+    if (this.watchers.has(key)) {
+      return; // Already watching
+    }
+    
+    const disposable = workspace.onDidChangeTextDocument(e => {
+      if (e.document.uri.toString() === key) {
+        this.handleChange(e);
+      }
+    });
+    
+    this.watchers.set(key, disposable);
+  }
+  
+  unwatch(uri: vscode.Uri): void {
+    const key = uri.toString();
+    const disposable = this.watchers.get(key);
+    
+    if (disposable) {
+      disposable.dispose();
+      this.watchers.delete(key);
+    }
+  }
+  
+  dispose(): void {
+    this.watchers.forEach(d => d.dispose());
+    this.watchers.clear();
+  }
+}
+```
+
+## Memory Optimization Techniques
+
+### 1. Lazy Loading
+
+```typescript
+class LanguageService {
+  private _parser: Parser | undefined;
+  private _formatter: Formatter | undefined;
+  
+  // Load parser only when needed
+  get parser(): Parser {
+    if (!this._parser) {
+      this._parser = new Parser();
+    }
+    return this._parser;
+  }
+  
+  // Load formatter only when needed
+  get formatter(): Formatter {
+    if (!this._formatter) {
+      this._formatter = new Formatter();
+    }
+    return this._formatter;
+  }
+  
+  dispose(): void {
+    this._parser?.dispose();
+    this._formatter?.dispose();
+  }
+}
+```
+
+### 2. Object Pooling
+
+```typescript
+class ObjectPool<T> {
+  private available: T[] = [];
+  private inUse = new Set<T>();
+  
+  constructor(
+    private factory: () => T,
+    private reset: (obj: T) => void,
+    initialSize: number = 10
+  ) {
+    for (let i = 0; i < initialSize; i++) {
+      this.available.push(factory());
+    }
+  }
+  
+  acquire(): T {
+    let obj = this.available.pop();
+    
+    if (!obj) {
+      obj = this.factory();
+    }
+    
+    this.inUse.add(obj);
+    return obj;
+  }
+  
+  release(obj: T): void {
+    if (!this.inUse.has(obj)) {
+      return;
+    }
+    
+    this.reset(obj);
+    this.inUse.delete(obj);
+    this.available.push(obj);
+  }
+}
+
+// Usage
+const bufferPool = new ObjectPool(
+  () => Buffer.alloc(1024 * 1024), // 1MB buffers
+  (buf) => buf.fill(0),             // Reset buffer
+  10                                 // Initial pool size
+);
+
+const buffer = bufferPool.acquire();
+// Use buffer...
+bufferPool.release(buffer);
+```
+
+### 3. Streaming Large Files
+
+```typescript
+import { Readable } from 'stream';
+
+// BAD - Loads entire file into memory
+async function processFile(uri: vscode.Uri): Promise<void> {
+  const content = await workspace.fs.readFile(uri);
+  processContent(content); // May be huge!
+}
+
+// GOOD - Process file in chunks
+async function processFileStreaming(uri: vscode.Uri): Promise<void> {
+  const stream = createReadStream(uri.fsPath);
+  
+  stream.on('data', (chunk: Buffer) => {
+    processChunk(chunk);
+  });
+  
+  await new Promise((resolve, reject) => {
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+}
+
+// BETTER - Use VS Code's streaming API
+import { VSBuffer } from 'vs/base/common/buffer';
+
+async function processFileChunked(uri: vscode.Uri): Promise<void> {
+  const stream = await fileService.readFileStream(uri);
+  
+  for await (const chunk of stream.value) {
+    processChunk(VSBuffer.wrap(chunk));
+  }
+}
+```
+
+### 4. Efficient String Handling
+
+```typescript
+// BAD - Creates many intermediate strings
+function buildLargeString(items: string[]): string {
+  let result = '';
+  for (const item of items) {
+    result += item + '\n'; // Creates new string each time
+  }
+  return result;
+}
+
+// GOOD - Use array join
+function buildLargeString(items: string[]): string {
+  return items.join('\n');
+}
+
+// BETTER - Use chunks for very large strings
+function buildHugeString(items: string[]): string {
+  const chunks: string[] = [];
+  const chunkSize = 1000;
+  
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    chunks.push(chunk.join('\n'));
+  }
+  
+  return chunks.join('\n');
+}
+```
+
+### 5. Virtual Lists
+
+```typescript
+import { List } from 'vs/base/browser/ui/list/listWidget';
+
+// VS Code's List widget uses virtual scrolling
+class MyList {
+  private list: List<Item>;
+  
+  constructor(container: HTMLElement, items: Item[]) {
+    // Only renders visible items
+    this.list = new List(
+      container,
+      {
+        getHeight: () => 22,
+        getTemplateId: () => 'item'
+      },
+      [
+        {
+          templateId: 'item',
+          renderTemplate: (container) => {
+            const label = dom.append(container, dom.$('span'));
+            return { label };
+          },
+          renderElement: (item, index, { label }) => {
+            label.textContent = item.name;
+          },
+          disposeTemplate: () => {}
+        }
+      ]
+    );
+    
+    this.list.splice(0, 0, items);
+  }
+}
+```
+
+## Memory Profiling
+
+### Heap Snapshots
+
+```bash
+# Start VS Code with debugging
+code --inspect-brk=9229
+
+# Open chrome://inspect
+# Take heap snapshots:
+# 1. Before operation
+# 2. After operation
+# 3. Compare to find leaks
+```
+
+### Programmatic Profiling
+
+```typescript
+import * as v8 from 'v8';
+import * as fs from 'fs';
+
+class HeapProfiler {
+  takeSnapshot(filename: string): void {
+    const snapshot = v8.writeHeapSnapshot(filename);
+    console.log(`Heap snapshot written to ${snapshot}`);
+  }
+  
+  async getHeapStatistics(): Promise<v8.HeapSpaceInfo[]> {
+    return v8.getHeapSpaceStatistics();
+  }
+  
+  compareSnapshots(before: string, after: string): void {
+    // Load and compare snapshots
+    const beforeData = JSON.parse(fs.readFileSync(before, 'utf8'));
+    const afterData = JSON.parse(fs.readFileSync(after, 'utf8'));
+    
+    // Analyze differences
+    console.log('Memory growth:', 
+      afterData.total_size - beforeData.total_size
+    );
+  }
+}
+
+// Usage
+const profiler = new HeapProfiler();
+
+profiler.takeSnapshot('before.heapsnapshot');
+await performOperation();
+profiler.takeSnapshot('after.heapsnapshot');
+
+profiler.compareSnapshots('before.heapsnapshot', 'after.heapsnapshot');
+```
+
+### Memory Leak Detection
+
+```typescript
+class LeakDetector {
+  private baseline: Map<string, number> = new Map();
+  
+  setBaseline(): void {
+    if (global.gc) {
+      global.gc(); // Force GC
+    }
+    
+    const usage = process.memoryUsage();
+    this.baseline.set('heapUsed', usage.heapUsed);
+    this.baseline.set('external', usage.external);
+    this.baseline.set('rss', usage.rss);
+  }
+  
+  checkLeak(operation: string): {
+    leaked: boolean;
+    growth: Map<string, number>;
+  } {
+    if (global.gc) {
+      global.gc();
+    }
+    
+    const usage = process.memoryUsage();
+    const growth = new Map<string, number>();
+    
+    for (const [key, baseValue] of this.baseline) {
+      const currentValue = usage[key as keyof NodeJS.MemoryUsage];
+      const delta = currentValue - baseValue;
+      growth.set(key, delta);
+    }
+    
+    // Leak if heap grew by more than 10MB
+    const heapGrowth = growth.get('heapUsed') || 0;
+    const leaked = heapGrowth > 10 * 1024 * 1024;
+    
+    if (leaked) {
+      console.warn(
+        `Potential leak in ${operation}: ` +
+        `${(heapGrowth / 1024 / 1024).toFixed(2)}MB`
+      );
+    }
+    
+    return { leaked, growth };
+  }
+}
+
+// Usage in tests
+const detector = new LeakDetector();
+
+test('operation should not leak memory', async () => {
+  detector.setBaseline();
+  
+  // Perform operation multiple times
+  for (let i = 0; i < 100; i++) {
+    await performOperation();
+  }
+  
+  const result = detector.checkLeak('performOperation');
+  assert.strictEqual(result.leaked, false);
+});
+```
+
+## Memory Limits
+
+### V8 Heap Limits
+
+```bash
+# Increase heap size
+code --max-memory=4096
+
+# Or set via NODE_OPTIONS
+export NODE_OPTIONS="--max-old-space-size=4096"
+```
+
+### Extension Host Memory
+
+```typescript
+// Monitor extension host memory
+class ExtensionHostMonitor {
+  private readonly WARNING_THRESHOLD = 1024 * 1024 * 1024; // 1GB
+  private readonly ERROR_THRESHOLD = 2 * 1024 * 1024 * 1024; // 2GB
+  
+  async checkMemory(): Promise<void> {
+    const usage = process.memoryUsage();
+    
+    if (usage.heapUsed > this.ERROR_THRESHOLD) {
+      // Critical memory usage
+      await this.handleCriticalMemory();
+    } else if (usage.heapUsed > this.WARNING_THRESHOLD) {
+      // High memory usage
+      this.showMemoryWarning(usage.heapUsed);
+    }
+  }
+  
+  private async handleCriticalMemory(): Promise<void> {
+    // Clear caches
+    await this.clearCaches();
+    
+    // Force GC
+    if (global.gc) {
+      global.gc();
+    }
+    
+    // Notify user
+    vscode.window.showWarningMessage(
+      'VS Code is using a lot of memory. ' +
+      'Consider reloading the window.',
+      'Reload Window'
+    ).then(action => {
+      if (action === 'Reload Window') {
+        vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
+    });
+  }
+  
+  private showMemoryWarning(used: number): void {
+    const usedMB = (used / 1024 / 1024).toFixed(0);
+    console.warn(`High memory usage: ${usedMB}MB`);
+  }
+}
+```
+
+## Best Practices
+
+<Warning>
+**Memory Management Checklist:**
+- ✅ Always dispose of event listeners and resources
+- ✅ Use WeakMap/WeakSet for object references
+- ✅ Implement LRU caching for bounded collections
+- ✅ Stream large files instead of loading entirely
+- ✅ Use virtual lists for large datasets
+- ✅ Profile memory usage regularly
+- ✅ Test for memory leaks
+- ✅ Avoid circular references
+- ✅ Clear references when objects are no longer needed
+- ✅ Use object pooling for frequently allocated objects
+</Warning>
+
+## Debugging Memory Issues
+
+```typescript
+// Track object allocation
+class AllocationTracker {
+  private allocations = new Map<string, number>();
+  
+  track(type: string): void {
+    const count = this.allocations.get(type) || 0;
+    this.allocations.set(type, count + 1);
+  }
+  
+  release(type: string): void {
+    const count = this.allocations.get(type) || 0;
+    if (count > 0) {
+      this.allocations.set(type, count - 1);
+    }
+  }
+  
+  report(): void {
+    console.log('Current allocations:');
+    for (const [type, count] of this.allocations) {
+      if (count > 0) {
+        console.log(`  ${type}: ${count}`);
+      }
+    }
+  }
+}
+
+// Global tracker
+const tracker = new AllocationTracker();
+
+class MyResource {
+  constructor() {
+    tracker.track('MyResource');
+  }
+  
+  dispose(): void {
+    tracker.release('MyResource');
+  }
+}
+
+// Check for leaks
+setInterval(() => {
+  tracker.report();
+}, 60000); // Every minute
+```
+
+## Related Files
+
+- `src/vs/base/common/lifecycle.ts` - Disposable utilities
+- `src/vs/base/common/map.ts` - LRU cache implementation
+- `src/vs/base/common/buffer.ts` - Buffer utilities
+- `src/vs/base/browser/ui/list/listWidget.ts` - Virtual list implementation

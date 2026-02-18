@@ -1,0 +1,845 @@
+---
+title: Contribution Model
+description: How VS Code features extend the application through registries and extension points
+---
+
+## Introduction
+
+VS Code uses a **contribution model** where features register themselves with various registries and extension points. This decentralized architecture allows:
+
+- **Modularity**: Features are self-contained and independent
+- **Extensibility**: Easy to add new features without modifying core code
+- **Discoverability**: Centralized registries for finding contributions
+- **Conditional loading**: Features can be enabled/disabled based on context
+
+<Note>
+This same contribution model is used both internally for built-in features and externally for extensions through the Extension API.
+</Note>
+
+## Core Registries
+
+VS Code maintains several global registries where features register their contributions:
+
+```typescript
+// From src/vs/platform/registry/common/platform.ts
+export interface IRegistry {
+  add(id: string, data: any): void;
+  knows(id: string): boolean;
+  as<T>(id: string): T;
+}
+
+export const Registry: IRegistry;
+```
+
+### Accessing Registries
+
+```typescript
+import { Registry } from 'vs/platform/registry/common/platform';
+import { Extensions as ViewExtensions, IViewsRegistry } from 'vs/workbench/common/views';
+
+// Get a registry
+const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+// Register something
+viewsRegistry.registerViews([viewDescriptor], viewContainer);
+```
+
+## Contribution Types
+
+### Commands
+
+Commands are executable actions that can be invoked from various UI elements:
+
+```typescript
+// From src/vs/platform/commands/common/commands.ts
+import { CommandsRegistry } from 'vs/platform/commands/common/commands';
+import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+
+CommandsRegistry.registerCommand({
+  id: 'workbench.action.files.save',
+  handler: async (accessor: ServicesAccessor) => {
+    const editorService = accessor.get(IEditorService);
+    const activeEditor = editorService.activeEditor;
+    
+    if (activeEditor) {
+      await activeEditor.save();
+    }
+  }
+});
+```
+
+<Tabs>
+  <Tab title="Basic Command">
+    ```typescript
+    import { CommandsRegistry } from 'vs/platform/commands/common/commands';
+    
+    CommandsRegistry.registerCommand({
+      id: 'extension.sayHello',
+      handler: (accessor, name: string) => {
+        const notificationService = accessor.get(INotificationService);
+        notificationService.info(`Hello ${name}!`);
+      }
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Command with Services">
+    ```typescript
+    CommandsRegistry.registerCommand({
+      id: 'workbench.action.openFile',
+      handler: async (accessor, uri: URI) => {
+        const editorService = accessor.get(IEditorService);
+        const fileService = accessor.get(IFileService);
+        const logService = accessor.get(ILogService);
+        
+        try {
+          logService.info('Opening file', uri.toString());
+          const exists = await fileService.exists(uri);
+          
+          if (exists) {
+            await editorService.openEditor({ resource: uri });
+          }
+        } catch (error) {
+          logService.error('Failed to open file', error);
+        }
+      }
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Disposable Command">
+    ```typescript
+    import { DisposableStore } from 'vs/base/common/lifecycle';
+    
+    class MyFeature {
+      private readonly disposables = new DisposableStore();
+      
+      constructor() {
+        // Register command with automatic cleanup
+        this.disposables.add(
+          CommandsRegistry.registerCommand({
+            id: 'myFeature.doSomething',
+            handler: (accessor) => this.doSomething(accessor)
+          })
+        );
+      }
+      
+      dispose(): void {
+        this.disposables.dispose();
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Menus
+
+Menus determine where commands appear in the UI:
+
+```typescript
+// From src/vs/platform/actions/common/actions.ts
+import { MenuRegistry, MenuId } from 'vs/platform/actions/common/actions';
+import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
+
+MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+  command: {
+    id: 'workbench.action.files.save',
+    title: 'Save',
+    icon: { id: 'codicon/save' }
+  },
+  group: 'navigation',
+  order: 1,
+  when: ContextKeyExpr.and(
+    ContextKeyExpr.equals('resourceScheme', 'file'),
+    ContextKeyExpr.equals('dirty', true)
+  )
+});
+```
+
+#### Menu Locations
+
+<Accordion title="Common Menu IDs">
+  ```typescript
+  export const enum MenuId {
+    CommandPalette,        // Command palette (Ctrl+Shift+P)
+    EditorTitle,           // Editor title bar
+    EditorTitleContext,    // Editor title context menu
+    EditorContext,         // Editor content context menu
+    ExplorerContext,       // File explorer context menu
+    SCMTitle,              // Source control title
+    SCMResourceContext,    // SCM resource context menu
+    DebugToolBar,          // Debug toolbar
+    ViewTitle,             // View title bar
+    ViewItemContext,       // View item context menu
+    MenubarFileMenu,       // File menu
+    MenubarEditMenu,       // Edit menu
+    MenubarSelectionMenu,  // Selection menu
+    MenubarViewMenu,       // View menu
+    MenubarGoMenu,         // Go menu
+    MenubarTerminalMenu,   // Terminal menu
+    MenubarHelpMenu,       // Help menu
+    // ... many more
+  }
+  ```
+</Accordion>
+
+<Accordion title="Menu Groups">
+  Menu items are organized into groups:
+  
+  - `navigation`: Primary actions (visible as icons)
+  - `1_modification`: Modification actions
+  - `2_workspace`: Workspace actions
+  - `3_compare`: Compare actions
+  - `4_search`: Search actions
+  - `5_cutcopypaste`: Cut/copy/paste actions
+  - Custom groups: `mygroup@1`, `mygroup@2`, etc.
+  
+  Lower numbers appear first. Items within a group are sorted by `order`.
+</Accordion>
+
+### Keybindings
+
+Keybindings map keyboard shortcuts to commands:
+
+```typescript
+// From src/vs/platform/keybinding/common/keybindingsRegistry.ts
+import { KeybindingsRegistry, KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegistry';
+import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
+import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
+
+KeybindingsRegistry.registerKeybindingRule({
+  id: 'workbench.action.files.save',
+  weight: KeybindingWeight.WorkbenchContrib,
+  when: ContextKeyExpr.and(
+    ContextKeyExpr.equals('editorTextFocus', true),
+    ContextKeyExpr.notEquals('editorReadonly', true)
+  ),
+  primary: KeyMod.CtrlCmd | KeyCode.KeyS,
+  mac: { primary: KeyMod.CtrlCmd | KeyCode.KeyS },
+  linux: { primary: KeyMod.CtrlCmd | KeyCode.KeyS },
+  win: { primary: KeyMod.CtrlCmd | KeyCode.KeyS }
+});
+```
+
+<Tabs>
+  <Tab title="Keybinding Weights">
+    ```typescript
+    export const enum KeybindingWeight {
+      EditorCore = 0,                // Core editor (highest priority)
+      EditorContrib = 100,           // Editor contributions
+      WorkbenchContrib = 200,        // Workbench contributions
+      BuiltinExtension = 300,        // Built-in extensions
+      ExternalExtension = 400        // External extensions (lowest)
+    }
+    ```
+    
+    Higher weight = higher priority when multiple keybindings match.
+  </Tab>
+  
+  <Tab title="Key Modifiers">
+    ```typescript
+    import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
+    
+    // Modifiers
+    KeyMod.CtrlCmd   // Ctrl on Windows/Linux, Cmd on Mac
+    KeyMod.Shift     // Shift key
+    KeyMod.Alt       // Alt key
+    KeyMod.WinCtrl   // Windows/Ctrl key
+    
+    // Examples
+    KeyMod.CtrlCmd | KeyCode.KeyS                    // Ctrl+S / Cmd+S
+    KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyP     // Ctrl+Shift+P
+    KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.DownArrow  // Ctrl+Alt+Down
+    
+    // Chords (two key sequences)
+    KeyChord(
+      KeyMod.CtrlCmd | KeyCode.KeyK,
+      KeyMod.CtrlCmd | KeyCode.KeyS
+    )  // Ctrl+K Ctrl+S
+    ```
+  </Tab>
+  
+  <Tab title="Platform-Specific">
+    ```typescript
+    KeybindingsRegistry.registerKeybindingRule({
+      id: 'myCommand',
+      weight: KeybindingWeight.WorkbenchContrib,
+      
+      // Default keybinding (all platforms)
+      primary: KeyMod.CtrlCmd | KeyCode.KeyK,
+      
+      // Platform-specific overrides
+      mac: {
+        primary: KeyMod.CtrlCmd | KeyCode.KeyK,
+        secondary: [KeyMod.Alt | KeyCode.KeyK]
+      },
+      win: {
+        primary: KeyMod.CtrlCmd | KeyCode.KeyK
+      },
+      linux: {
+        primary: KeyMod.CtrlCmd | KeyCode.KeyK
+      }
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### Context Keys
+
+Context keys enable conditional behavior based on application state:
+
+```typescript
+// From src/vs/platform/contextkey/common/contextkey.ts
+import { RawContextKey, ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
+import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
+
+// Define context key
+export const MyFeatureActiveContext = new RawContextKey<boolean>(
+  'myFeatureActive',
+  false,
+  'Whether my feature is currently active'
+);
+
+// Set context key value
+class MyFeature {
+  private readonly _contextKey: IContextKey<boolean>;
+  
+  constructor(
+    @IContextKeyService contextKeyService: IContextKeyService
+  ) {
+    this._contextKey = MyFeatureActiveContext.bindTo(contextKeyService);
+  }
+  
+  activate(): void {
+    this._contextKey.set(true);
+  }
+  
+  deactivate(): void {
+    this._contextKey.set(false);
+  }
+}
+
+// Use in when clause
+MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+  command: { id: 'myFeature.action', title: 'Do Something' },
+  when: MyFeatureActiveContext  // Only show when feature is active
+});
+```
+
+<Tabs>
+  <Tab title="Context Expressions">
+    ```typescript
+    import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
+    
+    // Simple expressions
+    ContextKeyExpr.equals('editorLangId', 'typescript');
+    ContextKeyExpr.notEquals('resourceScheme', 'untitled');
+    ContextKeyExpr.has('textInputFocus');
+    ContextKeyExpr.not('editorReadonly');
+    ContextKeyExpr.regex('resourceExtname', /\.(ts|js)$/);
+    ContextKeyExpr.greater('multiCursorCount', 1);
+    
+    // Logical operators
+    ContextKeyExpr.and(
+      ContextKeyExpr.equals('editorLangId', 'typescript'),
+      ContextKeyExpr.not('editorReadonly')
+    );
+    
+    ContextKeyExpr.or(
+      ContextKeyExpr.equals('editorLangId', 'typescript'),
+      ContextKeyExpr.equals('editorLangId', 'javascript')
+    );
+    
+    // Parse from string
+    ContextKeyExpr.deserialize('editorTextFocus && !editorReadonly');
+    ```
+  </Tab>
+  
+  <Tab title="Built-in Context Keys">
+    Common context keys defined in `src/vs/editor/common/editorContextKeys.ts`:
+    
+    - `editorTextFocus`: Editor has focus
+    - `editorReadonly`: Editor is readonly
+    - `editorLangId`: Current language ID
+    - `editorHasSelection`: Editor has selection
+    - `editorHasMultipleSelections`: Multiple cursors
+    - `resourceScheme`: URI scheme (file, untitled, etc.)
+    - `resourceExtname`: File extension
+    - `isLinux`, `isMac`, `isWindows`: Platform detection
+    - `inDebugMode`: In debug mode
+    - `terminalFocus`: Terminal has focus
+    
+    And many more throughout the codebase.
+  </Tab>
+  
+  <Tab title="Scoped Context Keys">
+    ```typescript
+    class MyView {
+      constructor(
+        @IContextKeyService private readonly contextKeyService: IContextKeyService
+      ) {
+        // Create scoped context service
+        this.scopedContextKeyService = this.contextKeyService.createScoped(
+          this.domNode
+        );
+        
+        // Keys set on scoped service only affect this scope
+        this.viewActiveKey = MyViewActiveContext.bindTo(
+          this.scopedContextKeyService
+        );
+      }
+    }
+    ```
+    
+    Useful for context-specific UI elements like custom views.
+  </Tab>
+</Tabs>
+
+### Views and View Containers
+
+Views are UI panels that appear in the sidebar, panel, or auxiliary bar:
+
+```typescript
+// From src/vs/workbench/contrib/search/browser/search.contribution.ts
+import { Registry } from 'vs/platform/registry/common/platform';
+import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
+import { ViewPaneContainer } from 'vs/workbench/browser/parts/views/viewPaneContainer';
+import {
+  Extensions as ViewExtensions,
+  IViewContainersRegistry,
+  IViewsRegistry,
+  ViewContainerLocation
+} from 'vs/workbench/common/views';
+
+// 1. Register view container
+const viewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry)
+  .registerViewContainer({
+    id: 'workbench.view.search',
+    title: 'Search',
+    icon: searchViewIcon,
+    order: 1,
+    ctorDescriptor: new SyncDescriptor(
+      ViewPaneContainer,
+      ['workbench.view.search', { mergeViewWithContainerWhenSingleView: true }]
+    ),
+    hideIfEmpty: true
+  }, ViewContainerLocation.Sidebar);
+
+// 2. Register view in container
+Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry)
+  .registerViews([{
+    id: 'workbench.view.search',
+    name: 'Search',
+    containerIcon: searchViewIcon,
+    ctorDescriptor: new SyncDescriptor(SearchView),
+    canToggleVisibility: false,
+    canMoveView: true,
+    order: 1,
+    when: ContextKeyExpr.equals('searchViewVisible', true)
+  }], viewContainer);
+```
+
+<Tabs>
+  <Tab title="View Locations">
+    ```typescript
+    export const enum ViewContainerLocation {
+      Sidebar = 0,      // Left sidebar (primary)
+      Panel = 1,        // Bottom panel
+      AuxiliaryBar = 2  // Right sidebar (secondary)
+    }
+    ```
+  </Tab>
+  
+  <Tab title="View Pane">
+    Create a custom view by extending `ViewPane`:
+    
+    ```typescript
+    import { ViewPane } from 'vs/workbench/browser/parts/views/viewPane';
+    import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+    import { IViewDescriptorService } from 'vs/workbench/common/views';
+    import { IThemeService } from 'vs/platform/theme/common/themeService';
+    
+    export class MyView extends ViewPane {
+      static readonly ID = 'workbench.view.myView';
+      
+      constructor(
+        options: IViewPaneOptions,
+        @IInstantiationService instantiationService: IInstantiationService,
+        @IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+        @IThemeService themeService: IThemeService
+      ) {
+        super(options, instantiationService, viewDescriptorService, themeService);
+      }
+      
+      protected override renderBody(container: HTMLElement): void {
+        // Render view content
+        container.innerHTML = '<div>My View Content</div>';
+      }
+      
+      protected override layoutBody(height: number, width: number): void {
+        // Handle layout changes
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Configuration
+
+Configuration schemas define settings:
+
+```typescript
+// From src/vs/platform/configuration/common/configurationRegistry.ts
+import { Registry } from 'vs/platform/registry/common/platform';
+import {
+  Extensions as ConfigurationExtensions,
+  IConfigurationRegistry,
+  ConfigurationScope
+} from 'vs/platform/configuration/common/configurationRegistry';
+
+const configurationRegistry = Registry.as<IConfigurationRegistry>(
+  ConfigurationExtensions.Configuration
+);
+
+configurationRegistry.registerConfiguration({
+  id: 'myFeature',
+  order: 20,
+  title: 'My Feature',
+  type: 'object',
+  properties: {
+    'myFeature.enabled': {
+      type: 'boolean',
+      default: true,
+      description: 'Enable my feature',
+      scope: ConfigurationScope.RESOURCE
+    },
+    'myFeature.maxItems': {
+      type: 'number',
+      default: 100,
+      minimum: 1,
+      maximum: 1000,
+      description: 'Maximum number of items',
+      scope: ConfigurationScope.RESOURCE
+    },
+    'myFeature.mode': {
+      type: 'string',
+      enum: ['simple', 'advanced'],
+      default: 'simple',
+      description: 'Feature mode',
+      enumDescriptions: [
+        'Simple mode for basic usage',
+        'Advanced mode with more options'
+      ],
+      scope: ConfigurationScope.APPLICATION
+    }
+  }
+});
+```
+
+<Accordion title="Configuration Scopes">
+  ```typescript
+  export const enum ConfigurationScope {
+    // User settings only
+    APPLICATION = 1,
+    
+    // User and workspace settings
+    WINDOW = 2,
+    
+    // User, workspace, and folder settings
+    RESOURCE = 3,
+    
+    // Language-specific settings
+    LANGUAGE_OVERRIDABLE = 4,
+    
+    // Machine-specific settings (not synced)
+    MACHINE = 5,
+    
+    // Machine-overridable settings
+    MACHINE_OVERRIDABLE = 6
+  }
+  ```
+</Accordion>
+
+## Complete Feature Example
+
+Here's how a complete feature contribution looks:
+
+```typescript
+// src/vs/workbench/contrib/myFeature/browser/myFeature.contribution.ts
+import { Disposable } from 'vs/base/common/lifecycle';
+import { Registry } from 'vs/platform/registry/common/platform';
+import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
+import { registerSingleton, InstantiationType } from 'vs/platform/instantiation/common/extensions';
+import { CommandsRegistry } from 'vs/platform/commands/common/commands';
+import { MenuRegistry, MenuId } from 'vs/platform/actions/common/actions';
+import { KeybindingsRegistry, KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegistry';
+import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
+import { ContextKeyExpr, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
+import {
+  Extensions as ViewExtensions,
+  IViewsRegistry,
+  ViewContainerLocation
+} from 'vs/workbench/common/views';
+import {
+  Extensions as ConfigurationExtensions,
+  IConfigurationRegistry
+} from 'vs/platform/configuration/common/configurationRegistry';
+import { MyFeatureService, IMyFeatureService } from './myFeatureService';
+import { MyFeatureView } from './myFeatureView';
+import { myFeatureIcon } from './myFeatureIcons';
+
+// 1. Register service
+registerSingleton(
+  IMyFeatureService,
+  MyFeatureService,
+  InstantiationType.Delayed
+);
+
+// 2. Define context keys
+const MyFeatureActiveContext = new RawContextKey<boolean>(
+  'myFeatureActive',
+  false
+);
+
+// 3. Register configuration
+const configurationRegistry = Registry.as<IConfigurationRegistry>(
+  ConfigurationExtensions.Configuration
+);
+
+configurationRegistry.registerConfiguration({
+  id: 'myFeature',
+  title: 'My Feature',
+  properties: {
+    'myFeature.enabled': {
+      type: 'boolean',
+      default: true,
+      description: 'Enable my feature'
+    }
+  }
+});
+
+// 4. Register view container and view
+const viewContainersRegistry = Registry.as<IViewContainersRegistry>(
+  ViewExtensions.ViewContainersRegistry
+);
+
+const viewContainer = viewContainersRegistry.registerViewContainer({
+  id: 'workbench.view.myFeature',
+  title: 'My Feature',
+  icon: myFeatureIcon,
+  order: 10
+}, ViewContainerLocation.Sidebar);
+
+const viewsRegistry = Registry.as<IViewsRegistry>(
+  ViewExtensions.ViewsRegistry
+);
+
+viewsRegistry.registerViews([{
+  id: 'workbench.view.myFeature',
+  name: 'My Feature',
+  containerIcon: myFeatureIcon,
+  ctorDescriptor: new SyncDescriptor(MyFeatureView),
+  canToggleVisibility: true,
+  when: ContextKeyExpr.equals('config.myFeature.enabled', true)
+}], viewContainer);
+
+// 5. Register commands
+CommandsRegistry.registerCommand({
+  id: 'myFeature.doSomething',
+  handler: async (accessor) => {
+    const myFeatureService = accessor.get(IMyFeatureService);
+    await myFeatureService.doSomething();
+  }
+});
+
+CommandsRegistry.registerCommand({
+  id: 'myFeature.toggle',
+  handler: (accessor) => {
+    const myFeatureService = accessor.get(IMyFeatureService);
+    myFeatureService.toggle();
+  }
+});
+
+// 6. Register menus
+MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+  command: {
+    id: 'myFeature.doSomething',
+    title: 'Do Something',
+    icon: myFeatureIcon
+  },
+  group: 'navigation',
+  when: ContextKeyExpr.equals('view', 'workbench.view.myFeature')
+});
+
+MenuRegistry.appendMenuItem(MenuId.CommandPalette, {
+  command: {
+    id: 'myFeature.toggle',
+    title: 'My Feature: Toggle',
+    category: 'My Feature'
+  },
+  when: ContextKeyExpr.equals('config.myFeature.enabled', true)
+});
+
+// 7. Register keybindings
+KeybindingsRegistry.registerKeybindingRule({
+  id: 'myFeature.doSomething',
+  weight: KeybindingWeight.WorkbenchContrib,
+  primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyM,
+  when: MyFeatureActiveContext
+});
+```
+
+## Workbench Contributions
+
+For features that need initialization at startup:
+
+```typescript
+// From src/vs/workbench/common/contributions.ts
+import {
+  registerWorkbenchContribution2,
+  WorkbenchPhase
+} from 'vs/workbench/common/contributions';
+import { Disposable } from 'vs/base/common/lifecycle';
+import { IMyFeatureService } from './myFeatureService';
+
+class MyFeatureWorkbenchContribution extends Disposable {
+  static readonly ID = 'workbench.contrib.myFeature';
+  
+  constructor(
+    @IMyFeatureService private readonly myFeatureService: IMyFeatureService
+  ) {
+    super();
+    
+    // Initialize feature
+    this.initializeFeature();
+    
+    // Register event handlers
+    this._register(
+      this.myFeatureService.onDidChange(() => this.handleChange())
+    );
+  }
+  
+  private initializeFeature(): void {
+    // Startup logic
+  }
+  
+  private handleChange(): void {
+    // Handle changes
+  }
+}
+
+// Register contribution
+registerWorkbenchContribution2(
+  MyFeatureWorkbenchContribution.ID,
+  MyFeatureWorkbenchContribution,
+  WorkbenchPhase.BlockRestore  // When to instantiate
+);
+```
+
+<Accordion title="Workbench Phases">
+  ```typescript
+  export const enum WorkbenchPhase {
+    // Before restore (very early)
+    BlockStartup = 1,
+    
+    // During restore
+    BlockRestore = 2,
+    
+    // After restore (normal)
+    AfterRestored = 3,
+    
+    // Eventually (lazy)
+    Eventually = 4
+  }
+  ```
+  
+  Use later phases when possible to reduce startup time.
+</Accordion>
+
+## Editor Contributions
+
+For editor-specific features:
+
+```typescript
+// From src/vs/editor/browser/editorExtensions.ts
+import {
+  registerEditorContribution,
+  EditorContributionInstantiation
+} from 'vs/editor/browser/editorExtensions';
+import { IEditorContribution } from 'vs/editor/common/editorCommon';
+import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
+import { Disposable } from 'vs/base/common/lifecycle';
+
+class MyEditorContribution extends Disposable implements IEditorContribution {
+  public static readonly ID = 'editor.contrib.myFeature';
+  
+  constructor(
+    private readonly editor: ICodeEditor,
+    @IInstantiationService private readonly instantiationService: IInstantiationService
+  ) {
+    super();
+    
+    // Editor is ready, set up feature
+    this._register(
+      this.editor.onDidChangeModelContent(e => this.handleContentChange(e))
+    );
+  }
+  
+  private handleContentChange(event: IModelContentChangedEvent): void {
+    // React to changes
+  }
+}
+
+registerEditorContribution(
+  MyEditorContribution.ID,
+  MyEditorContribution,
+  EditorContributionInstantiation.AfterFirstRender  // When to load
+);
+```
+
+## Best Practices
+
+<Warning>
+**Important Guidelines**:
+
+1. **Use descriptive IDs**: `workbench.action.myFeature.doSomething`, not `doSomething`
+2. **Category commands**: Use categories in command palette for discoverability
+3. **Context keys**: Make features conditional with context keys
+4. **Lazy loading**: Use `WorkbenchPhase.Eventually` or `InstantiationType.Delayed`
+5. **Dispose properly**: Always dispose registered contributions
+6. **Document settings**: Provide clear descriptions for configuration
+</Warning>
+
+<Accordion title="Contribution Organization">
+  Keep related contributions together:
+  - Single `.contribution.ts` file per feature
+  - Register services, views, commands, menus, keybindings
+  - Import in main entry point
+  - Keep feature self-contained
+</Accordion>
+
+<Accordion title="Performance">
+  - Use `when` clauses to avoid unnecessary work
+  - Delay heavy operations until needed
+  - Use `WorkbenchPhase.Eventually` for non-critical features
+  - Avoid synchronous work in constructors
+</Accordion>
+
+<Accordion title="Extensibility">
+  - Expose service interfaces for other features
+  - Fire events for state changes
+  - Provide clear extension points
+  - Document public API
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Features" icon="code" href="/development/creating-features">
+    Build your first feature
+  </Card>
+  <Card title="Extension API" icon="puzzle-piece" href="/api/extension-api">
+    Learn the Extension API
+  </Card>
+</CardGroup>

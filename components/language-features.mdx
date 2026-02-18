@@ -1,0 +1,699 @@
+---
+title: 'Language Features'
+description: 'Language support - IntelliSense, diagnostics, formatting, and language servers'
+---
+
+## Overview
+
+Language Features provide the rich editing experience in VS Code, including IntelliSense, error checking, code formatting, and more. These features are powered by language servers, built-in providers, and extensions.
+
+**Locations:**
+- `src/vs/editor/common/languages/` - Language feature registries
+- `src/vs/editor/contrib/` - Editor language features
+- `extensions/` - Built-in language extensions
+
+## Architecture
+
+### Language Feature System
+
+```
+┌───────────────────────────────────┐
+│         Editor UI                   │
+├───────────────────────────────────┤
+│   Language Feature Registry       │
+├───────────────────────────────────┤
+│    Language Providers              │
+├───────────────────────────────────┤
+│   Language Server Protocol        │
+├───────────────────────────────────┤
+│    Language Servers                │
+│  (TypeScript, Python, etc.)       │
+└───────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="IntelliSense" icon="sparkles" href="#intellisense">
+    Auto-completion and parameter hints
+  </Card>
+  <Card title="Diagnostics" icon="triangle-exclamation" href="#diagnostics">
+    Errors, warnings, and information
+  </Card>
+  <Card title="Code Actions" icon="wand-magic-sparkles" href="#code-actions">
+    Quick fixes and refactorings
+  </Card>
+  <Card title="Formatting" icon="align-left" href="#formatting">
+    Code formatting and beautification
+  </Card>
+</CardGroup>
+
+## IntelliSense {#intellisense}
+
+**Location:** `src/vs/editor/contrib/suggest/`
+
+### Completion Provider
+
+```typescript
+import * as languages from 'vs/editor/common/languages';
+import { ITextModel } from 'vs/editor/common/model';
+import { Position } from 'vs/editor/common/core/position';
+import { CancellationToken } from 'vs/base/common/cancellation';
+
+// Register completion provider
+languages.CompletionProviderRegistry.register('typescript', {
+    provideCompletionItems(
+        model: ITextModel,
+        position: Position,
+        context: languages.CompletionContext,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.CompletionList> {
+        const word = model.getWordUntilPosition(position);
+        const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn
+        };
+        
+        return {
+            suggestions: [
+                {
+                    label: 'myFunction',
+                    kind: languages.CompletionItemKind.Function,
+                    insertText: 'myFunction($0)',
+                    insertTextRules: languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    detail: '(property) myFunction(): void',
+                    documentation: 'Does something useful',
+                    range,
+                    sortText: '0'
+                },
+                {
+                    label: 'myVariable',
+                    kind: languages.CompletionItemKind.Variable,
+                    insertText: 'myVariable',
+                    detail: 'const myVariable: string',
+                    range
+                }
+            ]
+        };
+    },
+    
+    // Optional: Resolve additional details
+    resolveCompletionItem(
+        item: languages.CompletionItem,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.CompletionItem> {
+        // Load additional documentation or details
+        return item;
+    }
+});
+```
+
+### Completion Item Kinds
+
+<Accordion title="CompletionItemKind Enum">
+
+```typescript
+export enum CompletionItemKind {
+    Method = 0,
+    Function = 1,
+    Constructor = 2,
+    Field = 3,
+    Variable = 4,
+    Class = 5,
+    Struct = 6,
+    Interface = 7,
+    Module = 8,
+    Property = 9,
+    Event = 10,
+    Operator = 11,
+    Unit = 12,
+    Value = 13,
+    Constant = 14,
+    Enum = 15,
+    EnumMember = 16,
+    Keyword = 17,
+    Text = 18,
+    Color = 19,
+    File = 20,
+    Reference = 21,
+    Customcolor = 22,
+    Folder = 23,
+    TypeParameter = 24,
+    User = 25,
+    Issue = 26,
+    Snippet = 27
+}
+```
+
+</Accordion>
+
+### Signature Help
+
+**Location:** `src/vs/editor/contrib/parameterHints/`
+
+```typescript
+languages.SignatureHelpProviderRegistry.register('typescript', {
+    signatureHelpTriggerCharacters: ['(', ','],
+    signatureHelpRetriggerCharacters: [')'],
+    
+    provideSignatureHelp(
+        model: ITextModel,
+        position: Position,
+        token: CancellationToken,
+        context: languages.SignatureHelpContext
+    ): languages.ProviderResult<languages.SignatureHelpResult> {
+        return {
+            value: {
+                activeSignature: 0,
+                activeParameter: 0,
+                signatures: [
+                    {
+                        label: 'myFunction(param1: string, param2: number): void',
+                        documentation: 'My function documentation',
+                        parameters: [
+                            {
+                                label: 'param1: string',
+                                documentation: 'First parameter'
+                            },
+                            {
+                                label: 'param2: number',
+                                documentation: 'Second parameter'
+                            }
+                        ]
+                    }
+                ]
+            },
+            dispose: () => {}
+        };
+    }
+});
+```
+
+## Diagnostics {#diagnostics}
+
+**Location:** `src/vs/editor/common/model/`
+
+### Markers (Diagnostics)
+
+```typescript
+import { IMarkerService, IMarkerData, MarkerSeverity } from 'vs/platform/markers/common/markers';
+import { URI } from 'vs/base/common/uri';
+import { Range } from 'vs/editor/common/core/range';
+
+export class DiagnosticsProvider {
+    constructor(
+        @IMarkerService private readonly markerService: IMarkerService
+    ) {}
+    
+    setDiagnostics(uri: URI, diagnostics: IMarkerData[]): void {
+        this.markerService.changeOne('myExtension', uri, diagnostics);
+    }
+    
+    addError(uri: URI, message: string, line: number, column: number): void {
+        const marker: IMarkerData = {
+            severity: MarkerSeverity.Error,
+            message,
+            startLineNumber: line,
+            startColumn: column,
+            endLineNumber: line,
+            endColumn: column + 1,
+            source: 'myLinter'
+        };
+        
+        const existing = this.markerService.read({ resource: uri });
+        this.markerService.changeOne('myExtension', uri, [...existing, marker]);
+    }
+    
+    clearDiagnostics(uri: URI): void {
+        this.markerService.changeOne('myExtension', uri, []);
+    }
+    
+    getAllDiagnostics(): IMarkerData[] {
+        return this.markerService.read();
+    }
+}
+```
+
+### Marker Severity
+
+```typescript
+export enum MarkerSeverity {
+    Hint = 1,
+    Info = 2,
+    Warning = 4,
+    Error = 8
+}
+```
+
+## Code Actions {#code-actions}
+
+**Location:** `src/vs/editor/contrib/codeAction/`
+
+### Code Action Provider
+
+```typescript
+languages.CodeActionProviderRegistry.register('typescript', {
+    provideCodeActions(
+        model: ITextModel,
+        range: Range | Selection,
+        context: languages.CodeActionContext,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.CodeActionList> {
+        const actions: languages.CodeAction[] = [];
+        
+        // Quick fix for errors
+        if (context.only === languages.CodeActionKind.QuickFix) {
+            for (const marker of context.markers) {
+                if (marker.message.includes('unused')) {
+                    actions.push({
+                        title: 'Remove unused variable',
+                        kind: languages.CodeActionKind.QuickFix,
+                        diagnostics: [marker],
+                        edit: {
+                            edits: [{
+                                resource: model.uri,
+                                versionId: model.getVersionId(),
+                                textEdit: {
+                                    range: marker,
+                                    text: ''
+                                }
+                            }]
+                        }
+                    });
+                }
+            }
+        }
+        
+        // Refactoring actions
+        if (context.only === languages.CodeActionKind.Refactor) {
+            actions.push({
+                title: 'Extract to function',
+                kind: languages.CodeActionKind.Refactor,
+                command: {
+                    id: 'myExtension.extractFunction',
+                    title: 'Extract Function',
+                    arguments: [model.uri, range]
+                }
+            });
+        }
+        
+        return {
+            actions,
+            dispose: () => {}
+        };
+    }
+});
+```
+
+### Code Action Kinds
+
+```typescript
+export class CodeActionKind {
+    static readonly QuickFix = new CodeActionKind('quickfix');
+    static readonly Refactor = new CodeActionKind('refactor');
+    static readonly RefactorExtract = new CodeActionKind('refactor.extract');
+    static readonly RefactorInline = new CodeActionKind('refactor.inline');
+    static readonly RefactorMove = new CodeActionKind('refactor.move');
+    static readonly RefactorRewrite = new CodeActionKind('refactor.rewrite');
+    static readonly Source = new CodeActionKind('source');
+    static readonly SourceOrganizeImports = new CodeActionKind('source.organizeImports');
+    static readonly SourceFixAll = new CodeActionKind('source.fixAll');
+}
+```
+
+## Formatting {#formatting}
+
+**Location:** `src/vs/editor/contrib/format/`
+
+### Document Formatting Provider
+
+```typescript
+languages.DocumentFormattingEditProviderRegistry.register('typescript', {
+    displayName: 'TypeScript Formatter',
+    
+    provideDocumentFormattingEdits(
+        model: ITextModel,
+        options: languages.FormattingOptions,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.TextEdit[]> {
+        // Format entire document
+        const formatted = this.formatCode(model.getValue(), options);
+        
+        return [{
+            range: model.getFullModelRange(),
+            text: formatted
+        }];
+    }
+});
+```
+
+### Range Formatting Provider
+
+```typescript
+languages.DocumentRangeFormattingEditProviderRegistry.register('typescript', {
+    displayName: 'TypeScript Formatter',
+    
+    provideDocumentRangeFormattingEdits(
+        model: ITextModel,
+        range: Range,
+        options: languages.FormattingOptions,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.TextEdit[]> {
+        // Format selection
+        const text = model.getValueInRange(range);
+        const formatted = this.formatCode(text, options);
+        
+        return [{
+            range,
+            text: formatted
+        }];
+    }
+});
+```
+
+### On-Type Formatting Provider
+
+```typescript
+languages.OnTypeFormattingEditProviderRegistry.register('typescript', {
+    autoFormatTriggerCharacters: [';', '}', '\n'],
+    
+    provideOnTypeFormattingEdits(
+        model: ITextModel,
+        position: Position,
+        ch: string,
+        options: languages.FormattingOptions,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.TextEdit[]> {
+        // Format after typing character
+        if (ch === '}') {
+            // Auto-indent closing brace
+            return this.indentBrace(model, position, options);
+        }
+        return [];
+    }
+});
+```
+
+## Navigation Features
+
+### Go to Definition
+
+```typescript
+languages.DefinitionProviderRegistry.register('typescript', {
+    provideDefinition(
+        model: ITextModel,
+        position: Position,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.Definition> {
+        const word = model.getWordAtPosition(position);
+        if (!word) return null;
+        
+        // Find definition
+        const definition = this.findDefinition(word.word);
+        
+        if (definition) {
+            return {
+                uri: definition.uri,
+                range: definition.range
+            };
+        }
+        
+        return null;
+    }
+});
+```
+
+### Find References
+
+```typescript
+languages.ReferenceProviderRegistry.register('typescript', {
+    provideReferences(
+        model: ITextModel,
+        position: Position,
+        context: languages.ReferenceContext,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.Location[]> {
+        const word = model.getWordAtPosition(position);
+        if (!word) return [];
+        
+        // Find all references
+        const references = this.findReferences(word.word);
+        
+        return references.map(ref => ({
+            uri: ref.uri,
+            range: ref.range
+        }));
+    }
+});
+```
+
+### Document Symbols
+
+```typescript
+languages.DocumentSymbolProviderRegistry.register('typescript', {
+    displayName: 'TypeScript',
+    
+    provideDocumentSymbols(
+        model: ITextModel,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.DocumentSymbol[]> {
+        return [
+            {
+                name: 'MyClass',
+                detail: 'class',
+                kind: languages.SymbolKind.Class,
+                range: new Range(1, 1, 20, 1),
+                selectionRange: new Range(1, 7, 1, 14),
+                children: [
+                    {
+                        name: 'constructor',
+                        detail: '()',
+                        kind: languages.SymbolKind.Constructor,
+                        range: new Range(2, 5, 4, 6),
+                        selectionRange: new Range(2, 5, 2, 16)
+                    },
+                    {
+                        name: 'myMethod',
+                        detail: '(): void',
+                        kind: languages.SymbolKind.Method,
+                        range: new Range(6, 5, 10, 6),
+                        selectionRange: new Range(6, 5, 6, 13)
+                    }
+                ]
+            }
+        ];
+    }
+});
+```
+
+## Hover Provider
+
+```typescript
+languages.HoverProviderRegistry.register('typescript', {
+    provideHover(
+        model: ITextModel,
+        position: Position,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.Hover> {
+        const word = model.getWordAtPosition(position);
+        if (!word) return null;
+        
+        return {
+            contents: [
+                { value: `**${word.word}**: string` },
+                { value: 'A variable that stores data' },
+                {
+                    value: '```typescript\nconst myVar: string = "hello";\n```'
+                }
+            ],
+            range: new Range(
+                position.lineNumber,
+                word.startColumn,
+                position.lineNumber,
+                word.endColumn
+            )
+        };
+    }
+});
+```
+
+## Language Server Protocol
+
+**Location:** `extensions/*/client/` and `extensions/*/server/`
+
+### LSP Client
+
+```typescript
+import {
+    LanguageClient,
+    LanguageClientOptions,
+    ServerOptions,
+    TransportKind
+} from 'vscode-languageclient/node';
+
+let client: LanguageClient;
+
+export function activate(context: vscode.ExtensionContext) {
+    // Server options
+    const serverModule = context.asAbsolutePath(
+        path.join('server', 'out', 'server.js')
+    );
+    
+    const serverOptions: ServerOptions = {
+        run: {
+            module: serverModule,
+            transport: TransportKind.ipc
+        },
+        debug: {
+            module: serverModule,
+            transport: TransportKind.ipc,
+            options: { execArgv: ['--nolazy', '--inspect=6009'] }
+        }
+    };
+    
+    // Client options
+    const clientOptions: LanguageClientOptions = {
+        documentSelector: [
+            { scheme: 'file', language: 'typescript' },
+            { scheme: 'file', language: 'javascript' }
+        ],
+        synchronize: {
+            fileEvents: vscode.workspace.createFileSystemWatcher('**/*.{ts,js}')
+        }
+    };
+    
+    // Create and start client
+    client = new LanguageClient(
+        'myLanguageServer',
+        'My Language Server',
+        serverOptions,
+        clientOptions
+    );
+    
+    client.start();
+}
+
+export function deactivate(): Thenable<void> | undefined {
+    if (!client) {
+        return undefined;
+    }
+    return client.stop();
+}
+```
+
+## Rename Provider
+
+```typescript
+languages.RenameProviderRegistry.register('typescript', {
+    provideRenameEdits(
+        model: ITextModel,
+        position: Position,
+        newName: string,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.WorkspaceEdit & languages.Rejection> {
+        const word = model.getWordAtPosition(position);
+        if (!word) return { rejectReason: 'No symbol at position' };
+        
+        // Find all occurrences
+        const edits = this.findAllOccurrences(word.word);
+        
+        return {
+            edits: edits.map(edit => ({
+                resource: edit.uri,
+                versionId: undefined,
+                textEdit: {
+                    range: edit.range,
+                    text: newName
+                }
+            }))
+        };
+    },
+    
+    resolveRenameLocation(
+        model: ITextModel,
+        position: Position,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.RenameLocation & languages.Rejection> {
+        const word = model.getWordAtPosition(position);
+        if (!word) return { rejectReason: 'No symbol at position' };
+        
+        return {
+            range: new Range(
+                position.lineNumber,
+                word.startColumn,
+                position.lineNumber,
+                word.endColumn
+            ),
+            text: word.word
+        };
+    }
+});
+```
+
+## Best Practices
+
+<Warning>
+**Performance:** Language providers are called frequently. Keep them fast and cancel early when token is cancelled.
+</Warning>
+
+<Tip>
+**Progressive Enhancement:** Return basic results quickly, then use resolve methods for expensive operations.
+</Tip>
+
+<Note>
+**Language Servers:** Use LSP for complex language features. It provides better isolation and multi-workspace support.
+</Note>
+
+## Built-in Language Extensions
+
+<CardGroup cols={3}>
+  <Card title="TypeScript" icon="code">
+    **Location:** `extensions/typescript-language-features/`
+    
+    Full TypeScript/JavaScript support
+  </Card>
+  
+  <Card title="JSON" icon="brackets-curly">
+    **Location:** `extensions/json-language-features/`
+    
+    JSON schema validation
+  </Card>
+  
+  <Card title="HTML/CSS" icon="code">
+    **Location:** `extensions/html-language-features/`
+    
+    Web language support
+  </Card>
+  
+  <Card title="Markdown" icon="markdown">
+    **Location:** `extensions/markdown-language-features/`
+    
+    Markdown preview and editing
+  </Card>
+  
+  <Card title="Python" icon="python">
+    Via extension marketplace
+    
+    Pylance language server
+  </Card>
+  
+  <Card title="C/C++" icon="c">
+    Via extension marketplace
+    
+    clangd or Microsoft C++
+  </Card>
+</CardGroup>
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Editor" href="/components/editor">
+    Editor integrations
+  </Card>
+  <Card title="Workbench" href="/components/workbench">
+    Language mode selector
+  </Card>
+  <Card title="Snippets" href="/components/snippets">
+    Code snippet completion
+  </Card>
+</CardGroup>

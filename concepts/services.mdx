@@ -1,0 +1,567 @@
+---
+title: 'Service Architecture'
+description: 'Understanding VS Code dependency injection, services, and the instantiation pattern'
+---
+
+## Overview
+
+VS Code uses a **dependency injection (DI)** system to manage services throughout the application. Services are singleton objects that provide specific functionality and can depend on other services. This architecture promotes modularity, testability, and maintainability.
+
+<Info>
+The service architecture is fundamental to VS Code's design. Almost every feature is implemented as a service or consumes services. Understanding this pattern is essential for contributing to VS Code or building complex extensions.
+</Info>
+
+## What is a Service?
+
+A service is a singleton object that:
+
+- Provides a specific functionality (e.g., file operations, configuration, telemetry)
+- Has a well-defined interface
+- Can depend on other services
+- Is automatically instantiated and injected by the DI container
+- Lives for the lifetime of the application
+
+```typescript
+// Example: A simple service interface
+export interface IMyService {
+  readonly _serviceBrand: undefined; // Marker for type safety
+  
+  doSomething(): void;
+  getValue(): string;
+}
+```
+
+<Tip>
+The `_serviceBrand` property is a TypeScript trick to ensure type safety. It prevents accidentally using a plain object where a service is expected. The actual property doesn't exist at runtime.
+</Tip>
+
+## Service Declaration
+
+### Creating a Service Identifier
+
+Services are identified by a unique token:
+
+```typescript
+// Location: src/vs/platform/instantiation/common/instantiation.ts
+import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
+
+export const IMyService = createDecorator<IMyService>('myService');
+
+export interface IMyService {
+  readonly _serviceBrand: undefined;
+  doSomething(): void;
+}
+```
+
+### Implementing a Service
+
+```typescript
+import { IMyService } from './myService';
+import { ILogService } from 'vs/platform/log/common/log';
+
+export class MyService implements IMyService {
+  declare readonly _serviceBrand: undefined;
+  
+  constructor(
+    @ILogService private readonly logService: ILogService
+  ) {
+    this.logService.info('MyService initialized');
+  }
+  
+  doSomething(): void {
+    this.logService.info('Doing something!');
+  }
+}
+```
+
+### Registering a Service
+
+```typescript
+// Location: src/vs/workbench/workbench.common.main.ts
+import { registerSingleton, InstantiationType } from 'vs/platform/instantiation/common/extensions';
+import { IMyService } from './myService';
+import { MyService } from './myServiceImpl';
+
+registerSingleton(
+  IMyService,
+  MyService,
+  InstantiationType.Delayed // or InstantiationType.Eager
+);
+```
+
+## Dependency Injection
+
+### Constructor Injection
+
+Services receive their dependencies through constructor parameters decorated with service identifiers:
+
+```typescript
+import { IFileService } from 'vs/platform/files/common/files';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { ILogService } from 'vs/platform/log/common/log';
+
+export class MyComplexService {
+  constructor(
+    @IFileService private readonly fileService: IFileService,
+    @IConfigurationService private readonly configService: IConfigurationService,
+    @ILogService private readonly logService: ILogService
+  ) {
+    // All dependencies are automatically injected
+  }
+  
+  async loadFile(): Promise<void> {
+    const config = this.configService.getValue('myConfig');
+    const content = await this.fileService.readFile(/* ... */);
+    this.logService.info('File loaded', content.length);
+  }
+}
+```
+
+<Steps>
+  <Step title="Declare Dependencies">
+    Use `@IServiceName` decorators on constructor parameters
+  </Step>
+  <Step title="DI Container Resolves">
+    The instantiation service resolves all dependencies recursively
+  </Step>
+  <Step title="Service Created">
+    Service is instantiated with all dependencies injected
+  </Step>
+  <Step title="Cached as Singleton">
+    The service instance is cached and reused
+  </Step>
+</Steps>
+
+### Using the Instantiation Service
+
+You can manually instantiate classes with dependencies:
+
+```typescript
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+
+export class MyController {
+  constructor(
+    @IInstantiationService private readonly instantiationService: IInstantiationService
+  ) {}
+  
+  createWidget(): MyWidget {
+    // MyWidget's dependencies are automatically injected
+    return this.instantiationService.createInstance(MyWidget, 'arg1', 'arg2');
+  }
+}
+```
+
+### Accessing Services Functionally
+
+For one-off service access:
+
+```typescript
+import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
+import { INotificationService } from 'vs/platform/notification/common/notification';
+
+export function myFunction(accessor: ServicesAccessor) {
+  const notificationService = accessor.get(INotificationService);
+  notificationService.info('Hello!');
+}
+
+// Invoke the function
+instantiationService.invokeFunction(myFunction);
+```
+
+## Core Platform Services
+
+VS Code includes many built-in services:
+
+<CardGroup cols={2}>
+  <Card title="IInstantiationService" icon="screwdriver-wrench">
+    Creates instances and manages dependency injection
+  </Card>
+  <Card title="ILogService" icon="file-lines">
+    Logging and diagnostics
+  </Card>
+  <Card title="IConfigurationService" icon="sliders">
+    Access user and workspace settings
+  </Card>
+  <Card title="IFileService" icon="folder-open">
+    File system operations
+  </Card>
+  <Card title="ICommandService" icon="terminal">
+    Execute and register commands
+  </Card>
+  <Card title="IContextKeyService" icon="key">
+    Manage context keys for when clauses
+  </Card>
+  <Card title="IStorageService" icon="database">
+    Persist state (global and workspace)
+  </Card>
+  <Card title="INotificationService" icon="bell">
+    Show notifications and messages
+  </Card>
+  <Card title="ITelemetryService" icon="chart-line">
+    Send telemetry events
+  </Card>
+  <Card title="IDialogService" icon="message">
+    Show dialogs and confirmation prompts
+  </Card>
+  <Card title="IThemeService" icon="palette">
+    Manage themes and colors
+  </Card>
+  <Card title="IMarkerService" icon="triangle-exclamation">
+    Manage problems (errors, warnings)
+  </Card>
+</CardGroup>
+
+## Service Examples
+
+### File Service
+
+```typescript
+// Location: src/vs/platform/files/common/files.ts
+import { IFileService } from 'vs/platform/files/common/files';
+import { URI } from 'vs/base/common/uri';
+
+export class MyFileHandler {
+  constructor(
+    @IFileService private readonly fileService: IFileService
+  ) {}
+  
+  async readConfig(): Promise<string> {
+    const uri = URI.file('/path/to/config.json');
+    
+    // Check if file exists
+    const exists = await this.fileService.exists(uri);
+    if (!exists) {
+      throw new Error('Config file not found');
+    }
+    
+    // Read file content
+    const content = await this.fileService.readFile(uri);
+    return content.value.toString();
+  }
+  
+  async saveConfig(data: string): Promise<void> {
+    const uri = URI.file('/path/to/config.json');
+    await this.fileService.writeFile(uri, Buffer.from(data));
+  }
+  
+  async watchConfig(callback: () => void): void {
+    const uri = URI.file('/path/to/config.json');
+    this.fileService.watch(uri);
+    
+    this.fileService.onDidFilesChange(event => {
+      if (event.contains(uri)) {
+        callback();
+      }
+    });
+  }
+}
+```
+
+### Configuration Service
+
+```typescript
+// Location: src/vs/platform/configuration/common/configuration.ts
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+
+export class MyConfigurableFeature {
+  constructor(
+    @IConfigurationService private readonly configService: IConfigurationService
+  ) {
+    // Listen for configuration changes
+    this.configService.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('myFeature.enabled')) {
+        this.updateFeatureState();
+      }
+    });
+  }
+  
+  private updateFeatureState(): void {
+    const enabled = this.configService.getValue<boolean>('myFeature.enabled');
+    const timeout = this.configService.getValue<number>('myFeature.timeout');
+    
+    console.log(`Feature enabled: ${enabled}, timeout: ${timeout}ms`);
+  }
+  
+  async updateConfiguration(): Promise<void> {
+    // Update user configuration
+    await this.configService.updateValue(
+      'myFeature.enabled',
+      true,
+      ConfigurationTarget.USER
+    );
+  }
+}
+```
+
+### Editor Service
+
+```typescript
+// Location: src/vs/workbench/services/editor/common/editorService.ts
+import { IEditorService, ACTIVE_GROUP } from 'vs/workbench/services/editor/common/editorService';
+import { URI } from 'vs/base/common/uri';
+
+export class MyEditorController {
+  constructor(
+    @IEditorService private readonly editorService: IEditorService
+  ) {}
+  
+  async openFile(path: string): Promise<void> {
+    const uri = URI.file(path);
+    
+    await this.editorService.openEditor({
+      resource: uri,
+      options: {
+        pinned: true,
+        preserveFocus: false,
+        selection: { startLineNumber: 10, startColumn: 1 }
+      }
+    }, ACTIVE_GROUP);
+  }
+  
+  getActiveEditor() {
+    return this.editorService.activeTextEditorControl;
+  }
+  
+  closeAllEditors(): Promise<void> {
+    return this.editorService.closeEditors({ preserveFocus: true });
+  }
+}
+```
+
+### Command Service
+
+```typescript
+// Location: src/vs/platform/commands/common/commands.ts
+import { ICommandService } from 'vs/platform/commands/common/commands';
+import { CommandsRegistry } from 'vs/platform/commands/common/commands';
+
+export class MyCommandProvider {
+  constructor(
+    @ICommandService private readonly commandService: ICommandService
+  ) {
+    this.registerCommands();
+  }
+  
+  private registerCommands(): void {
+    CommandsRegistry.registerCommand('myExtension.doSomething', (accessor, ...args) => {
+      const logService = accessor.get(ILogService);
+      logService.info('Command executed with args:', args);
+      return 'success';
+    });
+  }
+  
+  async executeCommand(): Promise<void> {
+    const result = await this.commandService.executeCommand(
+      'myExtension.doSomething',
+      'arg1',
+      'arg2'
+    );
+    console.log('Command result:', result);
+  }
+}
+```
+
+## Workbench Services
+
+Workbench-specific services (located in `src/vs/workbench/services/`):
+
+### Editor Service
+
+```typescript
+export interface IEditorService {
+  // Open editors
+  openEditor(editor: IEditorInput, group?: PreferredGroup): Promise<IEditorPane>;
+  openEditors(editors: IEditorInputWithOptions[], group?: PreferredGroup): Promise<IEditorPane[]>;
+  
+  // Active editor
+  readonly activeEditor: IEditorInput | undefined;
+  readonly activeEditorPane: IEditorPane | undefined;
+  readonly activeTextEditorControl: ICodeEditor | IDiffEditor | undefined;
+  
+  // Close editors
+  closeEditor(editor: IEditorIdentifier): Promise<void>;
+  closeEditors(editors: IEditorIdentifier[]): Promise<void>;
+  
+  // Events
+  onDidActiveEditorChange: Event<void>;
+  onDidVisibleEditorsChange: Event<void>;
+}
+```
+
+### Views Service
+
+```typescript
+export interface IViewsService {
+  // Open/close views
+  openView<T extends IView>(id: string, focus?: boolean): Promise<T | null>;
+  closeView(id: string): void;
+  
+  // Get views
+  getActiveViewWithId<T extends IView>(id: string): T | null;
+  getViewWithId<T extends IView>(id: string): T | null;
+  
+  // View state
+  isViewVisible(id: string): boolean;
+  getViewProgressIndicator(id: string): IProgressIndicator | undefined;
+}
+```
+
+## Service Initialization Timing
+
+### Eager vs Delayed
+
+```typescript
+// Eager: Instantiated immediately at startup
+registerSingleton(
+  ICriticalService,
+  CriticalService,
+  InstantiationType.Eager
+);
+
+// Delayed: Instantiated on first access
+registerSingleton(
+  IOptionalService,
+  OptionalService,
+  InstantiationType.Delayed
+);
+```
+
+<Info>
+Prefer `InstantiationType.Delayed` for services that aren't needed immediately. This improves startup performance by deferring service creation until actually needed.
+</Info>
+
+## Service Scopes
+
+### Child Instantiation Services
+
+Create scoped service containers:
+
+```typescript
+const childInstantiationService = this.instantiationService.createChild(
+  new ServiceCollection(
+    [ISpecialService, new SpecialServiceImpl()]
+  )
+);
+
+// Uses parent's services, but can override specific ones
+const widget = childInstantiationService.createInstance(MyWidget);
+```
+
+Use cases:
+- Extension hosts (isolated service instances)
+- Auxiliary windows (separate workbench instances)
+- Test environments (mock services)
+
+## Testing with Services
+
+### Mocking Services
+
+```typescript
+import { mock } from 'vs/base/test/common/mock';
+
+class MockLogService implements ILogService {
+  declare readonly _serviceBrand: undefined;
+  
+  info(message: string): void {
+    console.log('[Mock]', message);
+  }
+  
+  error(message: string): void {
+    console.error('[Mock]', message);
+  }
+  
+  // ... implement other methods
+}
+
+// In tests
+const instantiationService = new TestInstantiationService();
+instantiationService.stub(ILogService, new MockLogService());
+
+const myService = instantiationService.createInstance(MyService);
+```
+
+## Service Location in Codebase
+
+### Platform Services
+
+```
+src/vs/platform/
+├── files/              # File system operations
+├── configuration/      # Settings and configuration
+├── log/                # Logging
+├── commands/           # Command registry
+├── storage/            # State persistence
+├── notification/       # Notifications
+├── contextkey/         # Context keys
+├── telemetry/          # Telemetry
+└── instantiation/      # DI container
+```
+
+### Workbench Services
+
+```
+src/vs/workbench/services/
+├── editor/             # Editor management
+├── views/              # View containers and views
+├── extensions/         # Extension management
+├── preferences/        # Settings editor
+├── themes/             # Theme management
+├── keybinding/         # Keyboard shortcuts
+├── lifecycle/          # Application lifecycle
+└── layout/             # Workbench layout
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Interfaces">
+    Always define service interfaces, never depend on concrete implementations
+  </Step>
+  
+  <Step title="Single Responsibility">
+    Each service should have a clear, focused purpose
+  </Step>
+  
+  <Step title="Prefer Delayed">
+    Use `InstantiationType.Delayed` unless the service must be initialized immediately
+  </Step>
+  
+  <Step title="Avoid Circular Dependencies">
+    Design services to prevent circular dependency chains
+  </Step>
+  
+  <Step title="Use Events">
+    Services should emit events rather than calling back into dependents
+  </Step>
+</Steps>
+
+<Tip>
+When you see a circular dependency error, it often means services need to be refactored. Consider extracting shared functionality into a third service, or using events instead of direct method calls.
+</Tip>
+
+## Key Implementation Files
+
+| File | Description |
+|------|-------------|
+| `platform/instantiation/common/instantiation.ts` | Core DI interfaces |
+| `platform/instantiation/common/instantiationService.ts` | DI container implementation |
+| `platform/instantiation/common/extensions.ts` | Service registration utilities |
+| `platform/instantiation/common/serviceCollection.ts` | Service collection |
+| `platform/instantiation/common/descriptors.ts` | Service descriptors |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Workbench" href="/concepts/workbench" icon="window">
+    Learn about the workbench architecture
+  </Card>
+  <Card title="Dependency Injection" href="/architecture/dependency-injection" icon="diagram-project">
+    Deep dive into the DI system
+  </Card>
+  <Card title="Platform Layer" href="/components/platform" icon="layer-group">
+    Explore platform services
+  </Card>
+  <Card title="Extensions" href="/concepts/extensions" icon="puzzle-piece">
+    Build extensions using services
+  </Card>
+</CardGroup>

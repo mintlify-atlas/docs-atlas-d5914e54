@@ -1,0 +1,703 @@
+---
+title: 'Search'
+description: 'File and text search - find in files, search view, and search results'
+---
+
+## Overview
+
+The Search component (`src/vs/workbench/contrib/search/`) provides VS Code's powerful file and text search capabilities, including the Search view, result navigation, and search/replace functionality.
+
+**Location:** `src/vs/workbench/contrib/search/`
+
+## Architecture
+
+### Search System
+
+```
+┌───────────────────────────────────┐
+│         Search View                 │
+├───────────────────────────────────┤
+│      Search Service                 │
+├───────────────────────────────────┤
+│    Query Builder                   │
+├───────────────────────────────────┤
+│    Search Engines                  │
+│  (ripgrep, file walk, etc.)       │
+└───────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="Search Service" icon="magnifying-glass" href="#search-service">
+    Core search functionality
+  </Card>
+  <Card title="Search View" icon="sidebar" href="#search-view">
+    Search UI and results tree
+  </Card>
+  <Card title="Query Builder" icon="wrench" href="#query-builder">
+    Build and configure search queries
+  </Card>
+  <Card title="Replace" icon="repeat" href="#replace">
+    Find and replace operations
+  </Card>
+</CardGroup>
+
+## Search Service {#search-service}
+
+**Location:** `src/vs/workbench/services/search/common/search.ts`
+
+### ISearchService Interface
+
+```typescript
+export interface ISearchService {
+    readonly _serviceBrand: undefined;
+    
+    // Text search
+    textSearch(
+        query: ITextQuery,
+        token?: CancellationToken,
+        onProgress?: (result: ISearchProgressItem) => void
+    ): Promise<ISearchComplete>;
+    
+    // File search
+    fileSearch(
+        query: IFileQuery,
+        token?: CancellationToken
+    ): Promise<ISearchComplete>;
+    
+    // Clear cache
+    clearCache(cacheKey: string): Promise<void>;
+}
+```
+
+### Search Queries
+
+```typescript
+import { ISearchService, ITextQuery, QueryType } from 'vs/workbench/services/search/common/search';
+import { URI } from 'vs/base/common/uri';
+
+export class SearchManager {
+    constructor(
+        @ISearchService private readonly searchService: ISearchService
+    ) {}
+    
+    async searchText(pattern: string, folder: URI): Promise<void> {
+        const query: ITextQuery = {
+            type: QueryType.Text,
+            contentPattern: {
+                pattern,
+                isRegExp: false,
+                isCaseSensitive: false,
+                isWordMatch: false
+            },
+            folderQueries: [
+                {
+                    folder,
+                    excludePattern: {
+                        '**/node_modules': true,
+                        '**/dist': true
+                    },
+                    includePattern: {
+                        '**/*.ts': true,
+                        '**/*.js': true
+                    }
+                }
+            ],
+            maxResults: 10000
+        };
+        
+        const result = await this.searchService.textSearch(
+            query,
+            undefined,
+            (progress) => {
+                console.log('Search progress:', progress);
+            }
+        );
+        
+        console.log('Search complete:', result.results.length, 'results');
+        console.log('Stats:', result.stats);
+    }
+    
+    async searchFiles(pattern: string, folder: URI): Promise<void> {
+        const query: IFileQuery = {
+            type: QueryType.File,
+            filePattern: pattern,
+            folderQueries: [{ folder }],
+            maxResults: 500
+        };
+        
+        const result = await this.searchService.fileSearch(query);
+        
+        for (const match of result.results) {
+            console.log('File:', match.resource.fsPath);
+        }
+    }
+}
+```
+
+### Search Patterns
+
+```typescript
+export interface IPatternInfo {
+    pattern: string;              // Search pattern
+    isRegExp?: boolean;          // Treat as regex
+    isCaseSensitive?: boolean;   // Case sensitive
+    isWordMatch?: boolean;       // Match whole words
+    isMultiline?: boolean;       // Multiline regex
+}
+
+// Examples
+const simpleSearch: IPatternInfo = {
+    pattern: 'TODO',
+    isCaseSensitive: false
+};
+
+const regexSearch: IPatternInfo = {
+    pattern: 'function\\s+(\\w+)',
+    isRegExp: true
+};
+
+const wordMatch: IPatternInfo = {
+    pattern: 'test',
+    isWordMatch: true  // Matches 'test' but not 'testing'
+};
+```
+
+## Search View {#search-view}
+
+**Location:** `src/vs/workbench/contrib/search/browser/searchView.ts:88`
+
+### SearchView Class
+
+```typescript
+export class SearchView extends ViewPane {
+    private searchWidget: SearchWidget;
+    private tree: WorkbenchCompressibleAsyncDataTree<ISearchResult, RenderableMatch>;
+    
+    constructor(
+        options: IViewPaneOptions,
+        @ISearchService private readonly searchService: ISearchService,
+        // ... other services
+    ) {
+        super(options, /* ... */);
+    }
+    
+    // Trigger search
+    triggerSearch(): Promise<void> {
+        const query = this.searchWidget.searchInput.getValue();
+        return this.onQueryChanged(query);
+    }
+}
+```
+
+### Search Results Tree
+
+```typescript
+// Search results hierarchy:
+// 
+// SearchResult (Root)
+//   ├─ FolderMatch (Workspace folder)
+//   │   ├─ FileMatch (File with matches)
+//   │   │   ├─ Match (Line match)
+//   │   │   └─ Match (Line match)
+//   │   └─ FileMatch
+//   └─ FolderMatch
+
+export interface ISearchResult {
+    readonly folderMatches: ISearchTreeFolderMatch[];
+    readonly count: number;
+}
+
+export interface ISearchTreeFileMatch {
+    readonly resource: URI;
+    readonly matches: ISearchTreeMatch[];
+    readonly count: number;
+}
+
+export interface ISearchTreeMatch {
+    readonly range: Range;
+    readonly text: string;
+    readonly lineNumber: number;
+}
+```
+
+## Query Builder {#query-builder}
+
+**Location:** `src/vs/workbench/services/search/common/queryBuilder.ts`
+
+### QueryBuilder Class
+
+```typescript
+import { QueryBuilder } from 'vs/workbench/services/search/common/queryBuilder';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+
+export class SearchQueryManager {
+    private queryBuilder: QueryBuilder;
+    
+    constructor(
+        @IConfigurationService configurationService: IConfigurationService,
+        @IWorkspaceContextService workspaceContextService: IWorkspaceContextService
+    ) {
+        this.queryBuilder = this.instantiationService.createInstance(QueryBuilder);
+    }
+    
+    buildTextQuery(options: ITextQueryBuilderOptions): ITextQuery {
+        return this.queryBuilder.text(
+            {
+                pattern: options.pattern,
+                isRegExp: options.isRegExp,
+                isCaseSensitive: options.isCaseSensitive,
+                isWordMatch: options.isWordMatch
+            },
+            options.folderResources || [],
+            {
+                excludePattern: options.excludePattern,
+                includePattern: options.includePattern,
+                maxResults: options.maxResults,
+                previewOptions: options.previewOptions
+            }
+        );
+    }
+}
+```
+
+### Query Options
+
+<Accordion title="Search Query Options">
+
+```typescript
+interface ITextQueryBuilderOptions {
+    // Pattern
+    pattern: string;
+    isRegExp?: boolean;
+    isCaseSensitive?: boolean;
+    isWordMatch?: boolean;
+    
+    // Scope
+    folderResources?: URI[];
+    includePattern?: string | string[];
+    excludePattern?: string | string[];
+    
+    // Limits
+    maxResults?: number;
+    maxFileSize?: number;
+    
+    // Preview
+    previewOptions?: {
+        matchLines: number;      // Lines to show around match
+        charsPerLine: number;    // Characters per line
+    };
+    
+    // Performance
+    useRipgrep?: boolean;
+    disregardIgnoreFiles?: boolean;
+    disregardGlobalIgnoreFiles?: boolean;
+    disregardExcludeSettings?: boolean;
+    
+    // Follow symlinks
+    followSymlinks?: boolean;
+}
+```
+
+</Accordion>
+
+## Replace Service {#replace}
+
+**Location:** `src/vs/workbench/contrib/search/browser/replace.ts`
+
+### IReplaceService Interface
+
+```typescript
+export interface IReplaceService {
+    readonly _serviceBrand: undefined;
+    
+    replace(match: Match): Promise<void>;
+    replace(files: FileMatch[]): Promise<void>;
+    
+    openReplacePreview(
+        element: FileMatchOrMatch,
+        preserveFocus?: boolean,
+        sideBySide?: boolean,
+        pinned?: boolean
+    ): Promise<void>;
+    
+    updateReplaceString(replaceString: string): void;
+}
+```
+
+### Replace Operations
+
+```typescript
+import { IReplaceService } from 'vs/workbench/contrib/search/browser/replace';
+import { ISearchTreeFileMatch, ISearchTreeMatch } from 'vs/workbench/contrib/search/browser/searchTreeModel/searchTreeCommon';
+
+export class ReplaceManager {
+    constructor(
+        @IReplaceService private readonly replaceService: IReplaceService
+    ) {}
+    
+    async replaceSingleMatch(match: ISearchTreeMatch): Promise<void> {
+        await this.replaceService.replace(match);
+    }
+    
+    async replaceAllInFile(fileMatch: ISearchTreeFileMatch): Promise<void> {
+        await this.replaceService.replace([fileMatch]);
+    }
+    
+    async previewReplace(
+        match: ISearchTreeMatch,
+        sideBySide: boolean = false
+    ): Promise<void> {
+        await this.replaceService.openReplacePreview(
+            match,
+            false,
+            sideBySide,
+            true
+        );
+    }
+    
+    setReplaceText(text: string): void {
+        this.replaceService.updateReplaceString(text);
+    }
+}
+```
+
+## Search Widget
+
+**Location:** `src/vs/workbench/contrib/search/browser/searchWidget.ts`
+
+### SearchWidget Components
+
+```typescript
+export class SearchWidget extends Widget {
+    // Search input box
+    public searchInput: SearchInput;
+    
+    // Replace input box
+    public replaceInput: ReplaceInput;
+    
+    // Toggle buttons
+    private toggles: {
+        regex: RegexToggle;
+        caseSensitive: CaseSensitiveToggle;
+        wholeWord: WholeWordToggle;
+    };
+    
+    // Include/exclude patterns
+    public includePattern: IncludePatternInputWidget;
+    public excludePattern: ExcludePatternInputWidget;
+}
+```
+
+## Search Actions
+
+**Location:** `src/vs/workbench/contrib/search/browser/searchActions*.ts`
+
+### Common Search Actions
+
+```typescript
+import { registerAction2, Action2 } from 'vs/platform/actions/common/actions';
+import { IViewsService } from 'vs/workbench/services/views/common/viewsService';
+import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
+
+class OpenSearchAction extends Action2 {
+    constructor() {
+        super({
+            id: 'workbench.action.findInFiles',
+            title: { value: 'Find in Files', original: 'Find in Files' },
+            category: { value: 'Search', original: 'Search' },
+            f1: true,
+            keybinding: {
+                weight: 200,
+                primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyF
+            }
+        });
+    }
+    
+    async run(accessor: ServicesAccessor): Promise<void> {
+        const viewsService = accessor.get(IViewsService);
+        await viewsService.openView('workbench.view.search', true);
+    }
+}
+
+registerAction2(OpenSearchAction);
+```
+
+### Search Command IDs
+
+```typescript
+const SEARCH_COMMANDS = {
+    FIND_IN_FILES: 'workbench.action.findInFiles',
+    REPLACE_IN_FILES: 'workbench.action.replaceInFiles',
+    TOGGLE_SEARCH_VIEW: 'workbench.view.search',
+    FOCUS_NEXT_RESULT: 'search.action.focusNextSearchResult',
+    FOCUS_PREVIOUS_RESULT: 'search.action.focusPreviousSearchResult',
+    REPLACE: 'search.action.replace',
+    REPLACE_ALL: 'search.action.replaceAll',
+    CANCEL_SEARCH: 'search.action.cancel',
+    REFRESH_SEARCH: 'search.action.refreshSearchResults',
+    CLEAR_SEARCH: 'search.action.clearSearchResults'
+};
+```
+
+## Search Configuration
+
+### Search Settings
+
+```json
+{
+    // Search
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/dist": true,
+        "**/.git": true
+    },
+    "search.useIgnoreFiles": true,
+    "search.useGlobalIgnoreFiles": true,
+    "search.followSymlinks": true,
+    "search.smartCase": false,
+    "search.globalFindClipboard": false,
+    
+    // Results
+    "search.maxResults": 20000,
+    "search.collapseResults": "auto",
+    "search.showLineNumbers": false,
+    "search.sortOrder": "default",
+    
+    // Performance
+    "search.maintainFileSearchCache": false,
+    "search.searchOnType": true,
+    "search.searchOnTypeDebouncePeriod": 300,
+    
+    // Replace
+    "search.mode": "view",  // 'view' or 'reuseEditor'
+    "search.useReplacePreview": true
+}
+```
+
+## Search History
+
+**Location:** `src/vs/workbench/contrib/search/common/searchHistoryService.ts`
+
+### ISearchHistoryService
+
+```typescript
+export interface ISearchHistoryService {
+    readonly _serviceBrand: undefined;
+    
+    // History values
+    readonly onDidClearHistory: Event<void>;
+    
+    // Save to history
+    onSearchTriggered(query: string): void;
+    
+    // Get history
+    getSearchHistory(): string[];
+    
+    // Clear history
+    clearHistory(): void;
+}
+```
+
+## Search in Editor
+
+**Location:** `src/vs/editor/contrib/find/`
+
+The editor also has its own find widget:
+
+```typescript
+// Editor find widget commands
+const EDITOR_FIND_COMMANDS = {
+    FIND: 'actions.find',
+    REPLACE: 'editor.action.startFindReplaceAction',
+    FIND_NEXT: 'editor.action.nextMatchFindAction',
+    FIND_PREVIOUS: 'editor.action.previousMatchFindAction',
+    REPLACE_ONE: 'editor.action.replaceOne',
+    REPLACE_ALL: 'editor.action.replaceAll'
+};
+```
+
+## Advanced Search Features
+
+### Include/Exclude Patterns
+
+```typescript
+// Glob patterns
+const query: ITextQuery = {
+    // ...
+    includePattern: {
+        '**/*.{ts,tsx}': true,        // TypeScript files
+        'src/**/*.js': true,           // JS in src
+        '!**/*.test.js': false         // Exclude tests
+    },
+    excludePattern: {
+        '**/node_modules/**': true,
+        '**/dist/**': true,
+        '**/.git/**': true
+    }
+};
+```
+
+### Search Context
+
+```typescript
+// Search with context lines
+const query: ITextQuery = {
+    // ...
+    previewOptions: {
+        matchLines: 3,        // Show 3 lines around match
+        charsPerLine: 150     // Max characters per line
+    }
+};
+```
+
+### File Encoding
+
+```typescript
+// Search with specific encoding
+const query: ITextQuery = {
+    // ...
+    fileEncoding: 'utf8',  // or 'utf16le', 'ascii', etc.
+};
+```
+
+## Search Engines
+
+### Ripgrep Integration
+
+**Location:** `src/vs/workbench/services/search/node/ripgrepSearchProvider.ts`
+
+```typescript
+// VS Code uses ripgrep for text search
+// - Fast regex and literal string search
+// - Respects .gitignore
+// - Multi-threaded
+// - Memory efficient
+```
+
+### File Walk Search
+
+```typescript
+// Fallback for file search when ripgrep unavailable
+// Uses native file system walking
+```
+
+## Search Model
+
+**Location:** `src/vs/workbench/contrib/search/browser/searchTreeModel/`
+
+### Search Result Classes
+
+```typescript
+export class SearchResult implements ISearchResult {
+    private _folderMatches: Map<URI, FolderMatch> = new Map();
+    
+    get folderMatches(): ISearchTreeFolderMatch[] {
+        return Array.from(this._folderMatches.values());
+    }
+    
+    get count(): number {
+        return this.folderMatches.reduce((sum, fm) => sum + fm.count, 0);
+    }
+    
+    add(raw: IFileMatch, searchInstanceID: string): void {
+        // Add file match to appropriate folder
+    }
+    
+    clear(): void {
+        this._folderMatches.clear();
+    }
+}
+
+export class FileMatch implements ISearchTreeFileMatch {
+    private _matches: Map<string, Match> = new Map();
+    
+    constructor(
+        public readonly resource: URI,
+        private readonly parent: FolderMatch
+    ) {}
+    
+    get matches(): Match[] {
+        return Array.from(this._matches.values());
+    }
+    
+    get count(): number {
+        return this._matches.size;
+    }
+}
+
+export class Match implements ISearchTreeMatch {
+    constructor(
+        private readonly _range: Range,
+        private readonly _text: string,
+        private readonly parent: FileMatch
+    ) {}
+    
+    get range(): Range {
+        return this._range;
+    }
+    
+    get text(): string {
+        return this._text;
+    }
+    
+    get lineNumber(): number {
+        return this._range.startLineNumber;
+    }
+}
+```
+
+## Best Practices
+
+<Warning>
+**Performance:** Use exclude patterns to skip large directories like `node_modules`. This significantly improves search speed.
+</Warning>
+
+<Tip>
+**Regex Search:** When using regex, test patterns on a small scope first. Complex regex can be slow on large codebases.
+</Tip>
+
+<Note>
+**Search Limits:** The default `maxResults` prevents overwhelming results. Increase it carefully for large searches.
+</Note>
+
+## Extension Integration
+
+### Search Provider API
+
+```typescript
+// Extension API for custom search providers
+import * as vscode from 'vscode';
+
+class MySearchProvider implements vscode.TextSearchProvider {
+    provideTextSearchResults(
+        query: vscode.TextSearchQuery,
+        options: vscode.TextSearchOptions,
+        progress: vscode.Progress<vscode.TextSearchResult>,
+        token: vscode.CancellationToken
+    ): vscode.ProviderResult<vscode.TextSearchComplete> {
+        // Implement custom search
+        return { limitHit: false };
+    }
+}
+
+// Register provider
+vscode.workspace.registerTextSearchProvider(
+    'myScheme',
+    new MySearchProvider()
+);
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Workbench" href="/components/workbench">
+    Search view integration
+  </Card>
+  <Card title="Editor" href="/components/editor">
+    Find in editor widget
+  </Card>
+  <Card title="Files" href="/components/workbench">
+    File explorer integration
+  </Card>
+</CardGroup>

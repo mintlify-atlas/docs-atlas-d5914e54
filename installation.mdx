@@ -1,0 +1,675 @@
+---
+title: "Installation Guide"
+description: "Complete installation instructions for building VS Code from source on Windows, macOS, and Linux"
+---
+
+## Overview
+
+This guide covers installing prerequisites and building Visual Studio Code from source on all supported platforms. For end-user installation of the pre-built VS Code application, visit [code.visualstudio.com](https://code.visualstudio.com/download).
+
+<Note>
+  Building from source is primarily for contributors, extension developers, and those who want to understand VS Code's internals. Most users should download the pre-built binaries.
+</Note>
+
+## Platform-Specific Instructions
+
+Choose your operating system:
+
+<Tabs>
+  <Tab title="Windows">
+    
+### Windows Installation
+
+<Steps>
+  <Step title="Install Node.js and npm">
+    Download and install Node.js 20.x or later from [nodejs.org](https://nodejs.org).
+    
+    ```powershell
+    # Verify installation
+    node --version  # Should output v20.x.x or higher
+    npm --version   # Should output 10.x.x or higher
+    ```
+  </Step>
+  
+  <Step title="Install Git">
+    Download and install Git from [git-scm.com](https://git-scm.com).
+    
+    ```powershell
+    # Verify installation
+    git --version  # Should output 2.x.x or higher
+    ```
+    
+    <Tip>
+      During installation, select **"Git from the command line and also from 3rd-party software"** to ensure Git is in your PATH.
+    </Tip>
+  </Step>
+  
+  <Step title="Install Visual Studio 2022">
+    Install **Visual Studio 2022** (Community, Professional, or Enterprise) with:
+    - **"Desktop development with C++"** workload
+    - Windows 10 SDK (10.0.17763.0 or higher)
+    
+    Download from [visualstudio.microsoft.com](https://visualstudio.microsoft.com/downloads/)
+    
+    <Note>
+      Visual Studio Code is different from Visual Studio. You need Visual Studio (the IDE) to compile native Node.js modules.
+    </Note>
+  </Step>
+  
+  <Step title="Install Python">
+    Download and install Python 3.11 or later from [python.org](https://www.python.org/downloads/).
+    
+    ```powershell
+    # Verify installation
+    python --version  # Should output 3.11.x or higher
+    ```
+    
+    <Warning>
+      Check **"Add Python to PATH"** during installation.
+    </Warning>
+  </Step>
+  
+  <Step title="Clone and Build">
+    Open PowerShell or Command Prompt:
+    
+    ```powershell
+    # Clone repository
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode
+    
+    # Initialize submodules
+    git submodule update --init --recursive
+    
+    # Install dependencies (15-20 minutes)
+    npm install
+    
+    # Run VS Code
+    .\scripts\code.bat
+    ```
+  </Step>
+</Steps>
+
+### Windows-Specific Build Options
+
+<CodeGroup>
+
+```powershell Build for Windows
+# Standard build
+npm run compile
+
+# Build with gulp
+npm run gulp compile-build
+
+# Create Windows installer
+npm run gulp vscode-win32-x64
+```
+
+```powershell Environment Variables
+# Set Node.js memory limit
+$env:NODE_OPTIONS = "--max-old-space-size=8192"
+
+# Set Python path explicitly
+$env:PYTHON = "C:\Python311\python.exe"
+
+# Use specific MSBuild version
+$env:MSBUILD_PATH = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
+```
+
+</CodeGroup>
+
+### Troubleshooting Windows Builds
+
+<AccordionGroup>
+  <Accordion icon="exclamation-triangle" title="MSBuild Not Found">
+    **Error:** `Cannot find MSBuild.exe`
+    
+    **Solution:** Add MSBuild to PATH or set explicitly:
+    ```powershell
+    $env:PATH += ";C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin"
+    ```
+  </Accordion>
+  
+  <Accordion icon="exclamation-triangle" title="Native Module Build Failures">
+    **Error:** `node-gyp rebuild failed`
+    
+    **Solution:** Configure node-gyp with Visual Studio:
+    ```powershell
+    npm config set msvs_version 2022
+    npm config set python C:\Python311\python.exe
+    npm install --global windows-build-tools
+    ```
+  </Accordion>
+</AccordionGroup>
+
+  </Tab>
+  
+  <Tab title="macOS">
+    
+### macOS Installation
+
+<Steps>
+  <Step title="Install Xcode Command Line Tools">
+    Install the Xcode Command Line Tools (includes Git and compilers):
+    
+    ```bash
+    xcode-select --install
+    ```
+    
+    Verify installation:
+    ```bash
+    xcode-select -p  # Should output /Library/Developer/CommandLineTools
+    git --version    # Should output 2.x.x or higher
+    ```
+  </Step>
+  
+  <Step title="Install Homebrew (Optional)">
+    Install Homebrew package manager:
+    
+    ```bash
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    ```
+    
+    <Tip>
+      Homebrew makes installing Node.js and other tools easier.
+    </Tip>
+  </Step>
+  
+  <Step title="Install Node.js">
+    Install Node.js 20.x or later:
+    
+    <Tabs>
+      <Tab title="Using Homebrew">
+        ```bash
+        brew install node@20
+        ```
+      </Tab>
+      <Tab title="Using Official Installer">
+        Download from [nodejs.org](https://nodejs.org) and run the installer.
+      </Tab>
+      <Tab title="Using nvm">
+        ```bash
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+        nvm install 20
+        nvm use 20
+        ```
+      </Tab>
+    </Tabs>
+    
+    Verify:
+    ```bash
+    node --version  # Should output v20.x.x or higher
+    npm --version   # Should output 10.x.x or higher
+    ```
+  </Step>
+  
+  <Step title="Clone and Build">
+    Open Terminal:
+    
+    ```bash
+    # Clone repository
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode
+    
+    # Initialize submodules
+    git submodule update --init --recursive
+    
+    # Install dependencies (10-15 minutes)
+    npm install
+    
+    # Run VS Code
+    ./scripts/code.sh
+    ```
+  </Step>
+</Steps>
+
+### macOS-Specific Build Options
+
+<CodeGroup>
+
+```bash Build for macOS
+# Standard build
+npm run compile
+
+# Build with gulp
+npm run gulp compile-build
+
+# Create macOS .app bundle
+npm run gulp vscode-darwin-x64
+
+# Create Universal binary (Intel + Apple Silicon)
+npm run gulp vscode-darwin-universal
+```
+
+```bash Apple Silicon Considerations
+# Check architecture
+uname -m  # arm64 for Apple Silicon, x86_64 for Intel
+
+# Build for specific architecture
+npm run gulp vscode-darwin-arm64  # Apple Silicon
+npm run gulp vscode-darwin-x64    # Intel
+
+# Install Rosetta 2 for x64 compatibility (if needed)
+softwareupdate --install-rosetta
+```
+
+</CodeGroup>
+
+### Troubleshooting macOS Builds
+
+<AccordionGroup>
+  <Accordion icon="exclamation-triangle" title="Permission Denied Errors">
+    **Error:** `EACCES: permission denied`
+    
+    **Solution:** Don't use sudo with npm. Fix permissions:
+    ```bash
+    sudo chown -R $(whoami) ~/.npm
+    sudo chown -R $(whoami) /usr/local/lib/node_modules
+    ```
+  </Accordion>
+  
+  <Accordion icon="exclamation-triangle" title="Code Signing Issues">
+    **Error:** `code signature invalid`
+    
+    **Solution:** Remove extended attributes:
+    ```bash
+    xattr -cr vscode/.build/electron/Electron.app
+    ```
+  </Accordion>
+  
+  <Accordion icon="exclamation-triangle" title="Keychain Access Prompts">
+    **Problem:** Constant keychain password prompts
+    
+    **Solution:** Allow access once:
+    ```bash
+    security unlock-keychain ~/Library/Keychains/login.keychain-db
+    ```
+  </Accordion>
+</AccordionGroup>
+
+  </Tab>
+  
+  <Tab title="Linux">
+    
+### Linux Installation
+
+<Steps>
+  <Step title="Install Build Dependencies">
+    Install required packages:
+    
+    <Tabs>
+      <Tab title="Debian/Ubuntu">
+        ```bash
+        sudo apt-get update
+        sudo apt-get install -y \
+          git \
+          curl \
+          build-essential \
+          pkg-config \
+          libx11-dev \
+          libxkbfile-dev \
+          libsecret-1-dev \
+          libkrb5-dev \
+          python3 \
+          python3-pip
+        ```
+      </Tab>
+      <Tab title="Fedora/RHEL">
+        ```bash
+        sudo dnf install -y \
+          git \
+          curl \
+          gcc \
+          gcc-c++ \
+          make \
+          pkg-config \
+          libX11-devel \
+          libxkbfile-devel \
+          libsecret-devel \
+          krb5-devel \
+          python3 \
+          python3-pip
+        ```
+      </Tab>
+      <Tab title="Arch Linux">
+        ```bash
+        sudo pacman -S --needed \
+          git \
+          curl \
+          base-devel \
+          libx11 \
+          libxkbfile \
+          libsecret \
+          krb5 \
+          python
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step title="Install Node.js">
+    Install Node.js 20.x or later:
+    
+    <Tabs>
+      <Tab title="Using Package Manager">
+        ```bash
+        # Debian/Ubuntu
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        
+        # Fedora
+        sudo dnf install -y nodejs npm
+        ```
+      </Tab>
+      <Tab title="Using nvm">
+        ```bash
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+        source ~/.bashrc
+        nvm install 20
+        nvm use 20
+        ```
+      </Tab>
+    </Tabs>
+    
+    Verify:
+    ```bash
+    node --version  # Should output v20.x.x or higher
+    npm --version   # Should output 10.x.x or higher
+    ```
+  </Step>
+  
+  <Step title="Clone and Build">
+    Open a terminal:
+    
+    ```bash
+    # Clone repository
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode
+    
+    # Initialize submodules
+    git submodule update --init --recursive
+    
+    # Install dependencies (10-15 minutes)
+    npm install
+    
+    # Run VS Code
+    ./scripts/code.sh
+    ```
+  </Step>
+</Steps>
+
+### Linux-Specific Build Options
+
+<CodeGroup>
+
+```bash Build for Linux
+# Standard build
+npm run compile
+
+# Build with gulp
+npm run gulp compile-build
+
+# Create .deb package
+npm run gulp vscode-linux-x64-build-deb
+
+# Create .rpm package
+npm run gulp vscode-linux-x64-build-rpm
+
+# Create .tar.gz archive
+npm run gulp vscode-linux-x64
+```
+
+```bash Platform-Specific Builds
+# Build for x64
+npm run gulp vscode-linux-x64
+
+# Build for ARM64
+npm run gulp vscode-linux-arm64
+
+# Build for ARMv7 (32-bit)
+npm run gulp vscode-linux-armhf
+```
+
+</CodeGroup>
+
+### Troubleshooting Linux Builds
+
+<AccordionGroup>
+  <Accordion icon="exclamation-triangle" title="Missing libsecret">
+    **Error:** `Cannot find libsecret-1`
+    
+    **Solution:** Install libsecret development package:
+    ```bash
+    # Debian/Ubuntu
+    sudo apt-get install libsecret-1-dev
+    
+    # Fedora/RHEL
+    sudo dnf install libsecret-devel
+    ```
+  </Accordion>
+  
+  <Accordion icon="exclamation-triangle" title="Display Issues">
+    **Error:** `cannot open display`
+    
+    **Solution:** Set DISPLAY environment variable:
+    ```bash
+    export DISPLAY=:0
+    ./scripts/code.sh
+    ```
+  </Accordion>
+  
+  <Accordion icon="exclamation-triangle" title="Electron Sandbox Issues">
+    **Error:** Electron crashes or won't start
+    
+    **Solution:** Disable sandbox as workaround:
+    ```bash
+    ./scripts/code.sh --no-sandbox
+    ```
+  </Accordion>
+</AccordionGroup>
+
+  </Tab>
+</Tabs>
+
+## Development Container Setup
+
+Use a pre-configured Docker container with all dependencies:
+
+<Steps>
+  <Step title="Install Prerequisites">
+    Install:
+    - [Docker Desktop](https://www.docker.com/products/docker-desktop) or Docker Engine
+    - [VS Code](https://code.visualstudio.com/)
+    - [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+  </Step>
+  
+  <Step title="Open Repository in Container">
+    Option 1: Clone in Container Volume (recommended)
+    ```
+    1. Press Ctrl/Cmd + Shift + P
+    2. Select "Dev Containers: Clone Repository in Container Volume..."
+    3. Enter: https://github.com/microsoft/vscode
+    4. Wait for container to build (10-15 minutes first time)
+    ```
+    
+    Option 2: Open Local Folder
+    ```
+    1. Clone repository locally
+    2. Open folder in VS Code
+    3. Press Ctrl/Cmd + Shift + P
+    4. Select "Dev Containers: Reopen in Container"
+    ```
+  </Step>
+  
+  <Step title="Build Inside Container">
+    Once the container is running:
+    ```bash
+    npm install
+    ./scripts/code.sh
+    ```
+    
+    Access the desktop environment:
+    - **Web:** [http://localhost:6080](http://localhost:6080)
+    - **VNC:** localhost:5901 (password: `vscode`)
+  </Step>
+</Steps>
+
+<Note>
+  **Container Requirements:** Docker needs at least 4 CPU cores and 8 GB of RAM (9 GB recommended) to run a full build.
+</Note>
+
+## System Requirements
+
+### Minimum Requirements
+
+<CardGroup cols={2}>
+  <Card title="Processor">
+    - **x64:** Intel/AMD 64-bit processor
+    - **ARM64:** Apple Silicon, ARM64v8
+    - **ARMv7:** 32-bit ARM (Raspberry Pi)
+  </Card>
+  <Card title="Memory">
+    - **Minimum:** 4 GB RAM
+    - **Recommended:** 8 GB RAM
+    - **Build:** 16 GB RAM for comfortable development
+  </Card>
+  <Card title="Storage">
+    - **Source:** ~2 GB for repository
+    - **node_modules:** ~3 GB for dependencies
+    - **Build artifacts:** ~5 GB
+    - **Total:** ~15 GB free space recommended
+  </Card>
+  <Card title="Operating System">
+    - **Windows:** Windows 10/11 (64-bit)
+    - **macOS:** macOS 10.15 Catalina or later
+    - **Linux:** Recent distributions with glibc 2.28+
+  </Card>
+</CardGroup>
+
+### Build Time Expectations
+
+<Tabs>
+  <Tab title="First Build">
+    | Step | Time | Notes |
+    |------|------|-------|
+    | Clone repository | 2-5 min | Depends on internet speed |
+    | npm install | 10-20 min | Downloads ~500 packages |
+    | Initial compilation | 5-10 min | Compiles TypeScript sources |
+    | **Total** | **~20-35 min** | First build is slowest |
+  </Tab>
+  
+  <Tab title="Incremental Builds">
+    | Change Type | Time | Notes |
+    |-------------|------|-------|
+    | Single file edit | 1-5 sec | With watch mode |
+    | Multiple files | 5-15 sec | Depends on scope |
+    | Extension changes | 2-10 sec | Faster than core |
+    | Clean rebuild | 5-10 min | Recompiles everything |
+  </Tab>
+</Tabs>
+
+## Verifying Installation
+
+Confirm your build works correctly:
+
+<Steps>
+  <Step title="Check Version">
+    ```bash
+    # In VS Code, open Command Palette (Ctrl/Cmd + Shift + P)
+    # Type: "Show About"
+    ```
+    
+    You should see:
+    - Version: 1.110.0 (or current version)
+    - Commit: [git commit hash]
+    - Electron: 39.6.0
+  </Step>
+  
+  <Step title="Run Sample Commands">
+    Test basic functionality:
+    ```bash
+    # Open Command Palette (Ctrl/Cmd + Shift + P)
+    # Try commands like:
+    - "Open File..."
+    - "Toggle Integrated Terminal"
+    - "Change Color Theme"
+    ```
+  </Step>
+  
+  <Step title="Run Quick Tests">
+    ```bash
+    # Run a subset of unit tests
+    ./scripts/test.sh --grep "editor"
+    ```
+    
+    <Success>
+      If tests pass, your build is working correctly!
+    </Success>
+  </Step>
+</Steps>
+
+## Updating Your Build
+
+Keep your local build up to date:
+
+```bash
+# Pull latest changes
+git pull origin main
+
+# Update submodules
+git submodule update --init --recursive
+
+# Update dependencies
+npm install
+
+# Rebuild
+npm run compile
+
+# Or just run (will compile automatically)
+./scripts/code.sh
+```
+
+<Tip>
+  Create a git alias for quick updates:
+  ```bash
+  git config alias.update '!git pull && git submodule update --init --recursive && npm install'
+  ```
+  
+  Then use: `git update`
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Learn the development workflow and start making changes
+  </Card>
+  <Card
+    title="Architecture Overview"
+    icon="sitemap"
+    href="/architecture/overview"
+  >
+    Understand VS Code's architecture before diving into code
+  </Card>
+  <Card
+    title="Debugging Guide"
+    icon="bug"
+    href="/building/debugging"
+  >
+    Master debugging VS Code with VS Code itself
+  </Card>
+  <Card
+    title="Contributing Guide"
+    icon="code-pull-request"
+    href="/contributing/guidelines"
+  >
+    Read the guidelines before making your first contribution
+  </Card>
+</CardGroup>
+
+<Note>
+  **Having issues?** Check the [troubleshooting section](#troubleshooting) or ask on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode) with the `vscode` tag.
+</Note>

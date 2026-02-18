@@ -1,0 +1,609 @@
+---
+title: 'Tree View API'
+description: 'Create hierarchical tree views in the sidebar and explorer'
+---
+
+# Tree View API
+
+Tree views display hierarchical data in VS Code's sidebar, explorer, or custom view containers. They're perfect for showing file structures, dependencies, or any nested data.
+
+## Overview
+
+Tree views consist of:
+- **Tree Data Provider** - Supplies the data and structure
+- **Tree View** - Displays the data with VS Code's tree UI
+- **Tree Items** - Individual nodes in the tree
+
+## Creating a Tree View
+
+<Steps>
+  <Step title="Define the tree view in package.json">
+    ```json package.json
+    {
+      "contributes": {
+        "viewsContainers": {
+          "activitybar": [
+            {
+              "id": "myExtension",
+              "title": "My Extension",
+              "icon": "resources/icon.svg"
+            }
+          ]
+        },
+        "views": {
+          "myExtension": [
+            {
+              "id": "myExtension.treeView",
+              "name": "My Tree View",
+              "when": "workspaceHasFiles"
+            }
+          ]
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Implement TreeDataProvider">
+    ```typescript treeDataProvider.ts
+    import * as vscode from 'vscode';
+
+    export class MyTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
+      private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | undefined>();
+      readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+      constructor() {}
+
+      refresh(): void {
+        this._onDidChangeTreeData.fire(undefined);
+      }
+
+      getTreeItem(element: TreeNode): vscode.TreeItem {
+        return element;
+      }
+
+      getChildren(element?: TreeNode): Thenable<TreeNode[]> {
+        if (!element) {
+          // Return root elements
+          return Promise.resolve(this.getRootNodes());
+        }
+        // Return children of the element
+        return Promise.resolve(element.children || []);
+      }
+
+      private getRootNodes(): TreeNode[] {
+        return [
+          new TreeNode('Node 1', vscode.TreeItemCollapsibleState.Collapsed),
+          new TreeNode('Node 2', vscode.TreeItemCollapsibleState.None),
+        ];
+      }
+    }
+
+    class TreeNode extends vscode.TreeItem {
+      constructor(
+        public readonly label: string,
+        public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+        public readonly children?: TreeNode[]
+      ) {
+        super(label, collapsibleState);
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Register the tree view">
+    ```typescript extension.ts
+    export function activate(context: vscode.ExtensionContext) {
+      const treeDataProvider = new MyTreeDataProvider();
+      const treeView = vscode.window.createTreeView('myExtension.treeView', {
+        treeDataProvider,
+        showCollapseAll: true
+      });
+
+      // Refresh command
+      context.subscriptions.push(
+        vscode.commands.registerCommand('myExtension.refresh', () => {
+          treeDataProvider.refresh();
+        })
+      );
+
+      context.subscriptions.push(treeView);
+    }
+    ```
+  </Step>
+</Steps>
+
+## Real Example: References View
+
+The built-in References View extension shows a production-ready tree view (extensions/references-view/src/tree.ts:13-130):
+
+```typescript
+export class SymbolsTree {
+  readonly viewId = 'references-view.tree';
+
+  private readonly _ctxIsActive = new ContextKey<boolean>('reference-list.isActive');
+  private readonly _ctxHasResult = new ContextKey<boolean>('reference-list.hasResult');
+  private readonly _ctxInputSource = new ContextKey<string>('reference-list.source');
+
+  private readonly _history = new TreeInputHistory(this);
+  private readonly _provider = new TreeDataProviderDelegate();
+  private readonly _dnd = new TreeDndDelegate();
+  private readonly _tree: vscode.TreeView<unknown>;
+  private readonly _navigation: Navigation;
+
+  private _input?: SymbolTreeInput<unknown>;
+  private _sessionDisposable?: vscode.Disposable;
+
+  constructor() {
+    this._tree = vscode.window.createTreeView<unknown>(this.viewId, {
+      treeDataProvider: this._provider,
+      showCollapseAll: true,
+      dragAndDropController: this._dnd
+    });
+    this._navigation = new Navigation(this._tree);
+  }
+
+  async setInput(input: SymbolTreeInput<unknown>) {
+    this._ctxInputSource.set(input.contextValue);
+    this._ctxIsActive.set(true);
+    this._ctxHasResult.set(true);
+    vscode.commands.executeCommand(`${this.viewId}.focus`);
+
+    this._input = input;
+    this._tree.title = input.title;
+
+    const modelPromise = Promise.resolve(input.resolve());
+    this._provider.update(modelPromise.then(model => model?.provider));
+
+    const model = await modelPromise;
+    if (!model) {
+      this.clearInput();
+      return;
+    }
+
+    this._tree.message = model.message;
+
+    // Reveal & select
+    const selection = model.navigation?.nearest(input.location.uri);
+    if (selection && this._tree.visible) {
+      await this._tree.reveal(selection, { 
+        select: true, 
+        focus: true, 
+        expand: true 
+      });
+    }
+  }
+
+  clearInput(): void {
+    this._sessionDisposable?.dispose();
+    this._input = undefined;
+    this._ctxHasResult.set(false);
+    this._tree.title = 'References';
+    this._tree.message = 'No results.';
+  }
+}
+```
+
+## Tree Item Configuration
+
+Customize tree items with various properties:
+
+```typescript
+class FileTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly label: string,
+    public readonly resourceUri: vscode.Uri,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+  ) {
+    super(label, collapsibleState);
+
+    // Icon from theme
+    this.iconPath = new vscode.ThemeIcon('file');
+
+    // Or custom icon
+    // this.iconPath = {
+    //   light: path.join(__filename, '..', 'resources', 'light', 'file.svg'),
+    //   dark: path.join(__filename, '..', 'resources', 'dark', 'file.svg')
+    // };
+
+    // Description (shown in gray)
+    this.description = 'src/utils';
+
+    // Tooltip
+    this.tooltip = new vscode.MarkdownString(`**${label}**\n\n${resourceUri.fsPath}`);
+
+    // Context value for menu contributions
+    this.contextValue = 'fileItem';
+
+    // Command to execute on click
+    this.command = {
+      command: 'vscode.open',
+      title: 'Open File',
+      arguments: [resourceUri]
+    };
+  }
+}
+```
+
+### Tree Item Properties
+
+| Property | Description |
+|----------|-------------|
+| `label` | Primary text displayed |
+| `description` | Secondary text (gray) |
+| `tooltip` | Hover tooltip (string or MarkdownString) |
+| `iconPath` | Icon (ThemeIcon, Uri, or {light, dark}) |
+| `contextValue` | Identifier for context menu contributions |
+| `command` | Command executed on click |
+| `resourceUri` | Associated file URI for default icons |
+| `collapsibleState` | None, Collapsed, or Expanded |
+
+## Dynamic Updates
+
+Update tree views when data changes:
+
+<CodeGroup>
+```typescript Refresh Entire Tree
+class MyTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
+  }
+}
+```
+
+```typescript Refresh Single Node
+class MyTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  refreshNode(node: TreeNode): void {
+    this._onDidChangeTreeData.fire(node);
+  }
+}
+```
+
+```typescript Refresh Multiple Nodes
+class MyTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | TreeNode[] | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  refreshNodes(nodes: TreeNode[]): void {
+    this._onDidChangeTreeData.fire(nodes);
+  }
+}
+```
+</CodeGroup>
+
+## Context Menus
+
+Add context menus to tree items:
+
+<Steps>
+  <Step title="Set contextValue on tree items">
+    ```typescript
+    class FileTreeItem extends vscode.TreeItem {
+      contextValue = 'file';
+    }
+
+    class FolderTreeItem extends vscode.TreeItem {
+      contextValue = 'folder';
+    }
+    ```
+  </Step>
+
+  <Step title="Contribute context menu commands">
+    ```json package.json
+    {
+      "contributes": {
+        "commands": [
+          {
+            "command": "myExtension.deleteFile",
+            "title": "Delete"
+          },
+          {
+            "command": "myExtension.renameFile",
+            "title": "Rename"
+          }
+        ],
+        "menus": {
+          "view/item/context": [
+            {
+              "command": "myExtension.deleteFile",
+              "when": "view == myExtension.treeView && viewItem == file",
+              "group": "inline"
+            },
+            {
+              "command": "myExtension.renameFile",
+              "when": "view == myExtension.treeView && viewItem == file",
+              "group": "7_modification"
+            }
+          ]
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Implement command handlers">
+    ```typescript
+    vscode.commands.registerCommand(
+      'myExtension.deleteFile',
+      (node: FileTreeItem) => {
+        // Delete the file
+        vscode.workspace.fs.delete(node.resourceUri);
+        treeDataProvider.refresh();
+      }
+    );
+    ```
+  </Step>
+</Steps>
+
+## Tree View Features
+
+### Selection and Focus
+
+```typescript
+const treeView = vscode.window.createTreeView('myExtension.treeView', {
+  treeDataProvider
+});
+
+// Get current selection
+const selection = treeView.selection;
+
+// Programmatically select and reveal
+await treeView.reveal(node, {
+  select: true,    // Select the node
+  focus: true,     // Focus the tree view
+  expand: true     // Expand parent nodes
+});
+
+// Listen to selection changes
+treeView.onDidChangeSelection(e => {
+  console.log('Selected:', e.selection);
+});
+
+// Listen to visibility changes
+treeView.onDidChangeVisibility(e => {
+  if (e.visible) {
+    console.log('Tree view became visible');
+  }
+});
+```
+
+### Title and Message
+
+```typescript
+const treeView = vscode.window.createTreeView('myExtension.treeView', {
+  treeDataProvider
+});
+
+// Dynamic title
+treeView.title = `Files (${fileCount})`;
+
+// Message (shown when empty)
+treeView.message = 'No files found. Try refreshing.';
+
+// Rich message with markdown
+treeView.message = new vscode.TreeItem2(
+  'No results',
+  vscode.TreeItemCollapsibleState.None
+);
+```
+
+### Collapse All
+
+```typescript
+const treeView = vscode.window.createTreeView('myExtension.treeView', {
+  treeDataProvider,
+  showCollapseAll: true  // Show collapse all button
+});
+```
+
+## Drag and Drop
+
+Implement drag and drop for tree items:
+
+```typescript
+class MyDragAndDropController implements vscode.TreeDragAndDropController<TreeNode> {
+  dropMimeTypes = ['application/vnd.code.tree.myExtension'];
+  dragMimeTypes = ['text/uri-list'];
+
+  public async handleDrag(
+    source: readonly TreeNode[],
+    dataTransfer: vscode.DataTransfer,
+    token: vscode.CancellationToken
+  ): Promise<void> {
+    const uris = source.map(node => node.resourceUri.toString());
+    dataTransfer.set(
+      'text/uri-list',
+      new vscode.DataTransferItem(uris.join('\r\n'))
+    );
+  }
+
+  public async handleDrop(
+    target: TreeNode | undefined,
+    dataTransfer: vscode.DataTransfer,
+    token: vscode.CancellationToken
+  ): Promise<void> {
+    const transferItem = dataTransfer.get('text/uri-list');
+    if (!transferItem) {
+      return;
+    }
+
+    const uriList = await transferItem.asString();
+    const uris = uriList.split('\r\n').map(uri => vscode.Uri.parse(uri));
+
+    // Handle the drop
+    for (const uri of uris) {
+      await this.moveFile(uri, target);
+    }
+  }
+
+  private async moveFile(source: vscode.Uri, target: TreeNode) {
+    // Implement file move logic
+  }
+}
+
+const treeView = vscode.window.createTreeView('myExtension.treeView', {
+  treeDataProvider,
+  dragAndDropController: new MyDragAndDropController()
+});
+```
+
+## Multi-Root Support
+
+Handle multi-root workspaces:
+
+```typescript
+class WorkspaceTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  constructor() {
+    // Refresh when workspace folders change
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      this._onDidChangeTreeData.fire(undefined);
+    });
+  }
+
+  getChildren(element?: TreeNode): TreeNode[] {
+    if (!element) {
+      // Return root nodes for each workspace folder
+      const folders = vscode.workspace.workspaceFolders;
+      if (!folders) {
+        return [];
+      }
+      return folders.map(folder => new FolderNode(folder));
+    }
+    return element.children || [];
+  }
+
+  getTreeItem(element: TreeNode): vscode.TreeItem {
+    return element;
+  }
+}
+```
+
+## Performance Optimization
+
+### Lazy Loading
+
+```typescript
+class LazyTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
+  getChildren(element?: TreeNode): Thenable<TreeNode[]> {
+    if (!element) {
+      // Load root nodes
+      return this.loadRootNodes();
+    }
+    // Load children only when parent is expanded
+    return this.loadChildren(element);
+  }
+
+  private async loadRootNodes(): Promise<TreeNode[]> {
+    // Expensive operation - load only when needed
+    const data = await fetchDataFromAPI();
+    return data.map(item => new TreeNode(item));
+  }
+
+  private async loadChildren(parent: TreeNode): Promise<TreeNode[]> {
+    // Load children on demand
+    const data = await fetchChildrenFromAPI(parent.id);
+    return data.map(item => new TreeNode(item));
+  }
+}
+```
+
+### Caching
+
+```typescript
+class CachedTreeDataProvider implements vscode.TreeDataProvider<TreeNode> {
+  private _cache = new Map<string, TreeNode[]>();
+
+  async getChildren(element?: TreeNode): Promise<TreeNode[]> {
+    const key = element?.id || 'root';
+
+    // Check cache
+    if (this._cache.has(key)) {
+      return this._cache.get(key)!;
+    }
+
+    // Load and cache
+    const children = await this.loadChildren(element);
+    this._cache.set(key, children);
+    return children;
+  }
+
+  refresh(): void {
+    this._cache.clear();
+    this._onDidChangeTreeData.fire(undefined);
+  }
+}
+```
+
+## Best Practices
+
+1. **Use contextValue** - Essential for context menu contributions
+2. **Implement refresh** - Allow users to reload data
+3. **Lazy load** - Load children only when parent expands
+4. **Cache wisely** - Balance memory vs. performance
+5. **Handle errors** - Show meaningful messages when data fails to load
+6. **Provide tooltips** - Help users understand tree items
+7. **Support multi-root** - Handle multiple workspace folders
+
+## Common Patterns
+
+### File Explorer
+
+```typescript
+class FileTreeDataProvider implements vscode.TreeDataProvider<FileNode> {
+  async getChildren(element?: FileNode): Promise<FileNode[]> {
+    if (!element) {
+      const folders = vscode.workspace.workspaceFolders;
+      if (!folders) return [];
+      return folders.map(f => new FileNode(f.uri, vscode.FileType.Directory));
+    }
+
+    const children = await vscode.workspace.fs.readDirectory(element.uri);
+    return children.map(([name, type]) =>
+      new FileNode(vscode.Uri.joinPath(element.uri, name), type)
+    );
+  }
+
+  getTreeItem(element: FileNode): vscode.TreeItem {
+    const isDirectory = element.type === vscode.FileType.Directory;
+    return {
+      resourceUri: element.uri,
+      collapsibleState: isDirectory
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : vscode.TreeItemCollapsibleState.None,
+      command: !isDirectory
+        ? { command: 'vscode.open', title: 'Open', arguments: [element.uri] }
+        : undefined
+    };
+  }
+}
+```
+
+### Async Data Loading
+
+```typescript
+class AsyncTreeDataProvider implements vscode.TreeDataProvider<DataNode> {
+  async getChildren(element?: DataNode): Promise<DataNode[]> {
+    try {
+      const data = await fetchDataFromAPI(element?.id);
+      return data.map(item => new DataNode(item));
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to load data: ${error}`);
+      return [];
+    }
+  }
+}
+```
+
+## Related Resources
+
+- [Tree View API Documentation](https://code.visualstudio.com/api/extension-guides/tree-view)
+- [Tree View Sample](https://github.com/microsoft/vscode-extension-samples/tree/main/tree-view-sample)

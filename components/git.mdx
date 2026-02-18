@@ -1,0 +1,690 @@
+---
+title: 'Git (SCM)'
+description: 'Source control management - Git integration, SCM providers, and version control UI'
+---
+
+## Overview
+
+The SCM (Source Control Management) component (`src/vs/workbench/contrib/scm/`) provides VS Code's Git integration and source control UI. It includes the SCM viewlet, repository management, and extensible SCM provider support.
+
+**Location:** `src/vs/workbench/contrib/scm/`
+
+## Architecture
+
+### SCM System
+
+```
+┌───────────────────────────────────┐
+│          SCM View                   │
+├───────────────────────────────────┤
+│       SCM Service                  │
+├───────────────────────────────────┤
+│    SCM Repositories               │
+├───────────────────────────────────┤
+│    SCM Providers                  │
+│    (Git Extension)                │
+└───────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="SCM Service" icon="code-branch" href="#scm-service">
+    Source control orchestration
+  </Card>
+  <Card title="SCM Repositories" icon="folder-tree" href="#repositories">
+    Repository management
+  </Card>
+  <Card title="SCM Providers" icon="plug" href="#providers">
+    Extensible SCM provider API
+  </Card>
+  <Card title="Git Extension" icon="git" href="#git-extension">
+    Built-in Git support
+  </Card>
+</CardGroup>
+
+## SCM Service {#scm-service}
+
+**Location:** `src/vs/workbench/contrib/scm/common/scm.ts`
+
+### ISCMService Interface
+
+```typescript
+export interface ISCMService {
+    readonly _serviceBrand: undefined;
+    
+    // Repositories
+    readonly repositories: ISCMRepository[];
+    readonly onDidAddRepository: Event<ISCMRepository>;
+    readonly onDidRemoveRepository: Event<ISCMRepository>;
+    
+    // Providers
+    registerSCMProvider(provider: ISCMProvider, viewState?: ISCMViewState): ISCMRepository;
+    
+    // Input
+    readonly inputBoxDocumentUri: URI;
+}
+```
+
+### Using SCM Service
+
+```typescript
+import { ISCMService, ISCMRepository } from 'vs/workbench/contrib/scm/common/scm';
+
+export class SCMManager {
+    constructor(
+        @ISCMService private readonly scmService: ISCMService
+    ) {
+        // Monitor repositories
+        this.scmService.onDidAddRepository(repo => {
+            console.log('Repository added:', repo.provider.label);
+        });
+        
+        this.scmService.onDidRemoveRepository(repo => {
+            console.log('Repository removed:', repo.provider.label);
+        });
+    }
+    
+    getAllRepositories(): ISCMRepository[] {
+        return this.scmService.repositories;
+    }
+    
+    getGitRepositories(): ISCMRepository[] {
+        return this.scmService.repositories.filter(
+            repo => repo.provider.id === 'git'
+        );
+    }
+}
+```
+
+## SCM Repositories {#repositories}
+
+**Location:** `src/vs/workbench/contrib/scm/common/scm.ts`
+
+### ISCMRepository Interface
+
+```typescript
+export interface ISCMRepository extends IDisposable {
+    readonly id: string;
+    readonly provider: ISCMProvider;
+    readonly input: ISCMInput;
+    
+    // Selection
+    selected: boolean;
+    readonly onDidChangeSelection: Event<boolean>;
+    
+    // Focus
+    readonly onDidFocus: Event<void>;
+    focus(): void;
+}
+```
+
+### ISCMProvider Interface
+
+```typescript
+export interface ISCMProvider extends IDisposable {
+    readonly id: string;
+    readonly label: string;
+    readonly rootUri?: URI;
+    
+    // Resource groups (staged, working tree, etc.)
+    readonly groups: ISequence<ISCMResourceGroup>;
+    readonly onDidChangeResources: Event<void>;
+    
+    // Commands
+    readonly acceptInputCommand?: Command;
+    readonly statusBarCommands?: Command[];
+    
+    // Features
+    readonly count?: number;
+    readonly commitTemplate?: string;
+    
+    // Methods
+    getOriginalResource(uri: URI): Promise<URI | null>;
+}
+```
+
+### SCM Resource Groups
+
+```typescript
+export interface ISCMResourceGroup {
+    readonly id: string;
+    readonly label: string;
+    readonly resources: ISCMResource[];
+    readonly hideWhenEmpty?: boolean;
+    
+    readonly onDidChange: Event<void>;
+}
+
+export interface ISCMResource {
+    readonly resourceGroup: ISCMResourceGroup;
+    readonly sourceUri: URI;
+    readonly decorations: ISCMResourceDecorations;
+    
+    open(preserveFocus?: boolean): Promise<void>;
+}
+
+export interface ISCMResourceDecorations {
+    icon?: URI | ThemeIcon;
+    iconDark?: URI | ThemeIcon;
+    tooltip?: string;
+    strikeThrough?: boolean;
+    faded?: boolean;
+    letter?: string;        // Single letter indicator (M, A, D, etc.)
+    color?: ThemeColor;
+}
+```
+
+## SCM Providers {#providers}
+
+### Creating an SCM Provider
+
+```typescript
+import { ISCMService, ISCMProvider, ISCMResourceGroup, ISCMResource } from 'vs/workbench/contrib/scm/common/scm';
+import { URI } from 'vs/base/common/uri';
+import { Emitter, Event } from 'vs/base/common/event';
+
+class MySCMProvider implements ISCMProvider {
+    readonly id = 'myScm';
+    readonly label = 'My SCM';
+    readonly rootUri: URI;
+    
+    private _onDidChangeResources = new Emitter<void>();
+    readonly onDidChangeResources: Event<void> = this._onDidChangeResources.event;
+    
+    private _groups: ISCMResourceGroup[] = [];
+    
+    constructor(rootUri: URI) {
+        this.rootUri = rootUri;
+        this.createGroups();
+    }
+    
+    get groups(): ISequence<ISCMResourceGroup> {
+        return {
+            elements: this._groups,
+            onDidSplice: Event.None
+        };
+    }
+    
+    private createGroups(): void {
+        this._groups = [
+            {
+                id: 'workingTree',
+                label: 'Changes',
+                hideWhenEmpty: false,
+                resources: [],
+                onDidChange: Event.None
+            },
+            {
+                id: 'index',
+                label: 'Staged Changes',
+                hideWhenEmpty: true,
+                resources: [],
+                onDidChange: Event.None
+            }
+        ];
+    }
+    
+    async getOriginalResource(uri: URI): Promise<URI | null> {
+        // Return URI to original (HEAD) version
+        return uri.with({ scheme: 'myScm-original' });
+    }
+    
+    dispose(): void {
+        this._onDidChangeResources.dispose();
+    }
+}
+
+// Register provider
+export class MySCMExtension {
+    constructor(
+        @ISCMService private readonly scmService: ISCMService
+    ) {}
+    
+    activate(rootUri: URI): void {
+        const provider = new MySCMProvider(rootUri);
+        const repository = this.scmService.registerSCMProvider(provider);
+        
+        // Provider is now active
+    }
+}
+```
+
+## Git Extension {#git-extension}
+
+**Location:** `extensions/git/`
+
+The built-in Git extension provides full Git integration.
+
+### Git Features
+
+<CardGroup cols={2}>
+  <Card title="Status" icon="circle-dot">
+    Modified, staged, untracked files
+  </Card>
+  
+  <Card title="Staging" icon="layer-plus">
+    Stage/unstage changes
+  </Card>
+  
+  <Card title="Commit" icon="check">
+    Commit with message
+  </Card>
+  
+  <Card title="Branches" icon="code-branch">
+    Create, switch, delete branches
+  </Card>
+  
+  <Card title="Remote" icon="cloud">
+    Push, pull, fetch, sync
+  </Card>
+  
+  <Card title="History" icon="clock-rotate-left">
+    View commit history and diff
+  </Card>
+  
+  <Card title="Merge" icon="code-merge">
+    Merge branches, resolve conflicts
+  </Card>
+  
+  <Card title="Stash" icon="box-archive">
+    Stash and apply changes
+  </Card>
+</CardGroup>
+
+### Git API
+
+The Git extension exports an API for other extensions:
+
+```typescript
+// Extension API
+export interface API {
+    getGitVersion(): string;
+    repositories: Repository[];
+    onDidOpenRepository: Event<Repository>;
+    onDidCloseRepository: Event<Repository>;
+}
+
+export interface Repository {
+    readonly rootUri: Uri;
+    readonly state: RepositoryState;
+    
+    // Status
+    status(): Promise<void>;
+    
+    // Staging
+    add(resources: Uri[]): Promise<void>;
+    revert(resources: Uri[]): Promise<void>;
+    
+    // Commit
+    commit(message: string, opts?: CommitOptions): Promise<void>;
+    
+    // Branches
+    branch(name: string, options?: BranchOptions): Promise<void>;
+    checkout(treeish: string): Promise<void>;
+    
+    // Remote
+    fetch(): Promise<void>;
+    pull(): Promise<void>;
+    push(): Promise<void>;
+    sync(): Promise<void>;
+}
+
+export interface RepositoryState {
+    HEAD: Branch | undefined;
+    refs: Ref[];
+    remotes: Remote[];
+    
+    workingTreeChanges: Resource[];
+    indexChanges: Resource[];
+    mergeChanges: Resource[];
+}
+```
+
+## SCM Input
+
+**Location:** `src/vs/workbench/contrib/scm/common/scm.ts`
+
+### ISCMInput Interface
+
+```typescript
+export interface ISCMInput {
+    // Value
+    value: string;
+    readonly onDidChange: Event<string>;
+    
+    // Placeholder
+    placeholder: string;
+    readonly onDidChangePlaceholder: Event<string>;
+    
+    // Validation
+    validateInput: ISCMInputValidator | undefined;
+    
+    // Visibility
+    visible: boolean;
+    readonly onDidChangeVisibility: Event<boolean>;
+    
+    // Focus
+    readonly onDidChangeFocus: Event<void>;
+}
+
+export interface ISCMInputValidator {
+    (value: string, cursorPosition: number): Promise<ISCMInputValidation | undefined>;
+}
+
+export interface ISCMInputValidation {
+    message: string;
+    type: InputValidationType;
+}
+
+export enum InputValidationType {
+    Information = 0,
+    Warning = 1,
+    Error = 2
+}
+```
+
+### Using SCM Input
+
+```typescript
+import { ISCMRepository } from 'vs/workbench/contrib/scm/common/scm';
+
+function setupInput(repository: ISCMRepository): void {
+    const input = repository.input;
+    
+    // Set placeholder
+    input.placeholder = 'Message (Ctrl+Enter to commit)';
+    
+    // Validate input
+    input.validateInput = async (value, cursorPosition) => {
+        if (value.length === 0) {
+            return {
+                message: 'Commit message cannot be empty',
+                type: InputValidationType.Error
+            };
+        }
+        
+        if (value.length > 72) {
+            return {
+                message: 'First line should be 72 characters or less',
+                type: InputValidationType.Warning
+            };
+        }
+        
+        return undefined;
+    };
+    
+    // Listen to changes
+    input.onDidChange(value => {
+        console.log('Commit message:', value);
+    });
+}
+```
+
+## SCM View
+
+**Location:** `src/vs/workbench/contrib/scm/browser/scmViewlet.ts`
+
+### SCM Viewlet Structure
+
+```
+SCM Viewlet
+  ├─ Source Control Input Box
+  ├─ Repository Selector (if multiple)
+  └─ Resource Tree
+      ├─ Staged Changes
+      │   ├─ file1.ts (M)
+      │   └─ file2.ts (A)
+      └─ Changes
+          ├─ file3.ts (M)
+          └─ file4.ts (D)
+```
+
+## SCM Decorations
+
+**Location:** `src/vs/workbench/contrib/scm/browser/scmDecorations.ts`
+
+### File Decorations
+
+```typescript
+// SCM providers can decorate files in the explorer
+// Common decorations:
+// - M: Modified
+// - A: Added
+// - D: Deleted
+// - U: Untracked
+// - C: Conflicted
+// - I: Ignored
+
+export interface ISCMResourceDecorations {
+    letter?: string;              // Status letter
+    color?: ThemeColor;           // Badge color
+    strikeThrough?: boolean;      // Strike through (deleted)
+    faded?: boolean;              // Faded (ignored)
+    tooltip?: string;             // Hover tooltip
+    icon?: URI | ThemeIcon;       // Custom icon
+}
+```
+
+## Quick Diff
+
+**Location:** `src/vs/workbench/contrib/scm/browser/dirtydiffDecorator.ts`
+
+### Gutter Indicators
+
+```typescript
+// Quick diff shows inline diff indicators in editor gutter:
+// - Green bar: Added lines
+// - Blue bar: Modified lines
+// - Red triangle: Deleted lines
+
+// Hover over indicators shows diff preview
+// Click to see full diff or revert
+```
+
+## SCM Actions
+
+**Location:** `src/vs/workbench/contrib/scm/browser/scmActions.ts`
+
+### Common SCM Commands
+
+```typescript
+const SCM_COMMANDS = {
+    VIEW_SCM: 'workbench.view.scm',
+    COMMIT: 'scm.commit',
+    REFRESH: 'scm.refresh',
+    ACCEPT_INPUT: 'scm.acceptInput',
+    STAGE: 'scm.stage',
+    UNSTAGE: 'scm.unstage',
+    STAGE_ALL: 'scm.stageAll',
+    UNSTAGE_ALL: 'scm.unstageAll',
+    DISCARD: 'scm.discard',
+    OPEN_CHANGE: 'scm.openChange'
+};
+```
+
+### Custom SCM Actions
+
+```typescript
+import { registerAction2, Action2 } from 'vs/platform/actions/common/actions';
+import { ISCMService } from 'vs/workbench/contrib/scm/common/scm';
+
+class CommitAllAction extends Action2 {
+    constructor() {
+        super({
+            id: 'myExtension.commitAll',
+            title: { value: 'Commit All Repos', original: 'Commit All Repos' },
+            category: { value: 'SCM', original: 'SCM' },
+            f1: true
+        });
+    }
+    
+    async run(accessor: ServicesAccessor): Promise<void> {
+        const scmService = accessor.get(ISCMService);
+        
+        for (const repo of scmService.repositories) {
+            const message = repo.input.value;
+            if (message && repo.provider.acceptInputCommand) {
+                // Execute commit command
+                await accessor.get(ICommandService).executeCommand(
+                    repo.provider.acceptInputCommand.id,
+                    ...repo.provider.acceptInputCommand.arguments || []
+                );
+            }
+        }
+    }
+}
+
+registerAction2(CommitAllAction);
+```
+
+## SCM Configuration
+
+### Settings
+
+```json
+{
+    // General
+    "scm.defaultViewMode": "tree",  // 'tree' or 'list'
+    "scm.alwaysShowProviders": false,
+    "scm.alwaysShowRepositories": false,
+    "scm.countBadge": "all",  // 'all', 'focused', 'off'
+    
+    // Input
+    "scm.inputFontFamily": "editor",
+    "scm.inputFontSize": 13,
+    
+    // Diff
+    "scm.diffDecorations": "all",  // 'all', 'gutter', 'overview', 'minimap', 'none'
+    "scm.diffDecorationsGutterWidth": 3,
+    
+    // Git-specific
+    "git.enabled": true,
+    "git.path": null,
+    "git.autorefresh": true,
+    "git.autofetch": false,
+    "git.confirmSync": true,
+    "git.enableCommitSigning": false,
+    "git.defaultCloneDirectory": null
+}
+```
+
+## Timeline View
+
+**Location:** `src/vs/workbench/contrib/timeline/`
+
+SCM providers can contribute to the Timeline view:
+
+```typescript
+// Timeline shows:
+// - Commit history
+// - File history
+// - Local changes
+// - Stashes
+```
+
+## Multi-Repository Support
+
+```typescript
+// VS Code supports multiple repositories:
+// - Different SCM providers (Git, SVN, etc.)
+// - Multiple Git repositories in workspace
+// - Repository-specific input boxes
+// - Repository selector in SCM view
+
+import { ISCMService } from 'vs/workbench/contrib/scm/common/scm';
+
+function handleMultipleRepos(scmService: ISCMService): void {
+    const repos = scmService.repositories;
+    
+    if (repos.length > 1) {
+        // Show repository selector
+        console.log('Multiple repositories:', repos.map(r => r.provider.label));
+    }
+}
+```
+
+## Best Practices
+
+<Warning>
+**Resource Updates:** Batch resource group updates for better performance. Frequent updates can cause UI flicker.
+</Warning>
+
+<Tip>
+**Original Resources:** Implement `getOriginalResource` efficiently. It's called frequently for diff views.
+</Tip>
+
+<Note>
+**Input Validation:** Keep validation fast. It runs on every keystroke and shouldn't block the UI.
+</Note>
+
+## Extension Integration
+
+### SCM Provider Extension
+
+```typescript
+// Extension API for SCM providers
+import * as vscode from 'vscode';
+
+class MySCMProvider implements vscode.SourceControlProvider {
+    readonly id = 'myScm';
+    readonly label = 'My SCM';
+    
+    private _sourceControl: vscode.SourceControl;
+    private _changesGroup: vscode.SourceControlResourceGroup;
+    private _stagedGroup: vscode.SourceControlResourceGroup;
+    
+    constructor(private readonly workspaceRoot: vscode.Uri) {
+        // Create source control
+        this._sourceControl = vscode.scm.createSourceControl(
+            this.id,
+            this.label,
+            workspaceRoot
+        );
+        
+        // Create resource groups
+        this._changesGroup = this._sourceControl.createResourceGroup(
+            'changes',
+            'Changes'
+        );
+        
+        this._stagedGroup = this._sourceControl.createResourceGroup(
+            'staged',
+            'Staged Changes'
+        );
+        
+        // Set accept input command
+        this._sourceControl.acceptInputCommand = {
+            command: 'myExtension.commit',
+            title: 'Commit'
+        };
+    }
+    
+    async refresh(): Promise<void> {
+        // Update resource groups
+        const files = await this.getChangedFiles();
+        
+        this._changesGroup.resourceStates = files.map(file => ({
+            resourceUri: file.uri,
+            decorations: {
+                strikeThrough: file.deleted,
+                faded: file.ignored,
+                letter: file.status,
+                color: this.getStatusColor(file.status)
+            }
+        }));
+    }
+}
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Workbench" href="/components/workbench">
+    SCM viewlet integration
+  </Card>
+  <Card title="Editor" href="/components/editor">
+    Diff editor for changes
+  </Card>
+  <Card title="Search" href="/components/search">
+    Search in repository
+  </Card>
+</CardGroup>

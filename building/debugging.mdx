@@ -1,0 +1,584 @@
+---
+title: "Debugging VS Code"
+description: "Debug Visual Studio Code during development using Chrome DevTools, VS Code itself, and various debugging techniques."
+---
+
+## Quick Start
+
+The fastest way to start debugging VS Code:
+
+<Steps>
+  <Step title="Start Watch Mode">
+    Ensure your code is compiled and watching for changes:
+
+    ```bash
+    npm run watch
+    ```
+  </Step>
+
+  <Step title="Launch with Debug Flag">
+    Run VS Code with debugging enabled:
+
+    <CodeGroup>
+      ```bash macOS/Linux
+      ./scripts/code.sh --debug
+      ```
+
+      ```cmd Windows
+      .\scripts\code.bat --debug
+      ```
+    </CodeGroup>
+
+    This opens VS Code with Chrome DevTools attached.
+  </Step>
+
+  <Step title="Open DevTools">
+    Press **Cmd+Option+I** (macOS) or **Ctrl+Shift+I** (Windows/Linux) to open DevTools.
+  </Step>
+</Steps>
+
+## Debugging Modes
+
+### Chrome DevTools
+
+The primary debugging interface for VS Code:
+
+```bash
+# Launch with DevTools
+./scripts/code.sh --debug
+```
+
+Features:
+- Set breakpoints in compiled JavaScript
+- Inspect variables and call stacks
+- Profile CPU and memory usage
+- Network monitoring
+- Console logging
+
+<Info>VS Code's source maps automatically map compiled JavaScript back to TypeScript source files.</Info>
+
+### Debug Extension Host
+
+Debug extension code running in the extension host process:
+
+<Tabs>
+  <Tab title="Launch Extension Host">
+    Open VS Code and use **Help > Toggle Developer Tools > Extension Host**.
+
+    This opens DevTools connected to the extension host process.
+  </Tab>
+
+  <Tab title="Debug Built-in Extensions">
+    To debug a built-in extension:
+
+    1. Open the extension folder (e.g., `extensions/typescript-language-features`)
+    2. Press **F5** to launch a new window with the extension loaded
+    3. Set breakpoints in the extension code
+  </Tab>
+</Tabs>
+
+### Debug Electron Main Process
+
+Debug the main Node.js process:
+
+```bash
+# Launch with Node.js debugging
+./scripts/code.sh --inspect-brk=5874
+```
+
+Then connect with Chrome:
+1. Open `chrome://inspect` in Chrome
+2. Click "Configure" and add `localhost:5874`
+3. Click "inspect" next to the VS Code process
+
+## Debugging Techniques
+
+### Setting Breakpoints
+
+<AccordionGroup>
+  <Accordion title="In TypeScript Source">
+    Set breakpoints directly in your TypeScript files:
+
+    1. Open the TypeScript file in VS Code
+    2. Click in the gutter next to the line number
+    3. Launch with `--debug`
+    4. Breakpoint hits when that line executes
+
+    <Tip>Source maps make TypeScript debugging seamless. The debugger automatically maps to original source.</Tip>
+  </Accordion>
+
+  <Accordion title="Conditional Breakpoints">
+    Break only when a condition is true:
+
+    **In DevTools:**
+    1. Right-click the line number
+    2. Select "Add conditional breakpoint"
+    3. Enter condition: `userId === 'test'`
+
+    **In Code:**
+    ```typescript
+    if (condition) {
+      debugger; // Programmatic breakpoint
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Logpoints">
+    Log values without stopping execution:
+
+    1. Right-click line number in DevTools
+    2. Select "Add logpoint"
+    3. Enter expression: `"User ID:", userId`
+
+    Output appears in the console without pausing.
+  </Accordion>
+</AccordionGroup>
+
+### Console Logging
+
+Use console methods for debugging output:
+
+```typescript
+// Basic logging
+console.log('Value:', value);
+
+// Warnings and errors
+console.warn('Deprecated API call');
+console.error('Failed to load resource');
+
+// Grouped logs
+console.group('User Data');
+console.log('Name:', user.name);
+console.log('ID:', user.id);
+console.groupEnd();
+
+// Timing operations
+console.time('operation');
+performExpensiveOperation();
+console.timeEnd('operation');
+
+// Table display
+console.table(arrayOfObjects);
+```
+
+<Note>All console output appears in the DevTools console. Use `--verbose` flag for additional logging.</Note>
+
+### Debugging Tests
+
+Debug tests in isolation:
+
+<Tabs>
+  <Tab title="Unit Tests">
+    Debug unit tests with the `--debug` flag:
+
+    <CodeGroup>
+      ```bash macOS/Linux
+      ./scripts/test.sh --debug --grep "test name pattern"
+      ```
+
+      ```cmd Windows
+      .\scripts\test.bat --debug --grep "test name pattern"
+      ```
+    </CodeGroup>
+
+    An Electron window opens with DevTools attached.
+  </Tab>
+
+  <Tab title="Integration Tests">
+    Debug integration tests:
+
+    ```bash
+    ./scripts/test-integration.sh --debug
+    ```
+
+    Use `--grep` to run specific tests:
+
+    ```bash
+    ./scripts/test.sh --debug --grep "extHost"
+    ```
+  </Tab>
+
+  <Tab title="Browser Tests">
+    Debug browser unit tests:
+
+    ```bash
+    npm run test-browser
+    ```
+
+    Then open:
+    ```
+    http://localhost:8080/test/unit/browser/renderer.html?m=vs/base/test/common/strings.test
+    ```
+
+    Open browser DevTools to debug.
+  </Tab>
+</Tabs>
+
+## Common Debugging Scenarios
+
+### Debugging UI Issues
+
+<Steps>
+  <Step title="Launch with Debug">
+    ```bash
+    ./scripts/code.sh --debug
+    ```
+  </Step>
+
+  <Step title="Open DevTools">
+    Press **Cmd+Option+I** or **Ctrl+Shift+I**
+  </Step>
+
+  <Step title="Inspect Elements">
+    Use the element picker to inspect DOM elements:
+    - Click the inspect icon in DevTools
+    - Hover over UI elements to see their structure
+    - View CSS styles and computed values
+  </Step>
+
+  <Step title="Find Event Handlers">
+    In the Elements panel:
+    1. Select an element
+    2. Check the "Event Listeners" tab
+    3. Set breakpoints on event handlers
+  </Step>
+</Steps>
+
+### Debugging Performance Issues
+
+<Tabs>
+  <Tab title="CPU Profiling">
+    Profile CPU usage to find slow code:
+
+    1. Open DevTools Performance panel
+    2. Click Record
+    3. Perform the slow operation
+    4. Stop recording
+    5. Analyze the flame graph
+
+    Look for:
+    - Long-running functions (yellow/red)
+    - Excessive function calls
+    - Blocking synchronous operations
+  </Tab>
+
+  <Tab title="Memory Profiling">
+    Detect memory leaks:
+
+    1. Open DevTools Memory panel
+    2. Take a heap snapshot
+    3. Perform operations
+    4. Take another snapshot
+    5. Compare snapshots
+
+    Look for:
+    - Objects that should have been freed
+    - Increasing memory usage over time
+    - Detached DOM nodes
+  </Tab>
+
+  <Tab title="Timeline Recording">
+    Record and analyze activity:
+
+    ```bash
+    # Run with verbose logging
+    ./scripts/code.sh --verbose --log-level=trace
+    ```
+
+    Use the Performance panel to record:
+    - Rendering performance
+    - JavaScript execution
+    - Network activity
+    - User interactions
+  </Tab>
+</Tabs>
+
+### Debugging Extension API
+
+Debug VS Code API calls from extensions:
+
+<Steps>
+  <Step title="Enable Extension Host DevTools">
+    Open DevTools for the extension host:
+
+    **Help > Toggle Developer Tools > Extension Host**
+  </Step>
+
+  <Step title="Set Breakpoints in API Layer">
+    Set breakpoints in the API implementation:
+
+    ```typescript
+    // src/vs/workbench/api/common/extHostCommands.ts
+    executeCommand(id: string, ...args: any[]): Promise<any> {
+      debugger; // Break when extensions call executeCommand
+      // ...
+    }
+    ```
+  </Step>
+
+  <Step title="Debug Extension Code">
+    Set breakpoints in your extension:
+
+    1. Open `extensions/your-extension/src/extension.ts`
+    2. Set breakpoints
+    3. Press F5 to launch a new window
+    4. Trigger the extension functionality
+  </Step>
+</Steps>
+
+### Debugging Language Services
+
+Debug TypeScript/JavaScript language features:
+
+```bash
+# Enable TypeScript server logging
+TSS_LOG="-level verbose -file /tmp/tsserver.log" ./scripts/code.sh
+```
+
+View logs at `/tmp/tsserver.log` to debug:
+- IntelliSense issues
+- Navigation problems
+- Refactoring failures
+
+## Advanced Debugging
+
+### Remote Debugging
+
+Debug VS Code running on a different machine:
+
+<Tabs>
+  <Tab title="Server">
+    On the remote machine:
+
+    ```bash
+    # Start with remote debugging
+    ./scripts/code-server.sh --inspect=0.0.0.0:9229
+    ```
+  </Tab>
+
+  <Tab title="Client">
+    On your local machine:
+
+    1. Forward the port:
+       ```bash
+       ssh -L 9229:localhost:9229 user@remote-host
+       ```
+
+    2. Open `chrome://inspect`
+    3. Add `localhost:9229` to targets
+    4. Click "inspect"
+  </Tab>
+</Tabs>
+
+### Debugging Native Modules
+
+Debug C++ native modules:
+
+<Tabs>
+  <Tab title="macOS">
+    Use LLDB debugger:
+
+    ```bash
+    # Launch with LLDB
+    lldb -- ./.build/electron/Electron.app/Contents/MacOS/Electron
+
+    # Set breakpoints
+    (lldb) breakpoint set --name functionName
+
+    # Run
+    (lldb) run
+    ```
+  </Tab>
+
+  <Tab title="Windows">
+    Use Visual Studio debugger:
+
+    1. Open Visual Studio
+    2. Debug > Attach to Process
+    3. Select the Electron process
+    4. Set breakpoints in C++ code
+  </Tab>
+
+  <Tab title="Linux">
+    Use GDB debugger:
+
+    ```bash
+    # Launch with GDB
+    gdb --args ./.build/electron/code
+
+    # Set breakpoints
+    (gdb) break functionName
+
+    # Run
+    (gdb) run
+    ```
+  </Tab>
+</Tabs>
+
+### Debugging Crashes
+
+Diagnose crashes and hangs:
+
+<AccordionGroup>
+  <Accordion title="Enable Crash Reporting">
+    Crashes are automatically saved to `.build/crashes/`:
+
+    ```bash
+    # View crash logs
+    ls .build/crashes/
+    ```
+
+    Enable stack dumping:
+    ```bash
+    export ELECTRON_ENABLE_STACK_DUMPING=1
+    ./scripts/code.sh
+    ```
+  </Accordion>
+
+  <Accordion title="Debug Hangs">
+    If VS Code hangs:
+
+    1. Send SIGUSR1 to get a stack trace (macOS/Linux):
+       ```bash
+       kill -USR1 <pid>
+       ```
+
+    2. Check DevTools Timeline for long tasks
+
+    3. Profile with Performance panel while reproducing
+  </Accordion>
+
+  <Accordion title="Analyze Crash Dumps">
+    On Windows, use WinDbg:
+
+    ```cmd
+    windbg -z crash.dmp
+    ```
+
+    On macOS, use lldb:
+
+    ```bash
+    lldb -c core.dump
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Environment Variables
+
+Useful environment variables for debugging:
+
+<ParamField path="VSCODE_DEV" type="boolean" default="1">
+  Enables development mode with additional logging.
+</ParamField>
+
+<ParamField path="ELECTRON_ENABLE_LOGGING" type="boolean" default="1">
+  Enables Electron internal logging.
+</ParamField>
+
+<ParamField path="ELECTRON_ENABLE_STACK_DUMPING" type="boolean" default="1">
+  Captures stack traces on crashes.
+</ParamField>
+
+<ParamField path="DEBUG" type="string">
+  Enable debug logging for specific modules:
+
+  ```bash
+  DEBUG=vscode:* ./scripts/code.sh
+  ```
+</ParamField>
+
+<ParamField path="VSCODE_LOG_LEVEL" type="string">
+  Set log level: `trace`, `debug`, `info`, `warn`, `error`, `critical`, `off`
+
+  ```bash
+  VSCODE_LOG_LEVEL=trace ./scripts/code.sh
+  ```
+</ParamField>
+
+## Tips and Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Source Maps">
+    Always debug with source maps enabled. They automatically map compiled JavaScript to TypeScript.
+
+    Source maps are included in development builds by default.
+  </Accordion>
+
+  <Accordion title="Debug One Thing at a Time">
+    Isolate the issue:
+    - Use `--grep` to run specific tests
+    - Disable extensions with `--disable-extensions`
+    - Test in a clean profile with `--user-data-dir=/tmp/vscode-test`
+  </Accordion>
+
+  <Accordion title="Reproduce Reliably">
+    Create minimal reproduction steps:
+    1. Identify the exact sequence of actions
+    2. Document the environment and settings
+    3. Create a test case if possible
+  </Accordion>
+
+  <Accordion title="Check Logs First">
+    Before attaching a debugger, check logs:
+
+    ```bash
+    # View logs directory
+    ls ~/.config/Code/logs/
+
+    # Tail the main log
+    tail -f ~/.config/Code/logs/*/main.log
+    ```
+  </Accordion>
+
+  <Accordion title="Use Console Filters">
+    Filter console output in DevTools:
+    - Use regex: `/error|warn/i`
+    - Filter by source file
+    - Hide verbose frameworks
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Breakpoints Not Hit">
+    **Causes**:
+    - Source maps not loaded
+    - Code path not executed
+    - Wrong process (main vs renderer)
+
+    **Solutions**:
+    1. Verify watch mode is running: `npm run watch`
+    2. Check source map files exist: `ls out/**/*.js.map`
+    3. Ensure you're debugging the right process
+  </Accordion>
+
+  <Accordion title="DevTools Not Opening">
+    **Solution**: Launch with explicit debug flag:
+
+    ```bash
+    ./scripts/code.sh --debug
+    ```
+
+    Or use menu: **Help > Toggle Developer Tools**
+  </Accordion>
+
+  <Accordion title="Slow Debugging">
+    **Solutions**:
+    - Disable unnecessary breakpoints
+    - Turn off "Pause on exceptions"
+    - Close other DevTools windows
+    - Increase available RAM
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Running Tests" icon="vial" href="/building/tests">
+    Learn how to run and debug the test suite
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/contributing/overview">
+    Read the contribution guidelines
+  </Card>
+</CardGroup>

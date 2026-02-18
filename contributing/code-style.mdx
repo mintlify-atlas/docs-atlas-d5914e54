@@ -1,0 +1,555 @@
+---
+title: Code Style Guide
+description: Comprehensive code style rules and conventions for Visual Studio Code development
+icon: paintbrush
+---
+
+This guide covers the coding conventions and style rules used in the VS Code codebase. Following these guidelines ensures consistency and maintainability.
+
+## Indentation
+
+<Warning>
+VS Code uses **tabs**, not spaces for indentation.
+</Warning>
+
+The only exceptions are:
+- `package.json` files (2 spaces, required by npm)
+- YAML files (2 spaces)
+
+### EditorConfig Settings
+
+The project includes an `.editorconfig` file with these settings:
+
+```ini
+[*]
+indent_style = tab
+trim_trailing_whitespace = true
+
+[{*.yml,*.yaml,package.json}]
+indent_style = space
+indent_size = 2
+```
+
+## Naming Conventions
+
+VS Code follows consistent naming patterns across the codebase:
+
+### Types and Enums
+
+Use **PascalCase** for type names and enum values:
+
+```typescript
+// Good
+interface EditorConfiguration {
+  fontSize: number;
+}
+
+enum StatusBarAlignment {
+  Left,
+  Right
+}
+
+type DocumentSelector = string | string[];
+```
+
+### Functions and Methods
+
+Use **camelCase** for function and method names:
+
+```typescript
+// Good
+function calculateLineHeight(fontSize: number): number {
+  return fontSize * 1.5;
+}
+
+class EditorService {
+  getActiveEditor(): Editor | undefined {
+    // ...
+  }
+}
+```
+
+### Properties and Variables
+
+Use **camelCase** for property names and local variables:
+
+```typescript
+// Good
+const editorConfiguration = getConfiguration();
+const lineHeight = calculateLineHeight(12);
+
+interface EditorOptions {
+  tabSize: number;
+  insertSpaces: boolean;
+  cursorStyle: CursorStyle;
+}
+```
+
+### Naming Best Practices
+
+<Tip>
+Use whole words in names when possible. Avoid abbreviations unless they are widely understood.
+</Tip>
+
+```typescript
+// Good
+const configuration = getConfiguration();
+const document = getActiveDocument();
+
+// Avoid
+const cfg = getConfiguration();
+const doc = getActiveDocument();
+```
+
+## Types and Exports
+
+### Minimize Exports
+
+Do not export types or functions unless you need to share them across multiple components:
+
+```typescript
+// Only export what's needed
+export interface PublicService {
+  doSomething(): void;
+}
+
+// Keep internal types private
+interface InternalState {
+  cache: Map<string, any>;
+}
+```
+
+### Global Namespace
+
+<Warning>
+Do not introduce new types or values to the global namespace.
+</Warning>
+
+All types and values should be properly scoped within modules.
+
+### Avoid `any` and `unknown`
+
+Do not use `any` or `unknown` as the type for variables, parameters, or return values unless absolutely necessary:
+
+```typescript
+// Bad
+function process(data: any): any {
+  return data.value;
+}
+
+// Good
+interface ProcessData {
+  value: string;
+}
+
+function process(data: ProcessData): string {
+  return data.value;
+}
+```
+
+## Comments and Documentation
+
+### JSDoc Comments
+
+Use JSDoc style comments for functions, interfaces, enums, and classes:
+
+```typescript
+/**
+ * Calculates the line height based on font size.
+ * @param fontSize The font size in pixels
+ * @returns The calculated line height
+ */
+function calculateLineHeight(fontSize: number): number {
+  return fontSize * 1.5;
+}
+
+/**
+ * Represents an editor configuration.
+ */
+interface EditorConfiguration {
+  /**
+   * The font size in pixels.
+   */
+  fontSize: number;
+  
+  /**
+   * Whether to insert spaces instead of tabs.
+   */
+  insertSpaces: boolean;
+}
+```
+
+<Tip>
+Good documentation helps other contributors understand your code and its intended usage.
+</Tip>
+
+## String Handling
+
+### Quote Style
+
+Use different quote styles based on the string's purpose:
+
+```typescript
+// Use "double quotes" for user-facing strings that need localization
+const message = nls.localize('key', "This message will be translated");
+
+// Use 'single quotes' for internal strings
+const internalKey = 'editor.fontSize';
+const filePath = '/path/to/file';
+```
+
+### Localization
+
+<Warning>
+All strings visible to the user need to be externalized using the `vs/nls` module.
+</Warning>
+
+```typescript
+import * as nls from 'vs/nls';
+
+// Good - using placeholders
+const message = nls.localize('fileOpen', "Opened file {0}", fileName);
+
+// Bad - using string concatenation
+const message = nls.localize('fileOpen', "Opened file " + fileName);
+```
+
+Externalized strings must not use string concatenation. Use placeholders (`{0}`, `{1}`, etc.) instead.
+
+### UI Labels
+
+Use title-style capitalization for command labels, buttons, and menu items:
+
+```typescript
+// Good
+"Open File"
+"Save All"
+"Toggle Word Wrap"
+"Search in Folder"
+
+// Note: Don't capitalize prepositions of 4 or fewer letters
+// unless it's the first or last word
+"Navigate to Definition"
+"Go to Line"
+```
+
+## Code Style Patterns
+
+### Arrow Functions
+
+Use arrow functions `=>` over anonymous function expressions:
+
+```typescript
+// Good
+items.map(item => item.value);
+items.filter(item => item.isActive);
+
+// Avoid
+items.map(function(item) { return item.value; });
+```
+
+### Arrow Function Parameters
+
+Only surround arrow function parameters when necessary:
+
+```typescript
+// Good
+x => x + x
+(x, y) => x + y
+<T>(x: T, y: T) => x === y
+
+// Bad
+(x) => x + x  // Unnecessary parentheses
+```
+
+<Tip>
+Single parameters without type annotations don't need parentheses.
+</Tip>
+
+### Curly Braces
+
+Always surround loop and conditional bodies with curly braces:
+
+```typescript
+// Good
+if (condition) {
+  doSomething();
+}
+
+for (let i = 0; i < items.length; i++) {
+  process(items[i]);
+}
+
+// Bad
+if (condition) doSomething();
+
+for (let i = 0; i < items.length; i++)
+  process(items[i]);
+```
+
+Open curly braces always go on the same line:
+
+```typescript
+// Good
+if (condition) {
+  doSomething();
+}
+
+function myFunction() {
+  // ...
+}
+
+// Bad
+if (condition)
+{
+  doSomething();
+}
+```
+
+### Whitespace Rules
+
+Parenthesized constructs should have no surrounding whitespace. A single space follows commas, colons, and semicolons:
+
+```typescript
+// Good
+for (let i = 0, n = str.length; i < 10; i++) {
+  if (x < 10) {
+    foo();
+  }
+}
+
+function f(x: number, y: string): void { }
+
+// Bad
+for ( let i = 0 , n = str.length ; i < 10 ; i++ ) {
+  if ( x < 10 ) {
+    foo();
+  }
+}
+```
+
+### Function vs Arrow Function Exports
+
+Whenever possible, use `export function` instead of `export const` with arrow functions in top-level scopes:
+
+```typescript
+// Good - shows good name in stack traces
+export function calculateHeight(fontSize: number): number {
+  return fontSize * 1.5;
+}
+
+// Avoid in top-level scopes
+export const calculateHeight = (fontSize: number): number => {
+  return fontSize * 1.5;
+};
+```
+
+<Tip>
+Using the `function` keyword shows a good name in the stack trace when debugging.
+</Tip>
+
+## Code Quality Rules
+
+### Copyright Headers
+
+All files must include the Microsoft copyright header:
+
+```typescript
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+```
+
+### Async Patterns
+
+Prefer `async` and `await` over `Promise` and `then` calls:
+
+```typescript
+// Good
+async function loadDocument(uri: string): Promise<Document> {
+  const content = await readFile(uri);
+  const parsed = await parseContent(content);
+  return new Document(parsed);
+}
+
+// Avoid
+function loadDocument(uri: string): Promise<Document> {
+  return readFile(uri)
+    .then(content => parseContent(content))
+    .then(parsed => new Document(parsed));
+}
+```
+
+### Import Management
+
+<Warning>
+Never duplicate imports. Always reuse existing imports if they are present.
+</Warning>
+
+```typescript
+// Good
+import { foo, bar, baz } from './module';
+
+// Bad
+import { foo } from './module';
+import { bar } from './module';
+import { baz } from './module';
+```
+
+### Code Reuse
+
+Do not duplicate code. Always look for existing utility functions, helpers, or patterns before implementing new functionality:
+
+```typescript
+// Check if utilities like these already exist:
+import { isString } from 'vs/base/common/types';
+import { deepClone } from 'vs/base/common/objects';
+import { escapeRegExpCharacters } from 'vs/base/common/strings';
+```
+
+### Disposables Management
+
+<Warning>
+You MUST deal with disposables by registering them immediately after creation for later disposal.
+</Warning>
+
+Use helpers such as `DisposableStore`, `MutableDisposable`, or `DisposableMap`:
+
+```typescript
+import { DisposableStore } from 'vs/base/common/lifecycle';
+
+class MyComponent {
+  private readonly disposables = new DisposableStore();
+  
+  constructor() {
+    // Register disposables immediately
+    this.disposables.add(this.onSomeEvent(() => { }));
+    this.disposables.add(new SomeDisposableResource());
+  }
+  
+  dispose(): void {
+    this.disposables.dispose();
+  }
+}
+```
+
+<Tip>
+Do NOT register a disposable to the containing class if the object is created within a method that is called repeatedly. Instead, return an `IDisposable` from such method and let the caller register it.
+</Tip>
+
+### Regex Best Practices
+
+Prefer regex capture groups with names over numbered capture groups:
+
+```typescript
+// Good
+const match = text.match(/(?<name>\w+)@(?<domain>\w+\.\w+)/);
+if (match?.groups) {
+  console.log(match.groups.name, match.groups.domain);
+}
+
+// Avoid
+const match = text.match(/(\w+)@(\w+\.\w+)/);
+if (match) {
+  console.log(match[1], match[2]);
+}
+```
+
+## ESLint Rules
+
+VS Code enforces code quality through ESLint. Key rules include:
+
+### Standard Rules
+
+- `constructor-super`: Ensure proper super() calls
+- `curly`: Require curly braces for all control statements
+- `eqeqeq`: Require === and !==
+- `no-var`: Disallow var, use const/let
+- `semi`: Require semicolons
+- `prefer-const`: Prefer const for variables that are never reassigned
+
+### VS Code Custom Rules
+
+- `code-no-unexternalized-strings`: Ensure user-facing strings are localized
+- `code-no-unused-expressions`: Disallow unused expressions
+- `code-layering`: Enforce architectural layering rules
+- `code-no-potentially-unsafe-disposables`: Ensure proper disposable handling
+- `code-must-use-super-dispose`: Require super.dispose() calls in subclasses
+
+## Testing Code Style
+
+### Test Organization
+
+- Don't add tests to the wrong test suite
+- Look for existing test patterns before creating new structures
+- Use `describe` and `test` consistently with existing patterns
+
+```typescript
+suite('EditorService', () => {
+  test('should open editor', async () => {
+    // Test implementation
+  });
+  
+  test('should close editor', async () => {
+    // Test implementation
+  });
+});
+```
+
+### Minimize Assertions
+
+<Tip>
+Prefer one snapshot-style `assert.deepStrictEqual` over multiple precise assertions, as they are much easier to understand and update.
+</Tip>
+
+```typescript
+// Good
+test('editor configuration', () => {
+  const config = getEditorConfiguration();
+  assert.deepStrictEqual(config, {
+    fontSize: 12,
+    tabSize: 4,
+    insertSpaces: true
+  });
+});
+
+// Avoid
+test('editor configuration', () => {
+  const config = getEditorConfiguration();
+  assert.strictEqual(config.fontSize, 12);
+  assert.strictEqual(config.tabSize, 4);
+  assert.strictEqual(config.insertSpaces, true);
+});
+```
+
+## Additional Best Practices
+
+<CardGroup cols={2}>
+  <Card title="File Watchers" icon="eye">
+    Prefer correlated file watchers (via `fileService.createWatcher`) to shared ones
+  </Card>
+  
+  <Card title="Tooltips" icon="comment">
+    Prefer the use of `IHoverService` service when adding tooltips to UI elements
+  </Card>
+  
+  <Card title="Component API" icon="shield-halved">
+    Do NOT use storage keys of another component. Come up with proper API instead
+  </Card>
+  
+  <Card title="Temporary Files" icon="trash">
+    Clean up any temporary files, scripts, or helpers created during development
+  </Card>
+</CardGroup>
+
+## Summary
+
+Following these code style guidelines ensures:
+
+- **Consistency**: Code looks uniform across the entire codebase
+- **Readability**: Code is easier to read and understand
+- **Maintainability**: Code is easier to maintain and refactor
+- **Quality**: Code meets professional standards
+
+When in doubt, look at existing code in the same area for patterns and conventions!

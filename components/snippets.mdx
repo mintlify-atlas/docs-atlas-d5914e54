@@ -1,0 +1,572 @@
+---
+title: 'Snippets'
+description: 'Code snippets - reusable code templates with placeholders and tab stops'
+---
+
+## Overview
+
+Snippets are templates that make it easier to enter repeating code patterns. They support placeholders, tab stops, choices, and variables, making them powerful productivity tools.
+
+**Locations:**
+- `src/vs/editor/contrib/snippet/` - Snippet engine
+- `extensions/*/snippets/` - Built-in language snippets
+- User snippets: `.vscode/*.code-snippets` or `~/snippets/`
+
+## Architecture
+
+### Snippet System
+
+```
+┌───────────────────────────────────┐
+│    IntelliSense Completion        │
+├───────────────────────────────────┤
+│      Snippet Controller            │
+├───────────────────────────────────┤
+│      Snippet Parser                │
+├───────────────────────────────────┤
+│    Snippet Definitions            │
+│  (.code-snippets files)          │
+└───────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="Snippet Syntax" icon="code" href="#syntax">
+    Tab stops, placeholders, and variables
+  </Card>
+  <Card title="Snippet Files" icon="file-code" href="#files">
+    .code-snippets file format
+  </Card>
+  <Card title="Built-in Snippets" icon="box" href="#built-in">
+    Language-specific snippets
+  </Card>
+  <Card title="Custom Snippets" icon="wrench" href="#custom">
+    Creating your own snippets
+  </Card>
+</CardGroup>
+
+## Snippet Syntax {#syntax}
+
+**Location:** `src/vs/editor/contrib/snippet/browser/snippetParser.ts`
+
+### Basic Structure
+
+```json
+{
+    "Snippet Name": {
+        "prefix": "trigger",
+        "body": [
+            "line 1",
+            "line 2",
+            "line 3"
+        ],
+        "description": "Snippet description"
+    }
+}
+```
+
+### Tab Stops
+
+```json
+{
+    "Function": {
+        "prefix": "fn",
+        "body": [
+            "function $1($2) {",
+            "\t$0",
+            "}"
+        ],
+        "description": "Function declaration"
+    }
+}
+```
+
+**Tab stops:**
+- `$1`, `$2`, `$3`, etc. - Sequential tab stops
+- `$0` - Final cursor position
+- Tab through stops in order
+
+### Placeholders
+
+```json
+{
+    "Function with Defaults": {
+        "prefix": "fn",
+        "body": [
+            "function ${1:functionName}(${2:param}) {",
+            "\treturn ${3:value};",
+            "}"
+        ]
+    }
+}
+```
+
+**Placeholders:**
+- `${1:default}` - Tab stop with default text
+- User can accept default or type replacement
+- Selected text is highlighted
+
+### Choices
+
+```json
+{
+    "Console Log": {
+        "prefix": "log",
+        "body": [
+            "console.${1|log,warn,error,info|}('${2:message}');"
+        ]
+    }
+}
+```
+
+**Choices:**
+- `${1|option1,option2,option3|}` - Dropdown selection
+- Use pipe `|` to separate options
+
+### Variables
+
+```json
+{
+    "File Header": {
+        "prefix": "header",
+        "body": [
+            "/**",
+            " * File: $TM_FILENAME",
+            " * Author: $USER",
+            " * Date: $CURRENT_YEAR-$CURRENT_MONTH-$CURRENT_DATE",
+            " */",
+            "$0"
+        ]
+    }
+}
+```
+
+<Accordion title="Available Variables">
+
+**File/Path Variables:**
+- `$TM_FILENAME` - Current filename
+- `$TM_FILENAME_BASE` - Filename without extension
+- `$TM_DIRECTORY` - Directory path
+- `$TM_FILEPATH` - Full file path
+- `$RELATIVE_FILEPATH` - Relative file path
+- `$WORKSPACE_NAME` - Workspace name
+- `$WORKSPACE_FOLDER` - Workspace folder path
+
+**Date/Time Variables:**
+- `$CURRENT_YEAR` - Current year (4 digits)
+- `$CURRENT_YEAR_SHORT` - Current year (2 digits)
+- `$CURRENT_MONTH` - Month (01-12)
+- `$CURRENT_MONTH_NAME` - Month name (January)
+- `$CURRENT_MONTH_NAME_SHORT` - Short month (Jan)
+- `$CURRENT_DATE` - Day of month (01-31)
+- `$CURRENT_DAY_NAME` - Day name (Monday)
+- `$CURRENT_DAY_NAME_SHORT` - Short day (Mon)
+- `$CURRENT_HOUR` - Hour (00-23)
+- `$CURRENT_MINUTE` - Minute (00-59)
+- `$CURRENT_SECOND` - Second (00-59)
+- `$CURRENT_SECONDS_UNIX` - Unix timestamp
+
+**Random Values:**
+- `$RANDOM` - Random 6-digit number
+- `$RANDOM_HEX` - Random 6-digit hex
+- `$UUID` - UUID v4
+
+**Selection/Clipboard:**
+- `$TM_SELECTED_TEXT` - Currently selected text
+- `$CLIPBOARD` - Clipboard contents
+
+**Line/Block Comments:**
+- `$LINE_COMMENT` - Line comment characters (//)
+- `$BLOCK_COMMENT_START` - Block comment start (/*)
+- `$BLOCK_COMMENT_END` - Block comment end (*/)
+
+</Accordion>
+
+### Variable Transformations
+
+```json
+{
+    "Transform Examples": {
+        "prefix": "transform",
+        "body": [
+            "// Uppercase filename: ${TM_FILENAME/(.*)/${1:/upcase}/}",
+            "// Lowercase: ${TM_FILENAME/(.*)/${1:/downcase}/}",
+            "// Capitalize: ${TM_FILENAME/(.*)/${1:/capitalize}/}",
+            "// PascalCase: ${TM_FILENAME/(.*)/${1:/pascalcase}/}",
+            "// CamelCase: ${TM_FILENAME/(.*)/${1:/camelcase}/}",
+            "// Remove extension: ${TM_FILENAME/(.*)\\..*$/$1/}"
+        ]
+    }
+}
+```
+
+**Transform syntax:**
+```
+${VARIABLE/regex/replacement/options}
+```
+
+**Options:**
+- `/upcase` - Uppercase
+- `/downcase` - Lowercase
+- `/capitalize` - Capitalize first letter
+- `/pascalcase` - PascalCase
+- `/camelcase` - camelCase
+
+## Snippet Files {#files}
+
+### Global Snippets
+
+**Location:** User snippets folder
+
+```json
+// ~/.config/Code/User/snippets/global.code-snippets
+{
+    "Console Log": {
+        "scope": "javascript,typescript",
+        "prefix": "log",
+        "body": [
+            "console.log('$1');"
+        ],
+        "description": "Log to console"
+    },
+    
+    "TODO Comment": {
+        "scope": "",  // All languages
+        "prefix": "todo",
+        "body": [
+            "$LINE_COMMENT TODO: $0"
+        ],
+        "description": "TODO comment"
+    }
+}
+```
+
+### Language-Specific Snippets
+
+**Location:** User snippets folder
+
+```json
+// ~/.config/Code/User/snippets/typescript.json
+{
+    "Interface": {
+        "prefix": "interface",
+        "body": [
+            "interface ${1:InterfaceName} {",
+            "\t${2:property}: ${3:type};",
+            "}",
+            "$0"
+        ],
+        "description": "TypeScript interface"
+    },
+    
+    "Class": {
+        "prefix": "class",
+        "body": [
+            "class ${1:ClassName} {",
+            "\tconstructor(${2:params}) {",
+            "\t\t$0",
+            "\t}",
+            "}"
+        ],
+        "description": "TypeScript class"
+    }
+}
+```
+
+### Workspace Snippets
+
+**Location:** `.vscode/snippets.code-snippets`
+
+```json
+// Project-specific snippets
+{
+    "Component": {
+        "scope": "typescriptreact",
+        "prefix": "comp",
+        "body": [
+            "import React from 'react';",
+            "",
+            "interface ${1:ComponentName}Props {",
+            "\t${2:prop}: ${3:type};",
+            "}",
+            "",
+            "export const ${1:ComponentName}: React.FC<${1:ComponentName}Props> = (${4:props}) => {",
+            "\treturn (",
+            "\t\t<div>",
+            "\t\t\t$0",
+            "\t\t</div>",
+            "\t);",
+            "};"
+        ]
+    }
+}
+```
+
+## Built-in Snippets {#built-in}
+
+**Location:** `extensions/*/snippets/`
+
+### Example: C++ Snippets
+
+**File:** `extensions/cpp/snippets/cpp.code-snippets`
+
+```json
+{
+    "Region Start": {
+        "prefix": "#region",
+        "body": [
+            "#pragma region $0"
+        ],
+        "description": "Folding Region Start"
+    },
+    "Region End": {
+        "prefix": "#endregion",
+        "body": [
+            "#pragma endregion"
+        ],
+        "description": "Folding Region End"
+    }
+}
+```
+
+### Language Snippets
+
+<CardGroup cols={3}>
+  <Card title="JavaScript" icon="js">
+    **Location:** `extensions/javascript/snippets/`
+    
+    for, if, function, class, etc.
+  </Card>
+  
+  <Card title="TypeScript" icon="code">
+    **Location:** `extensions/typescript-basics/snippets/`
+    
+    interface, type, enum, etc.
+  </Card>
+  
+  <Card title="Python" icon="python">
+    **Location:** `extensions/python/snippets/`
+    
+    def, class, if, for, etc.
+  </Card>
+  
+  <Card title="HTML" icon="html5">
+    **Location:** `extensions/html/snippets/`
+    
+    HTML tags and structures
+  </Card>
+  
+  <Card title="CSS" icon="css3">
+    **Location:** `extensions/css/snippets/`
+    
+    CSS properties and rules
+  </Card>
+  
+  <Card title="Markdown" icon="markdown">
+    **Location:** `extensions/markdown/snippets/`
+    
+    Markdown formatting
+  </Card>
+</CardGroup>
+
+## Snippet Controller {#controller}
+
+**Location:** `src/vs/editor/contrib/snippet/browser/snippetController2.ts`
+
+### Using Snippets Programmatically
+
+```typescript
+import { SnippetController2 } from 'vs/editor/contrib/snippet/browser/snippetController2';
+import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
+import { SnippetParser } from 'vs/editor/contrib/snippet/browser/snippetParser';
+
+function insertSnippet(editor: ICodeEditor, snippetText: string): void {
+    const controller = SnippetController2.get(editor);
+    
+    if (controller) {
+        const snippet = new SnippetParser().parse(snippetText);
+        controller.insert(snippet.toString());
+    }
+}
+
+// Example usage
+const snippetText = 'function ${1:name}(${2:params}) {\n\t$0\n}';
+insertSnippet(editor, snippetText);
+```
+
+## Creating Custom Snippets {#custom}
+
+### Command Palette
+
+1. Open Command Palette (Ctrl+Shift+P)
+2. Type "Snippets: Configure User Snippets"
+3. Select language or create global snippets
+4. Add your snippets
+
+### Example: React Component Snippet
+
+```json
+{
+    "React Functional Component": {
+        "prefix": "rfc",
+        "body": [
+            "import React from 'react';",
+            "",
+            "interface ${1:${TM_FILENAME_BASE}}Props {",
+            "\t$2",
+            "}",
+            "",
+            "export const ${1:${TM_FILENAME_BASE}}: React.FC<${1:${TM_FILENAME_BASE}}Props> = (${3:props}) => {",
+            "\treturn (",
+            "\t\t<div>",
+            "\t\t\t$0",
+            "\t\t</div>",
+            "\t);",
+            "};",
+            ""
+        ],
+        "description": "React Functional Component"
+    }
+}
+```
+
+### Example: Test Snippet
+
+```json
+{
+    "Jest Test": {
+        "prefix": "test",
+        "body": [
+            "describe('${1:suite}', () => {",
+            "\tit('${2:should}', ${3|async |}() => {",
+            "\t\t$0",
+            "\t});",
+            "});"
+        ],
+        "description": "Jest test suite"
+    }
+}
+```
+
+## Snippet Completion Provider
+
+**Location:** `src/vs/workbench/contrib/snippets/browser/snippetCompletionProvider.ts`
+
+### Registering Snippet Provider
+
+```typescript
+import * as languages from 'vs/editor/common/languages';
+import { ISnippetsService } from 'vs/workbench/contrib/snippets/browser/snippets.contribution';
+
+languages.CompletionProviderRegistry.register('typescript', {
+    provideCompletionItems(model, position, context, token) {
+        // Snippets are automatically provided by VS Code
+        // This is for custom snippet providers
+        
+        return {
+            suggestions: [
+                {
+                    label: 'mysnippet',
+                    kind: languages.CompletionItemKind.Snippet,
+                    insertText: 'function ${1:name}() {\n\t$0\n}',
+                    insertTextRules: languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    documentation: 'My custom snippet',
+                    range: /* ... */
+                }
+            ]
+        };
+    }
+});
+```
+
+## Snippet Variables in Code
+
+```typescript
+import { SnippetParser, Variable, VariableResolver } from 'vs/editor/contrib/snippet/browser/snippetParser';
+import { ITextModel } from 'vs/editor/common/model';
+
+class CustomVariableResolver implements VariableResolver {
+    resolve(variable: Variable): string | undefined {
+        switch (variable.name) {
+            case 'MY_CUSTOM_VAR':
+                return 'custom value';
+            case 'AUTHOR':
+                return 'John Doe';
+            default:
+                return undefined;
+        }
+    }
+}
+
+const parser = new SnippetParser();
+const snippet = parser.parse('Author: $AUTHOR');
+const resolver = new CustomVariableResolver();
+const resolved = snippet.resolveVariables(resolver);
+```
+
+## Best Practices
+
+<Warning>
+**Prefix Conflicts:** Choose unique prefixes that don't conflict with common words or existing snippets.
+</Warning>
+
+<Tip>
+**Tab Stops:** Use logical tab stop order. Place `$0` at the most likely final cursor position.
+</Tip>
+
+<Note>
+**Variables:** Use variables for file names and dates to make snippets more dynamic and reusable.
+</Note>
+
+## Snippet Settings
+
+```json
+{
+    // Show snippets in suggestions
+    "editor.snippetSuggestions": "top",  // 'top', 'bottom', 'inline', 'none'
+    
+    // Accept suggestions on Tab
+    "editor.tabCompletion": "on",  // 'on', 'off', 'onlySnippets'
+    
+    // Quick suggestions for snippets
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    
+    // Suggest snippets
+    "editor.suggest.showSnippets": true
+}
+```
+
+## Extension API
+
+### Contributing Snippets
+
+```json
+// package.json
+{
+    "contributes": {
+        "snippets": [
+            {
+                "language": "typescript",
+                "path": "./snippets/typescript.json"
+            },
+            {
+                "language": "javascript",
+                "path": "./snippets/javascript.json"
+            }
+        ]
+    }
+}
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Editor" href="/components/editor">
+    Snippet insertion
+  </Card>
+  <Card title="Language Features" href="/components/language-features">
+    Completion provider
+  </Card>
+  <Card title="Workbench" href="/components/workbench">
+    Snippet configuration UI
+  </Card>
+</CardGroup>

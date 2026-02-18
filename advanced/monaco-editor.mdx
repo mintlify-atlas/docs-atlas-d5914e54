@@ -1,0 +1,593 @@
+---
+title: Monaco Editor
+description: Understanding Monaco Editor architecture, APIs, and integration patterns
+---
+
+# Monaco Editor
+
+Monaco Editor is the code editor that powers VS Code and can be used standalone in web applications. It provides rich IntelliSense, validation, and editing features for over 50 languages.
+
+## Architecture Overview
+
+Monaco Editor is structured in layers:
+
+<Info>
+**Editor Layers:**
+- **Core Editor** (`src/vs/editor/browser/`): Rendering, view management, text buffer
+- **Common Layer** (`src/vs/editor/common/`): Model, language services, tokenization
+- **Standalone** (`src/vs/editor/standalone/`): Standalone editor API and bootstrapping
+- **Contrib** (`src/vs/editor/contrib/`): Feature contributions (find, autocomplete, etc.)
+</Info>
+
+### Editor API Entry Point
+
+The Monaco API is created in `src/vs/editor/editor.api.ts:23`:
+
+```typescript
+const api = createMonacoBaseAPI();
+api.editor = createMonacoEditorAPI();
+api.languages = createMonacoLanguagesAPI();
+
+// Export core types
+export const CancellationTokenSource = api.CancellationTokenSource;
+export const Position = api.Position;
+export const Range = api.Range;
+export const Selection = api.Selection;
+export const Uri = api.Uri;
+export const editor = api.editor;
+export const languages = api.languages;
+```
+
+## Creating Editors
+
+### Basic Editor Creation
+
+From `src/vs/editor/standalone/browser/standaloneEditor.ts:49`:
+
+```typescript
+import * as monaco from 'monaco-editor';
+
+// Create a basic editor
+const editor = monaco.editor.create(document.getElementById('container'), {
+  value: 'function hello() {\n\tconsole.log("Hello world!");\n}',
+  language: 'javascript',
+  theme: 'vs-dark',
+  automaticLayout: true,
+  minimap: { enabled: true },
+  scrollBeyondLastLine: false
+});
+```
+
+### Diff Editor Creation
+
+```typescript
+// Create diff editor
+const diffEditor = monaco.editor.createDiffEditor(
+  document.getElementById('container'),
+  {
+    enableSplitViewResizing: true,
+    renderSideBySide: true,
+    ignoreTrimWhitespace: false
+  }
+);
+
+// Set models
+diffEditor.setModel({
+  original: monaco.editor.createModel(originalText, 'javascript'),
+  modified: monaco.editor.createModel(modifiedText, 'javascript')
+});
+```
+
+<Expandable title="Editor Lifecycle Management">
+```typescript
+// Proper editor cleanup
+const editor = monaco.editor.create(element, options);
+
+// Listen for layout changes
+window.addEventListener('resize', () => {
+  editor.layout();
+});
+
+// Dispose when done
+function cleanup() {
+  editor.dispose();
+  model.dispose();
+}
+```
+</Expandable>
+
+## Text Models
+
+The text model is the core data structure representing document content:
+
+### Model Creation
+
+```typescript
+// Create model
+const model = monaco.editor.createModel(
+  'const x = 1;',
+  'typescript',
+  monaco.Uri.file('/path/to/file.ts')
+);
+
+// Set model on editor
+editor.setModel(model);
+
+// Get current model
+const currentModel = editor.getModel();
+```
+
+### Model Operations
+
+```typescript
+// Read content
+const value = model.getValue();
+const lineCount = model.getLineCount();
+const line = model.getLineContent(5);
+
+// Modify content
+model.setValue('new content');
+
+model.applyEdits([{
+  range: new monaco.Range(1, 1, 1, 1),
+  text: '// Comment\n'
+}]);
+
+// Push edit operation (with undo/redo support)
+model.pushEditOperations(
+  [],
+  [{
+    range: new monaco.Range(1, 1, 1, 1),
+    text: 'inserted text'
+  }],
+  () => null
+);
+```
+
+### Model Events
+
+```typescript
+// Listen to content changes
+model.onDidChangeContent((e) => {
+  console.log('Content changed:', e.changes);
+  e.changes.forEach(change => {
+    console.log(`Range: ${change.range}, Text: ${change.text}`);
+  });
+});
+
+// Language change
+model.onDidChangeLanguage((e) => {
+  console.log(`Language changed to: ${e.newLanguage}`);
+});
+```
+
+<Warning>
+**Memory Management**: Always dispose models when no longer needed. Models are NOT automatically disposed when editors are disposed.
+
+```typescript
+model.dispose(); // Must be called explicitly
+```
+</Warning>
+
+## Language Features
+
+Monaco supports rich language features through providers:
+
+### Registering Completion Provider
+
+```typescript
+monaco.languages.registerCompletionItemProvider('javascript', {
+  provideCompletionItems: (model, position, context, token) => {
+    const word = model.getWordUntilPosition(position);
+    const range = {
+      startLineNumber: position.lineNumber,
+      endLineNumber: position.lineNumber,
+      startColumn: word.startColumn,
+      endColumn: word.endColumn
+    };
+    
+    return {
+      suggestions: [
+        {
+          label: 'myFunction',
+          kind: monaco.languages.CompletionItemKind.Function,
+          documentation: 'My custom function',
+          insertText: 'myFunction(${1:param})',
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          range: range
+        }
+      ]
+    };
+  }
+});
+```
+
+### Hover Provider
+
+```typescript
+monaco.languages.registerHoverProvider('javascript', {
+  provideHover: (model, position, token) => {
+    const word = model.getWordAtPosition(position);
+    if (!word) return null;
+    
+    return {
+      range: new monaco.Range(
+        position.lineNumber,
+        word.startColumn,
+        position.lineNumber,
+        word.endColumn
+      ),
+      contents: [
+        { value: '**Function Documentation**' },
+        { value: '```typescript\nfunction myFunc(): void\n```' }
+      ]
+    };
+  }
+});
+```
+
+### Code Actions Provider
+
+```typescript
+monaco.languages.registerCodeActionProvider('javascript', {
+  provideCodeActions: (model, range, context, token) => {
+    // Return quick fixes and refactorings
+    return {
+      actions: [
+        {
+          title: 'Convert to arrow function',
+          diagnostics: context.markers,
+          kind: 'refactor.rewrite',
+          edit: {
+            edits: [{
+              resource: model.uri,
+              versionId: model.getVersionId(),
+              textEdit: {
+                range: range,
+                text: '() => {}'
+              }
+            }]
+          },
+          isPreferred: true
+        }
+      ],
+      dispose: () => {}
+    };
+  }
+});
+```
+
+### Definition Provider
+
+```typescript
+monaco.languages.registerDefinitionProvider('javascript', {
+  provideDefinition: (model, position, token) => {
+    // Return location of definition
+    return {
+      uri: model.uri,
+      range: new monaco.Range(10, 5, 10, 15)
+    };
+  }
+});
+```
+
+<Expandable title="All Available Language Providers">
+- **CompletionItemProvider**: Auto-completion suggestions
+- **HoverProvider**: Hover information
+- **SignatureHelpProvider**: Parameter hints
+- **DefinitionProvider**: Go to definition
+- **TypeDefinitionProvider**: Go to type definition
+- **ImplementationProvider**: Find implementations
+- **ReferenceProvider**: Find all references
+- **DocumentHighlightProvider**: Highlight occurrences
+- **DocumentSymbolProvider**: Outline view
+- **CodeActionProvider**: Quick fixes and refactorings
+- **CodeLensProvider**: Inline annotations
+- **DocumentFormattingEditProvider**: Format document
+- **DocumentRangeFormattingEditProvider**: Format selection
+- **OnTypeFormattingEditProvider**: Format on type
+- **RenameProvider**: Symbol renaming
+- **FoldingRangeProvider**: Code folding
+- **DocumentColorProvider**: Color picker
+- **SelectionRangeProvider**: Smart selection
+- **LinkedEditingRangeProvider**: Linked editing
+</Expandable>
+
+## Tokenization and Syntax Highlighting
+
+### Register Language
+
+```typescript
+// Register new language
+monaco.languages.register({
+  id: 'myLang',
+  extensions: ['.ml'],
+  aliases: ['MyLanguage', 'ml'],
+  mimetypes: ['text/x-mylang']
+});
+```
+
+### Monarch Tokenizer
+
+```typescript
+// Define tokenizer using Monarch
+monaco.languages.setMonarchTokensProvider('myLang', {
+  tokenizer: {
+    root: [
+      [/\[error.*/, 'custom-error'],
+      [/\[notice.*/, 'custom-notice'],
+      [/\[info.*/, 'custom-info'],
+      [/\[[a-zA-Z 0-9:]+\]/, 'custom-date'],
+      [/[a-zA-Z_]\w*/, 'identifier'],
+      [/[0-9]+/, 'number'],
+      [/".*?"/, 'string'],
+      [/\/\/.*$/, 'comment']
+    ]
+  }
+});
+```
+
+### Custom Theme
+
+```typescript
+// Define custom theme
+monaco.editor.defineTheme('myTheme', {
+  base: 'vs-dark',
+  inherit: true,
+  rules: [
+    { token: 'custom-error', foreground: 'ff0000', fontStyle: 'bold' },
+    { token: 'custom-notice', foreground: 'FFA500' },
+    { token: 'custom-info', foreground: '808080' },
+    { token: 'custom-date', foreground: '008800' }
+  ],
+  colors: {
+    'editor.foreground': '#F8F8F8',
+    'editor.background': '#1E1E1E',
+    'editor.lineHighlightBackground': '#2A2A2A'
+  }
+});
+
+// Apply theme
+monaco.editor.setTheme('myTheme');
+```
+
+## Markers and Diagnostics
+
+```typescript
+// Set diagnostics/errors
+monaco.editor.setModelMarkers(model, 'owner', [
+  {
+    severity: monaco.MarkerSeverity.Error,
+    startLineNumber: 1,
+    startColumn: 1,
+    endLineNumber: 1,
+    endColumn: 10,
+    message: 'Syntax error: unexpected token',
+    code: '1001',
+    source: 'MyLinter'
+  },
+  {
+    severity: monaco.MarkerSeverity.Warning,
+    startLineNumber: 5,
+    startColumn: 5,
+    endLineNumber: 5,
+    endColumn: 15,
+    message: 'Variable never used',
+    tags: [monaco.MarkerTag.Unnecessary]
+  }
+]);
+
+// Get markers
+const markers = monaco.editor.getModelMarkers({ owner: 'owner' });
+
+// Listen to marker changes
+monaco.editor.onDidChangeMarkers((uris) => {
+  uris.forEach(uri => {
+    const markers = monaco.editor.getModelMarkers({ resource: uri });
+    console.log(`Markers for ${uri}:`, markers);
+  });
+});
+```
+
+## Editor Options and Configuration
+
+### Common Options
+
+```typescript
+const editor = monaco.editor.create(element, {
+  // Content
+  value: 'initial content',
+  language: 'typescript',
+  
+  // Display
+  theme: 'vs-dark',
+  fontSize: 14,
+  fontFamily: 'Fira Code, monospace',
+  fontLigatures: true,
+  lineNumbers: 'on', // 'on' | 'off' | 'relative' | 'interval'
+  lineHeight: 20,
+  
+  // Behavior
+  readOnly: false,
+  automaticLayout: true,
+  scrollBeyondLastLine: false,
+  wordWrap: 'on', // 'off' | 'on' | 'wordWrapColumn' | 'bounded'
+  
+  // Features
+  minimap: { enabled: true },
+  folding: true,
+  glyphMargin: true,
+  lineDecorationsWidth: 10,
+  
+  // Suggestions
+  quickSuggestions: true,
+  suggestOnTriggerCharacters: true,
+  acceptSuggestionOnEnter: 'on',
+  
+  // Find/Replace
+  find: {
+    addExtraSpaceOnTop: false,
+    autoFindInSelection: 'never',
+    seedSearchStringFromSelection: 'always'
+  }
+});
+```
+
+### Update Options Dynamically
+
+```typescript
+// Update single option
+editor.updateOptions({
+  readOnly: true,
+  theme: 'vs-light'
+});
+
+// Get current options
+const options = editor.getOptions();
+const fontSize = options.get(monaco.editor.EditorOption.fontSize);
+```
+
+## Advanced Features
+
+### Decorations
+
+```typescript
+// Add decorations (highlights, gutters, etc.)
+const decorations = editor.deltaDecorations([], [
+  {
+    range: new monaco.Range(3, 1, 3, 1),
+    options: {
+      isWholeLine: true,
+      className: 'myLineDecoration',
+      glyphMarginClassName: 'myGlyphMarginClass',
+      hoverMessage: { value: 'Important line' }
+    }
+  },
+  {
+    range: new monaco.Range(5, 1, 5, 10),
+    options: {
+      inlineClassName: 'myInlineDecoration',
+      beforeContentClassName: 'myBeforeContentClass',
+      afterContentClassName: 'myAfterContentClass'
+    }
+  }
+]);
+
+// Update decorations
+const newDecorations = editor.deltaDecorations(decorations, [
+  // new decoration array
+]);
+```
+
+### Custom Actions
+
+```typescript
+// Add custom action
+editor.addAction({
+  id: 'my-unique-id',
+  label: 'My Action',
+  keybindings: [
+    monaco.KeyMod.CtrlCmd | monaco.KeyCode.F10
+  ],
+  contextMenuGroupId: 'navigation',
+  contextMenuOrder: 1.5,
+  run: (ed) => {
+    const selection = ed.getSelection();
+    const selectedText = ed.getModel().getValueInRange(selection);
+    alert(`Selected: ${selectedText}`);
+  }
+});
+```
+
+### Commands
+
+```typescript
+// Execute built-in command
+editor.getAction('editor.action.formatDocument').run();
+
+// Trigger built-in command with args
+editor.trigger('source', 'editor.action.revealDefinition', {
+  position: new monaco.Position(10, 5)
+});
+```
+
+## Web Worker Integration
+
+For language services in web workers:
+
+```typescript
+// Configure worker paths
+self.MonacoEnvironment = {
+  getWorkerUrl: function (moduleId, label) {
+    if (label === 'json') {
+      return './json.worker.bundle.js';
+    }
+    if (label === 'css' || label === 'scss' || label === 'less') {
+      return './css.worker.bundle.js';
+    }
+    if (label === 'html' || label === 'handlebars' || label === 'razor') {
+      return './html.worker.bundle.js';
+    }
+    if (label === 'typescript' || label === 'javascript') {
+      return './ts.worker.bundle.js';
+    }
+    return './editor.worker.bundle.js';
+  }
+};
+```
+
+## Performance Best Practices
+
+<Warning>
+**Performance Tips:**
+1. **Dispose Resources**: Always dispose editors and models
+2. **Lazy Load**: Load Monaco asynchronously when needed
+3. **Limit Models**: Keep only necessary models in memory
+4. **Debounce Updates**: Batch model updates where possible
+5. **Virtual Scrolling**: Monaco handles large files efficiently via virtual scrolling
+</Warning>
+
+### Lazy Loading
+
+```typescript
+// AMD loader approach
+require.config({ paths: { vs: 'node_modules/monaco-editor/min/vs' } });
+
+require(['vs/editor/editor.main'], function () {
+  const editor = monaco.editor.create(element, options);
+});
+```
+
+## Type Definitions
+
+The Monaco type definitions are in `src/vs/monaco.d.ts`:
+
+```typescript
+declare namespace monaco {
+  export interface Environment {
+    globalAPI?: boolean;
+    baseUrl?: string;
+    getWorker?(workerId: string, label: string): Promise<Worker> | Worker;
+    getWorkerUrl?(workerId: string, label: string): string;
+  }
+  
+  export class Uri {
+    static file(path: string): Uri;
+    static parse(value: string): Uri;
+    readonly scheme: string;
+    readonly authority: string;
+    readonly path: string;
+    readonly query: string;
+    readonly fragment: string;
+  }
+}
+```
+
+## Related Files
+
+- `src/vs/editor/editor.api.ts:1` - Monaco API entry point
+- `src/vs/editor/standalone/browser/standaloneEditor.ts:49` - Editor creation
+- `src/vs/editor/browser/editorBrowser.ts` - Core editor interfaces
+- `src/vs/editor/common/model.ts` - Text model implementation
+- `src/vs/monaco.d.ts:1` - TypeScript definitions
+- `src/vs/editor/contrib/` - Editor feature contributions

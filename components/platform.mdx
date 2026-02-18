@@ -1,0 +1,581 @@
+---
+title: 'Platform Services'
+description: 'Dependency injection and platform-level services in VS Code'
+---
+
+## Overview
+
+The platform layer (`src/vs/platform/`) provides core services and dependency injection infrastructure. It sits between the base utilities and higher-level components, offering cross-cutting concerns like configuration, logging, storage, and file access.
+
+## Architecture
+
+### Layered Design
+
+```
+┌─────────────────────────┐
+│   Workbench & Editor    │
+├─────────────────────────┤
+│   Platform Services     │ ← You are here
+├─────────────────────────┤
+│     Base Utilities      │
+└─────────────────────────┘
+```
+
+**Location:** `src/vs/platform/`
+
+## Dependency Injection
+
+### IInstantiationService
+
+**Location:** `src/vs/platform/instantiation/common/instantiation.ts:41`
+
+Core service for creating instances with automatic dependency injection:
+
+```typescript
+export interface IInstantiationService {
+    readonly _serviceBrand: undefined;
+    
+    createInstance<T>(descriptor: SyncDescriptor0<T>): T;
+    createInstance<Ctor extends new (...args: any[]) => any>(
+        ctor: Ctor, 
+        ...args: GetLeadingNonServiceArgs<ConstructorParameters<Ctor>>
+    ): InstanceType<Ctor>;
+    
+    invokeFunction<R>(fn: (accessor: ServicesAccessor) => R): R;
+    
+    createChild(services: ServiceCollection): IInstantiationService;
+}
+```
+
+### Creating Services
+
+**Service Definition:**
+
+```typescript
+import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
+
+export const IMyService = createDecorator<IMyService>('myService');
+
+export interface IMyService {
+    readonly _serviceBrand: undefined;
+    doSomething(): void;
+}
+```
+
+**Service Implementation:**
+
+```typescript
+import { IMyService } from './myService';
+import { IFileService } from 'vs/platform/files/common/files';
+import { ILogService } from 'vs/platform/log/common/log';
+
+export class MyService implements IMyService {
+    declare readonly _serviceBrand: undefined;
+    
+    constructor(
+        @IFileService private readonly fileService: IFileService,
+        @ILogService private readonly logService: ILogService
+    ) {
+        this.logService.info('MyService created');
+    }
+    
+    doSomething(): void {
+        // Use injected services
+    }
+}
+```
+
+**Using Services:**
+
+```typescript
+export class MyWidget {
+    constructor(
+        @IMyService private readonly myService: IMyService,
+        @IInstantiationService private readonly instantiationService: IInstantiationService
+    ) {}
+    
+    createSomething() {
+        // Create instances with DI
+        const instance = this.instantiationService.createInstance(SomeClass);
+    }
+}
+```
+
+<Accordion title="Dependency Injection Patterns">
+
+**1. Constructor Injection (Recommended)**
+```typescript
+class MyClass {
+    constructor(
+        @IFileService private readonly fileService: IFileService
+    ) {}
+}
+```
+
+**2. Function Accessor**
+```typescript
+instantiationService.invokeFunction((accessor) => {
+    const fileService = accessor.get(IFileService);
+    // Use service
+});
+```
+
+**3. Child Services**
+```typescript
+const childServices = new ServiceCollection();
+childServices.set(IMyService, new MyService());
+const child = instantiationService.createChild(childServices);
+```
+
+</Accordion>
+
+## Core Platform Services
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="#configuration">
+    Settings and preferences management
+  </Card>
+  <Card title="Files" icon="folder" href="#files">
+    File system operations and watching
+  </Card>
+  <Card title="Storage" icon="database" href="#storage">
+    Persistent key-value storage
+  </Card>
+  <Card title="Logging" icon="file-lines" href="#logging">
+    Centralized logging infrastructure
+  </Card>
+</CardGroup>
+
+## Configuration Service {#configuration}
+
+**Location:** `src/vs/platform/configuration/`
+
+### IConfigurationService
+
+```typescript
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+
+export class MyComponent {
+    constructor(
+        @IConfigurationService private readonly configService: IConfigurationService
+    ) {
+        // Read configuration
+        const value = this.configService.getValue<string>('editor.fontSize');
+        
+        // Listen for changes
+        this.configService.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('editor.fontSize')) {
+                this.updateFontSize();
+            }
+        });
+    }
+}
+```
+
+### Configuration Scopes
+
+```typescript
+import { ConfigurationTarget } from 'vs/platform/configuration/common/configuration';
+
+// Update configuration at different scopes
+await configService.updateValue(
+    'editor.tabSize',
+    4,
+    ConfigurationTarget.USER // USER, WORKSPACE, or WORKSPACE_FOLDER
+);
+
+// Inspect configuration from all sources
+const inspect = configService.inspect('editor.tabSize');
+console.log(inspect.userValue);
+console.log(inspect.workspaceValue);
+console.log(inspect.defaultValue);
+```
+
+## File Service {#files}
+
+**Location:** `src/vs/platform/files/common/files.ts`
+
+### IFileService
+
+Unified file system operations across local and remote:
+
+```typescript
+import { IFileService } from 'vs/platform/files/common/files';
+import { URI } from 'vs/base/common/uri';
+
+export class FileManager {
+    constructor(
+        @IFileService private readonly fileService: IFileService
+    ) {}
+    
+    async readFile(uri: URI): Promise<string> {
+        const content = await this.fileService.readFile(uri);
+        return content.value.toString();
+    }
+    
+    async writeFile(uri: URI, content: string): Promise<void> {
+        await this.fileService.writeFile(uri, 
+            VSBuffer.fromString(content)
+        );
+    }
+    
+    async exists(uri: URI): Promise<boolean> {
+        try {
+            await this.fileService.resolve(uri);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+}
+```
+
+### File Watching
+
+```typescript
+import { IFileService, FileChangeType } from 'vs/platform/files/common/files';
+
+// Watch for file changes
+fileService.onDidFilesChange(e => {
+    for (const change of e.changes) {
+        if (change.type === FileChangeType.UPDATED) {
+            console.log('File updated:', change.resource.toString());
+        }
+    }
+});
+
+// Watch specific resources
+const watcher = fileService.watch(URI.file('/path/to/watch'));
+
+// Don't forget to dispose
+watcher.dispose();
+```
+
+### File Operations
+
+<Accordion title="Common File Operations">
+
+```typescript
+// Create directory
+await fileService.createFolder(URI.file('/new/dir'));
+
+// Copy file
+await fileService.copy(
+    URI.file('/source.txt'),
+    URI.file('/dest.txt')
+);
+
+// Move/rename
+await fileService.move(
+    URI.file('/old.txt'),
+    URI.file('/new.txt')
+);
+
+// Delete
+await fileService.del(URI.file('/to/delete.txt'), {
+    recursive: true,
+    useTrash: true
+});
+
+// Resolve directory
+const stat = await fileService.resolve(URI.file('/dir'), {
+    resolveMetadata: true
+});
+if (stat.isDirectory && stat.children) {
+    for (const child of stat.children) {
+        console.log(child.name);
+    }
+}
+```
+
+</Accordion>
+
+## Storage Service {#storage}
+
+**Location:** `src/vs/platform/storage/common/storage.ts`
+
+### IStorageService
+
+Persistent key-value storage:
+
+```typescript
+import { IStorageService, StorageScope, StorageTarget } from 'vs/platform/storage/common/storage';
+
+export class StateManager {
+    private static readonly KEY = 'myComponent.state';
+    
+    constructor(
+        @IStorageService private readonly storageService: IStorageService
+    ) {}
+    
+    saveState(state: any): void {
+        this.storageService.store(
+            StateManager.KEY,
+            JSON.stringify(state),
+            StorageScope.WORKSPACE, // or StorageScope.PROFILE
+            StorageTarget.USER
+        );
+    }
+    
+    loadState(): any {
+        const stored = this.storageService.get(
+            StateManager.KEY,
+            StorageScope.WORKSPACE
+        );
+        return stored ? JSON.parse(stored) : null;
+    }
+    
+    clearState(): void {
+        this.storageService.remove(
+            StateManager.KEY,
+            StorageScope.WORKSPACE
+        );
+    }
+}
+```
+
+### Storage Scopes
+
+- **StorageScope.PROFILE** - User profile level (synced across workspaces)
+- **StorageScope.WORKSPACE** - Workspace level (local to workspace)
+
+## Logging Service {#logging}
+
+**Location:** `src/vs/platform/log/common/log.ts`
+
+### ILogService
+
+```typescript
+import { ILogService, LogLevel } from 'vs/platform/log/common/log';
+
+export class MyComponent {
+    constructor(
+        @ILogService private readonly logService: ILogService
+    ) {
+        this.logService.trace('Component created');
+    }
+    
+    async performOperation(): Promise<void> {
+        this.logService.info('Starting operation');
+        
+        try {
+            // Do work
+            this.logService.debug('Operation details', { data: 'value' });
+        } catch (error) {
+            this.logService.error('Operation failed', error);
+            throw error;
+        }
+        
+        this.logService.info('Operation completed');
+    }
+}
+```
+
+## Additional Platform Services
+
+<CardGroup cols={2}>
+  <Card title="Commands" icon="terminal">
+    **ICommandService**
+    
+    `src/vs/platform/commands/`
+    
+    Execute and register commands
+  </Card>
+  
+  <Card title="Context Keys" icon="key">
+    **IContextKeyService**
+    
+    `src/vs/platform/contextkey/`
+    
+    Dynamic UI context and keybindings
+  </Card>
+  
+  <Card title="Keybindings" icon="keyboard">
+    **IKeybindingService**
+    
+    `src/vs/platform/keybinding/`
+    
+    Keyboard shortcuts management
+  </Card>
+  
+  <Card title="Notifications" icon="bell">
+    **INotificationService**
+    
+    `src/vs/platform/notification/`
+    
+    User notifications and toasts
+  </Card>
+  
+  <Card title="Dialogs" icon="message-square">
+    **IDialogService**
+    
+    `src/vs/platform/dialogs/`
+    
+    Modal dialogs and confirmations
+  </Card>
+  
+  <Card title="Quick Input" icon="search">
+    **IQuickInputService**
+    
+    `src/vs/platform/quickinput/`
+    
+    Command palette and pickers
+  </Card>
+  
+  <Card title="Workspace" icon="folder-tree">
+    **IWorkspaceContextService**
+    
+    `src/vs/platform/workspace/`
+    
+    Workspace folders and context
+  </Card>
+  
+  <Card title="Environment" icon="globe">
+    **IEnvironmentService**
+    
+    `src/vs/platform/environment/`
+    
+    Paths and environment info
+  </Card>
+</CardGroup>
+
+## Command Service
+
+**Location:** `src/vs/platform/commands/common/commands.ts`
+
+```typescript
+import { ICommandService } from 'vs/platform/commands/common/commands';
+
+// Execute command
+await commandService.executeCommand('workbench.action.openSettings');
+
+// Execute with arguments
+await commandService.executeCommand('vscode.open', uri);
+```
+
+## Context Key Service
+
+**Location:** `src/vs/platform/contextkey/common/contextkey.ts`
+
+```typescript
+import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
+
+const myContext = contextKeyService.createKey<boolean>('myExtension.active', false);
+
+// Set context
+myContext.set(true);
+
+// Use in package.json
+// "when": "myExtension.active"
+```
+
+## Notification Service
+
+**Location:** `src/vs/platform/notification/common/notification.ts`
+
+```typescript
+import { INotificationService, Severity } from 'vs/platform/notification/common/notification';
+
+// Simple notifications
+notificationService.info('Operation completed');
+notificationService.warn('This might cause issues');
+notificationService.error('Something went wrong');
+
+// With actions
+notificationService.notify({
+    severity: Severity.Info,
+    message: 'Would you like to reload?',
+    actions: {
+        primary: [
+            { label: 'Reload', run: () => reloadWindow() },
+            { label: 'Later', run: () => {} }
+        ]
+    }
+});
+```
+
+## Quick Input Service
+
+**Location:** `src/vs/platform/quickinput/common/quickInput.ts`
+
+```typescript
+import { IQuickInputService } from 'vs/platform/quickinput/common/quickInput';
+
+// Quick pick
+const selected = await quickInputService.pick(
+    ['Option 1', 'Option 2', 'Option 3'],
+    { placeHolder: 'Select an option' }
+);
+
+// Input box
+const input = await quickInputService.input({
+    prompt: 'Enter a value',
+    placeHolder: 'Type here',
+    validateInput: async (value) => {
+        return value.length < 3 ? 'Too short' : undefined;
+    }
+});
+```
+
+## Service Registration
+
+### Registering Services
+
+**Location:** Service registration typically happens in `*.contribution.ts` files
+
+```typescript
+import { registerSingleton } from 'vs/platform/instantiation/common/extensions';
+import { IMyService } from './myService';
+import { MyService } from './myServiceImpl';
+
+// Register as singleton
+registerSingleton(IMyService, MyService, InstantiationType.Delayed);
+```
+
+### Instantiation Types
+
+- **InstantiationType.Eager** - Created immediately
+- **InstantiationType.Delayed** - Created when first requested
+
+## Best Practices
+
+<Warning>
+**Service Lifetime:** Services are singletons per instantiation service. Don't store mutable state that should be instance-specific.
+</Warning>
+
+<Tip>
+**Async Initialization:** Use lifecycle services if your service needs async initialization. Don't do heavy work in constructors.
+</Tip>
+
+<Note>
+**Testing:** Create test-specific service implementations using `createDecorator` pattern for easy mocking.
+</Note>
+
+## Testing with Services
+
+```typescript
+import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
+
+const instantiationService = new TestInstantiationService();
+
+// Mock service
+const mockFileService = { /* mock implementation */ };
+instantiationService.stub(IFileService, mockFileService);
+
+// Create instance with mocked dependencies
+const instance = instantiationService.createInstance(MyClass);
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Base Layer" href="/components/base">
+    Foundation utilities
+  </Card>
+  <Card title="Editor" href="/components/editor">
+    Text editor services
+  </Card>
+  <Card title="Workbench" href="/components/workbench">
+    Application-level services
+  </Card>
+</CardGroup>

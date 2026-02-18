@@ -1,0 +1,586 @@
+---
+title: 'Marketplace Publishing'
+description: 'Publish your extension to the Visual Studio Code Marketplace'
+---
+
+# Marketplace Publishing
+
+The Visual Studio Code Marketplace is the primary distribution channel for VS Code extensions, reaching millions of developers worldwide.
+
+## Overview
+
+Publishing to the Marketplace provides:
+- **Discoverability** - Users find extensions through search
+- **Automatic updates** - VS Code updates extensions automatically
+- **Statistics** - View install counts and ratings
+- **Reputation** - Build credibility with reviews and ratings
+
+## Getting Started
+
+<Steps>
+  <Step title="Create Azure DevOps organization">
+    You need an Azure DevOps account to publish extensions.
+
+    1. Go to [Azure DevOps](https://dev.azure.com)
+    2. Sign in with Microsoft account
+    3. Create a new organization
+
+    <Note>
+      Azure DevOps is free for open-source projects and small teams.
+    </Note>
+  </Step>
+
+  <Step title="Create Personal Access Token (PAT)">
+    Create a token for publishing:
+
+    1. In Azure DevOps, click your profile (top right)
+    2. Select **Personal Access Tokens**
+    3. Click **+ New Token**
+    4. Configure the token:
+       - Name: `vscode-marketplace`
+       - Organization: Select your organization
+       - Expiration: Custom (set long expiration)
+       - Scopes: **Custom defined**
+       - Click **Show all scopes**
+       - Select **Marketplace** > **Manage**
+    5. Click **Create** and copy the token
+
+    <Warning>
+      Save the token securely. You can't view it again after creation.
+    </Warning>
+  </Step>
+
+  <Step title="Create a publisher">
+    ```bash
+    vsce create-publisher your-publisher-name
+    ```
+
+    Or visit [Marketplace Publisher Management](https://marketplace.visualstudio.com/manage) to create one via web interface.
+
+    Provide:
+    - **Publisher ID**: Unique identifier (e.g., `microsoft`, `github`)
+    - **Display name**: Human-readable name
+    - **Description**: Brief description of your extensions
+    - **Email**: Contact email
+  </Step>
+
+  <Step title="Login with vsce">
+    ```bash
+    vsce login your-publisher-name
+    ```
+
+    Paste your Personal Access Token when prompted.
+  </Step>
+</Steps>
+
+## Publishing Your Extension
+
+<Steps>
+  <Step title="Verify package.json">
+    Ensure your `package.json` has the publisher field:
+
+    ```json package.json
+    {
+      "name": "my-extension",
+      "displayName": "My Amazing Extension",
+      "description": "Does amazing things",
+      "version": "1.0.0",
+      "publisher": "your-publisher-name",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/username/my-extension"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Publish the extension">
+    ```bash
+    vsce publish
+    ```
+
+    This will:
+    1. Run `vscode:prepublish` script
+    2. Package the extension
+    3. Upload to Marketplace
+    4. Make it available for installation
+
+    <Tip>
+      Add `-p <token>` to publish without interactive login: `vsce publish -p your-pat`
+    </Tip>
+  </Step>
+
+  <Step title="Verify publication">
+    Your extension will be available at:
+    ```
+    https://marketplace.visualstudio.com/items?itemName=your-publisher.extension-name
+    ```
+
+    Users can install it with:
+    ```bash
+    code --install-extension your-publisher.extension-name
+    ```
+  </Step>
+</Steps>
+
+## Version Management
+
+### Publishing Updates
+
+Publish a new version:
+
+<CodeGroup>
+```bash Patch Version (1.0.0 → 1.0.1)
+vsce publish patch
+```
+
+```bash Minor Version (1.0.0 → 1.1.0)
+vsce publish minor
+```
+
+```bash Major Version (1.0.0 → 2.0.0)
+vsce publish major
+```
+
+```bash Specific Version
+vsce publish 2.0.0
+```
+</CodeGroup>
+
+### Pre-Release Versions
+
+Publish pre-release for early adopters:
+
+```bash
+vsce publish --pre-release
+```
+
+Users opt-in via Extension view:
+1. Find your extension
+2. Click gear icon
+3. Select "Switch to Pre-Release Version"
+
+<Note>
+  Pre-releases must have higher version numbers than stable releases.
+</Note>
+
+## Managing Your Extension
+
+### Update Extension Details
+
+Edit extension details at [Marketplace Publisher Management](https://marketplace.visualstudio.com/manage):
+
+- Change display name
+- Update description
+- Add/remove categories
+- Upload new icon
+- Update publisher information
+
+### View Statistics
+
+Monitor extension performance:
+
+1. Visit [Publisher Management](https://marketplace.visualstudio.com/manage)
+2. Select your extension
+3. View:
+   - Install count
+   - Daily installs/updates
+   - Average rating
+   - Review count
+   - Acquisition funnel
+
+### Unpublish an Extension
+
+```bash
+vsce unpublish your-publisher.extension-name
+```
+
+<Warning>
+  Unpublishing removes the extension from Marketplace. Users can't install or update it. Consider deprecating instead.
+</Warning>
+
+### Deprecate an Extension
+
+If migrating to a new extension:
+
+1. Update README with deprecation notice
+2. Add `deprecated` to keywords
+3. Link to replacement extension
+4. Publish final update
+
+```json package.json
+{
+  "keywords": ["deprecated"],
+  "repository": {
+    "url": "https://github.com/user/old-extension"
+  }
+}
+```
+
+```markdown README.md
+# ⚠️ DEPRECATED
+
+This extension is deprecated. Please use [New Extension](link) instead.
+```
+
+## Marketplace Presence
+
+### README Best Practices
+
+Your README is the extension's landing page:
+
+```markdown README.md
+# Extension Name
+
+One-sentence description that appears in search results.
+
+## Features
+
+- **Feature 1**: Description with screenshot
+  ![Feature 1](images/feature1.gif)
+
+- **Feature 2**: Description with screenshot
+  ![Feature 2](images/feature2.png)
+
+## Installation
+
+1. Open VS Code
+2. Press `Ctrl+P` / `Cmd+P`
+3. Type `ext install publisher.extension-name`
+
+## Usage
+
+### Basic Usage
+
+Step-by-step instructions with code examples:
+
+```javascript
+// Example code
+```
+
+### Advanced Usage
+
+More complex scenarios...
+
+## Configuration
+
+This extension contributes the following settings:
+
+- `extension.setting1`: Description and default value
+- `extension.setting2`: Description and default value
+
+## Keyboard Shortcuts
+
+- `Ctrl+Shift+P`: Command Palette
+- `Ctrl+K Ctrl+T`: Custom command
+
+## Known Issues
+
+- Issue 1: Description and workaround
+- Issue 2: Description and workaround
+
+## Release Notes
+
+See [CHANGELOG.md](CHANGELOG.md) for full history.
+
+### 1.0.0
+- Initial release
+
+## Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE)
+```
+
+### Screenshots and GIFs
+
+Visual content dramatically increases engagement:
+
+- Show key features in action
+- Use GIFs for interactive features
+- Compress images (use tools like TinyPNG)
+- Store in `images/` directory
+- Reference in README: `![Demo](images/demo.gif)`
+
+<Tip>
+  Use [Screen to GIF](https://www.screentogif.com/) or [Kap](https://getkap.co/) to create demo GIFs.
+</Tip>
+
+### Extension Icon
+
+Create a recognizable icon:
+
+- **Size**: 128x128 pixels
+- **Format**: PNG (JPEG also supported)
+- **Design**: Simple, recognizable at small sizes
+- **Background**: Consider how it looks on dark/light themes
+
+```json package.json
+{
+  "icon": "images/icon.png"
+}
+```
+
+### Gallery Banner
+
+Customize the Marketplace banner:
+
+```json package.json
+{
+  "galleryBanner": {
+    "color": "#C80000",
+    "theme": "dark"  // or "light"
+  }
+}
+```
+
+## SEO and Discoverability
+
+### Extension Name
+
+- Keep it short and memorable
+- Avoid generic names
+- Include key functionality hint
+
+<CodeGroup>
+```json Good Examples
+{
+  "name": "prettier-vscode",
+  "displayName": "Prettier - Code formatter"
+}
+{
+  "name": "gitlens",
+  "displayName": "GitLens — Git supercharged"
+}
+```
+
+```json Avoid
+{
+  "name": "my-extension",
+  "displayName": "My Extension"
+}
+{
+  "name": "util",
+  "displayName": "Utilities"
+}
+```
+</CodeGroup>
+
+### Description
+
+Write a compelling one-liner:
+
+```json
+{
+  "description": "Format your code using Prettier - an opinionated code formatter"
+}
+```
+
+Avoid:
+- Generic descriptions
+- Just listing features
+- Marketing speak without substance
+
+### Keywords
+
+Add searchable terms:
+
+```json
+{
+  "keywords": [
+    "formatter",
+    "javascript",
+    "typescript",
+    "prettier",
+    "code-quality"
+  ]
+}
+```
+
+### Categories
+
+Select appropriate categories:
+
+```json
+{
+  "categories": [
+    "Formatters",
+    "Programming Languages"
+  ]
+}
+```
+
+## Quality Guidelines
+
+Follow [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines) for quality:
+
+### Performance
+- Activate quickly (<100ms)
+- Don't block the UI thread
+- Dispose resources properly
+- Use incremental updates
+
+### Functionality
+- All features work as documented
+- No console errors or warnings
+- Graceful error handling
+- Respect user settings
+
+### UX
+- Clear command names
+- Helpful error messages
+- Keyboard shortcuts don't conflict
+- Use VS Code theming
+
+### Documentation
+- Comprehensive README
+- Usage examples
+- Configuration documentation
+- Changelog maintained
+
+## CI/CD Publishing
+
+Automate publishing with GitHub Actions:
+
+<CodeGroup>
+```yaml GitHub Actions
+name: Publish Extension
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - run: npm install
+      - run: npm run test
+
+      - name: Publish to Marketplace
+        run: npx vsce publish -p ${{ secrets.VSCE_PAT }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+```
+
+```yaml Azure Pipelines
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '18.x'
+
+  - script: |
+      npm install
+      npm run test
+    displayName: 'Install and Test'
+
+  - script: |
+      npx vsce publish -p $(VSCE_PAT)
+    displayName: 'Publish Extension'
+    env:
+      VSCE_PAT: $(VSCE_PAT)
+```
+</CodeGroup>
+
+Store PAT as secret:
+- GitHub: Repository Settings > Secrets > Actions
+- Azure: Pipeline > Variables > Add secret variable
+
+## Monitoring and Maintenance
+
+### Respond to Reviews
+
+Engage with users:
+- Thank positive reviewers
+- Address negative feedback
+- Fix reported issues
+- Update extension based on feedback
+
+### Track Issues
+
+Link GitHub issues in your extension:
+
+```json package.json
+{
+  "bugs": {
+    "url": "https://github.com/username/extension/issues"
+  }
+}
+```
+
+### Update Regularly
+
+- Fix bugs promptly
+- Support new VS Code versions
+- Add requested features
+- Keep dependencies updated
+- Maintain documentation
+
+## Common Issues
+
+### Publication Fails
+
+**Token expired**:
+```bash
+Error: Failed request: (401) Unauthorized
+```
+Solution: Create new PAT and login again.
+
+**Missing publisher**:
+```bash
+Error: Missing publisher name
+```
+Solution: Add `"publisher": "name"` to package.json.
+
+**Version already exists**:
+```bash
+Error: Extension 'name' version 1.0.0 already exists
+```
+Solution: Increment version number.
+
+### Extension Not Appearing
+
+- Wait 5-10 minutes for indexing
+- Check spelling of extension ID
+- Verify it's not filtered by category
+- Ensure it's not marked as preview
+
+### Poor Discoverability
+
+- Add relevant keywords
+- Improve description
+- Add screenshots
+- Choose correct categories
+- Get user reviews
+
+## Best Practices
+
+1. **Version semantically** - Use [Semantic Versioning](https://semver.org/)
+2. **Write clear changelogs** - Document all changes
+3. **Respond to reviews** - Engage with users
+4. **Monitor statistics** - Track adoption and usage
+5. **Keep dependencies updated** - Security and compatibility
+6. **Test before publishing** - Avoid publishing broken versions
+7. **Use CI/CD** - Automate testing and publishing
+8. **Brand consistently** - Icon, banner, and description
+
+## Related Resources
+
+- [Publishing Overview](/api/publishing/overview)
+- [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+- [Marketplace Publisher Management](https://marketplace.visualstudio.com/manage)
+- [vsce Documentation](https://github.com/microsoft/vscode-vsce)

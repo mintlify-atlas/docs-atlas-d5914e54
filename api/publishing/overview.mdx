@@ -1,0 +1,476 @@
+---
+title: 'Publishing Overview'
+description: 'Learn how to package and publish VS Code extensions'
+---
+
+# Publishing Overview
+
+Once you've built your extension, you can share it with others by publishing to the Visual Studio Code Marketplace or distributing it privately.
+
+## Publishing Options
+
+You have several options for distributing your extension:
+
+<CardGroup cols={2}>
+  <Card title="VS Code Marketplace" icon="store">
+    Publish publicly for millions of users to discover and install
+  </Card>
+  <Card title="Private Distribution" icon="lock">
+    Share .vsix files directly with your team or organization
+  </Card>
+  <Card title="Open VSX Registry" icon="cloud">
+    Alternative registry for open-source compatibility
+  </Card>
+  <Card title="Private Registry" icon="server">
+    Host your own extension registry for enterprise use
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+Before publishing, ensure your extension meets these requirements:
+
+<Steps>
+  <Step title="Complete package.json">
+    Your `package.json` must include required fields:
+
+    ```json package.json
+    {
+      "name": "my-extension",
+      "displayName": "My Extension",
+      "description": "A helpful VS Code extension",
+      "version": "1.0.0",
+      "publisher": "your-publisher-name",
+      "engines": {
+        "vscode": "^1.80.0"
+      },
+      "categories": [
+        "Other"
+      ],
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/username/my-extension"
+      },
+      "icon": "images/icon.png",
+      "license": "MIT"
+    }
+    ```
+
+    <Warning>
+      The `publisher` field must match your Marketplace publisher ID.
+    </Warning>
+  </Step>
+
+  <Step title="Add README.md">
+    Create a comprehensive README with:
+    - Extension description
+    - Features and screenshots
+    - Installation instructions
+    - Usage examples
+    - Configuration options
+    - Known issues
+    - Changelog
+
+    ```markdown README.md
+    # My Extension
+
+    Description of what your extension does.
+
+    ## Features
+
+    - Feature 1: Description
+    - Feature 2: Description
+
+    ![Demo](images/demo.gif)
+
+    ## Installation
+
+    1. Open VS Code
+    2. Press `Ctrl+P` / `Cmd+P`
+    3. Type `ext install your-publisher.my-extension`
+
+    ## Usage
+
+    Instructions on how to use the extension...
+
+    ## Configuration
+
+    This extension contributes the following settings:
+
+    - `myExtension.enable`: Enable/disable this extension
+    - `myExtension.setting`: Description of setting
+
+    ## Release Notes
+
+    ### 1.0.0
+    - Initial release
+    ```
+  </Step>
+
+  <Step title="Add CHANGELOG.md">
+    Document version history:
+
+    ```markdown CHANGELOG.md
+    # Change Log
+
+    ## [1.0.0] - 2024-02-18
+    ### Added
+    - Initial release
+    - Feature A
+    - Feature B
+
+    ### Fixed
+    - Bug fix description
+
+    ### Changed
+    - Breaking change description
+    ```
+  </Step>
+
+  <Step title="Add LICENSE">
+    Include a license file (MIT, Apache, etc.):
+
+    ```text LICENSE
+    MIT License
+
+    Copyright (c) 2024 Your Name
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software")...
+    ```
+  </Step>
+
+  <Step title="Test thoroughly">
+    Before publishing:
+    - Test all features
+    - Check in multiple VS Code versions
+    - Verify on different platforms (Windows, macOS, Linux)
+    - Run extension tests
+    - Test in clean environment
+  </Step>
+</Steps>
+
+## Packaging Your Extension
+
+Create a `.vsix` file for distribution:
+
+<Steps>
+  <Step title="Install vsce">
+    ```bash
+    npm install -g @vscode/vsce
+    ```
+
+    <Note>
+      `vsce` is the official tool for packaging and publishing VS Code extensions.
+    </Note>
+  </Step>
+
+  <Step title="Package the extension">
+    ```bash
+    vsce package
+    ```
+
+    This creates a `.vsix` file: `my-extension-1.0.0.vsix`
+  </Step>
+
+  <Step title="Test the package">
+    Install the `.vsix` file locally:
+
+    ```bash
+    code --install-extension my-extension-1.0.0.vsix
+    ```
+
+    Or use the VS Code UI:
+    1. Open Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`)
+    2. Click `...` menu
+    3. Select `Install from VSIX...`
+    4. Choose your `.vsix` file
+  </Step>
+</Steps>
+
+## Package Options
+
+### Exclude Files
+
+Create a `.vscodeignore` file to exclude unnecessary files:
+
+```text .vscodeignore
+.vscode/**
+.vscode-test/**
+.gitignore
+tsconfig.json
+**/*.ts
+**/*.map
+node_modules/**
+src/**
+test/**
+.eslintrc.json
+```
+
+<Tip>
+  Smaller packages install faster. Exclude source files, tests, and development dependencies.
+</Tip>
+
+### Pre-publish Script
+
+Run tasks before packaging:
+
+```json package.json
+{
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  }
+}
+```
+
+The `vscode:prepublish` script runs automatically before packaging.
+
+### Version Management
+
+Update version numbers:
+
+```bash
+# Patch version (1.0.0 -> 1.0.1)
+vsce package --patch
+
+# Minor version (1.0.0 -> 1.1.0)
+vsce package --minor
+
+# Major version (1.0.0 -> 2.0.0)
+vsce package --major
+```
+
+## Extension Manifest Best Practices
+
+### Categories
+
+Choose appropriate categories:
+
+```json
+{
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Linters",
+    "Formatters",
+    "Debuggers",
+    "Testing",
+    "Data Science",
+    "Machine Learning",
+    "Notebooks",
+    "Education",
+    "Visualization",
+    "Other"
+  ]
+}
+```
+
+### Keywords
+
+Add searchable keywords:
+
+```json
+{
+  "keywords": [
+    "typescript",
+    "javascript",
+    "formatter",
+    "linter",
+    "productivity"
+  ]
+}
+```
+
+### Engine Compatibility
+
+Specify VS Code version:
+
+```json
+{
+  "engines": {
+    "vscode": "^1.80.0"  // Minimum version
+  }
+}
+```
+
+<Warning>
+  Only use APIs available in your minimum VS Code version. Check [API compatibility](https://code.visualstudio.com/api/references/vscode-api).
+</Warning>
+
+### Icon and Gallery Banner
+
+```json
+{
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#C80000",
+    "theme": "dark"
+  }
+}
+```
+
+Icon requirements:
+- Size: 128x128 pixels
+- Format: PNG
+- No transparency recommended
+
+## Bundling Extensions
+
+Reduce extension size with webpack or esbuild:
+
+<CodeGroup>
+```javascript webpack.config.js
+const path = require('path');
+
+module.exports = {
+  target: 'node',
+  entry: './src/extension.ts',
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: 'extension.js',
+    libraryTarget: 'commonjs2'
+  },
+  externals: {
+    vscode: 'commonjs vscode'
+  },
+  resolve: {
+    extensions: ['.ts', '.js']
+  },
+  module: {
+    rules: [
+      {
+        test: /\.ts$/,
+        exclude: /node_modules/,
+        use: 'ts-loader'
+      }
+    ]
+  }
+};
+```
+
+```javascript esbuild.js
+const esbuild = require('esbuild');
+
+esbuild.build({
+  entryPoints: ['src/extension.ts'],
+  bundle: true,
+  outfile: 'dist/extension.js',
+  external: ['vscode'],
+  format: 'cjs',
+  platform: 'node',
+  minify: true
+});
+```
+</CodeGroup>
+
+Update `.vscodeignore`:
+
+```text
+src/**
+node_modules/**
+out/**
+!dist/**
+```
+
+## Pre-Release Versions
+
+Publish pre-release versions for testing:
+
+```bash
+vsce package --pre-release
+```
+
+Users can opt into pre-releases:
+
+```json
+{
+  "version": "1.1.0-beta.1"
+}
+```
+
+## Platform-Specific Extensions
+
+Create platform-specific builds:
+
+```bash
+vsce package --target win32-x64
+vsce package --target linux-x64
+vsce package --target darwin-x64
+vsce package --target darwin-arm64
+```
+
+## Verification Checklist
+
+Before publishing:
+
+- [ ] Extension activates without errors
+- [ ] All commands work correctly
+- [ ] Configuration settings apply properly
+- [ ] No console errors or warnings
+- [ ] Icons display correctly
+- [ ] README has screenshots/GIFs
+- [ ] CHANGELOG is up to date
+- [ ] LICENSE file included
+- [ ] Version number updated
+- [ ] Repository URL correct
+- [ ] No sensitive data in package
+- [ ] File size reasonable (<50MB)
+- [ ] Tested on all target platforms
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Marketplace Publishing" href="/api/publishing/marketplace">
+    Learn how to publish to the VS Code Marketplace
+  </Card>
+  <Card title="Extension Guidelines" href="/api/references/extension-guidelines">
+    Review extension quality guidelines
+  </Card>
+</CardGroup>
+
+## Common Issues
+
+### Package Size Too Large
+
+- Bundle with webpack/esbuild
+- Exclude unnecessary files in `.vscodeignore`
+- Remove unused dependencies
+- Compress images
+
+### Missing Dependencies
+
+```json package.json
+{
+  "dependencies": {
+    "required-package": "^1.0.0"
+  },
+  "devDependencies": {
+    "dev-only-package": "^1.0.0"
+  }
+}
+```
+
+Only `dependencies` are included in the package.
+
+### Activation Issues
+
+Ensure activation events are correct:
+
+```json
+{
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onCommand:myExtension.command",
+    "onView:myExtension.view"
+  ]
+}
+```
+
+## Related Resources
+
+- [Marketplace Publishing Guide](/api/publishing/marketplace)
+- [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+- [vsce Documentation](https://github.com/microsoft/vscode-vsce)

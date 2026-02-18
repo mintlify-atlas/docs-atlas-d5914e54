@@ -1,0 +1,381 @@
+---
+title: 'Command Palette Integration'
+description: 'Learn how to register commands and integrate them with VS Code Command Palette'
+---
+
+# Command Palette Integration
+
+Commands are a fundamental part of VS Code extensions. They appear in the Command Palette, can be bound to keyboard shortcuts, and invoked from menus.
+
+## Overview
+
+Commands provide actions that users can invoke through:
+- Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+- Keyboard shortcuts
+- Context menus
+- View toolbars
+
+## Registering Commands
+
+<Steps>
+  <Step title="Define commands in package.json">
+    First, declare your commands in the `contributes.commands` section:
+
+    ```json package.json
+    {
+      "contributes": {
+        "commands": [
+          {
+            "command": "myExtension.helloWorld",
+            "title": "Hello World",
+            "category": "My Extension",
+            "icon": "$(rocket)"
+          },
+          {
+            "command": "myExtension.showInfo",
+            "title": "Show Information",
+            "category": "My Extension",
+            "enablement": "editorTextFocus"
+          }
+        ]
+      }
+    }
+    ```
+
+    <Note>
+      The `category` field groups related commands together in the Command Palette.
+    </Note>
+  </Step>
+
+  <Step title="Register command handlers">
+    Implement the command logic in your extension's activation:
+
+    ```typescript extension.ts
+    import * as vscode from 'vscode';
+
+    export function activate(context: vscode.ExtensionContext) {
+      // Register command handler
+      const helloCommand = vscode.commands.registerCommand(
+        'myExtension.helloWorld',
+        () => {
+          vscode.window.showInformationMessage('Hello World!');
+        }
+      );
+
+      // Command with parameters
+      const showInfoCommand = vscode.commands.registerCommand(
+        'myExtension.showInfo',
+        (uri: vscode.Uri) => {
+          vscode.window.showInformationMessage(`File: ${uri.fsPath}`);
+        }
+      );
+
+      context.subscriptions.push(helloCommand, showInfoCommand);
+    }
+    ```
+  </Step>
+
+  <Step title="Configure command palette visibility">
+    Control when commands appear using the `commandPalette` menu:
+
+    ```json package.json
+    {
+      "contributes": {
+        "menus": {
+          "commandPalette": [
+            {
+              "command": "myExtension.helloWorld",
+              "when": "editorIsOpen"
+            },
+            {
+              "command": "myExtension.showInfo",
+              "when": "resourceScheme == file"
+            }
+          ]
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Real Example: Git Extension
+
+Here's how VS Code's built-in Git extension registers commands (from extensions/git/package.json:74-100):
+
+```json
+{
+  "contributes": {
+    "commands": [
+      {
+        "command": "git.clone",
+        "title": "Clone",
+        "category": "Git",
+        "enablement": "!operationInProgress"
+      },
+      {
+        "command": "git.init",
+        "title": "Initialize Repository",
+        "category": "Git",
+        "icon": "$(add)",
+        "enablement": "!operationInProgress"
+      },
+      {
+        "command": "git.commit",
+        "title": "Commit",
+        "category": "Git",
+        "icon": "$(check)",
+        "enablement": "!operationInProgress"
+      }
+    ]
+  }
+}
+```
+
+## Command Enablement
+
+Use the `enablement` clause to control when commands are active:
+
+<CodeGroup>
+```json Basic Enablement
+{
+  "command": "myExtension.formatDocument",
+  "enablement": "editorTextFocus && !editorReadonly"
+}
+```
+
+```json Complex Conditions
+{
+  "command": "git.commit",
+  "enablement": "config.git.enabled && !git.missing && gitOpenRepositoryCount != 0"
+}
+```
+
+```json Resource-based
+{
+  "command": "myExtension.openFile",
+  "enablement": "resourceScheme == file && resourceExtname == .md"
+}
+```
+</CodeGroup>
+
+### Common Enablement Contexts
+
+| Context | Description |
+|---------|-------------|
+| `editorTextFocus` | Editor has text focus |
+| `editorReadonly` | Editor is read-only |
+| `resourceScheme` | URI scheme of active resource |
+| `resourceExtname` | File extension |
+| `config.myExt.enabled` | Configuration setting value |
+
+## Invoking Commands Programmatically
+
+You can execute commands from code:
+
+```typescript
+// Execute built-in command
+await vscode.commands.executeCommand('workbench.action.files.save');
+
+// Execute with arguments
+await vscode.commands.executeCommand(
+  'vscode.open',
+  vscode.Uri.file('/path/to/file.txt')
+);
+
+// Get command return value
+const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+  'vscode.executeDocumentSymbolProvider',
+  document.uri
+);
+```
+
+## Command URIs
+
+Create clickable command links in various UI elements:
+
+```typescript
+// In markdown strings
+const message = new vscode.MarkdownString(
+  '[Run Hello World](command:myExtension.helloWorld)'
+);
+message.isTrusted = true; // Required for command links
+
+// In tree view items
+const item = new vscode.TreeItem('Click me');
+item.command = {
+  command: 'myExtension.showInfo',
+  title: 'Show Info',
+  arguments: [someData]
+};
+```
+
+<Warning>
+  Command URIs require `isTrusted = true` on MarkdownString for security.
+</Warning>
+
+## Keyboard Shortcuts
+
+Bind commands to keyboard shortcuts:
+
+```json package.json
+{
+  "contributes": {
+    "keybindings": [
+      {
+        "command": "myExtension.helloWorld",
+        "key": "ctrl+alt+h",
+        "mac": "cmd+alt+h",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "myExtension.formatDocument",
+        "key": "shift+alt+f",
+        "when": "editorHasDocumentFormattingProvider && editorTextFocus"
+      }
+    ]
+  }
+}
+```
+
+## Context Menu Integration
+
+Add commands to various context menus:
+
+<CodeGroup>
+```json Editor Context Menu
+{
+  "menus": {
+    "editor/context": [
+      {
+        "command": "myExtension.formatSelection",
+        "when": "editorHasSelection",
+        "group": "1_modification"
+      }
+    ]
+  }
+}
+```
+
+```json Explorer Context Menu
+{
+  "menus": {
+    "explorer/context": [
+      {
+        "command": "myExtension.processFile",
+        "when": "resourceExtname == .json",
+        "group": "2_workspace"
+      }
+    ]
+  }
+}
+```
+
+```json SCM Title Menu
+{
+  "menus": {
+    "scm/title": [
+      {
+        "command": "git.refresh",
+        "when": "scmProvider == git",
+        "group": "navigation"
+      }
+    ]
+  }
+}
+```
+</CodeGroup>
+
+## Menu Groups
+
+Organize commands in menus using groups:
+
+- `navigation` - Top of menu, inline icons
+- `1_modification` - First group
+- `2_workspace` - Second group
+- `z_commands` - Bottom of menu
+
+<Tip>
+  Use `@<number>` suffix to control ordering within groups: `"group": "navigation@1"`
+</Tip>
+
+## Best Practices
+
+1. **Use categories** - Group related commands with a category prefix
+2. **Descriptive titles** - Use clear, action-oriented command titles
+3. **Enablement clauses** - Hide commands when they don't apply
+4. **Icon consistency** - Use Codicons for consistent UI (`$(icon-name)`)
+5. **Command naming** - Use dot notation: `publisher.extension.command`
+
+## Testing Commands
+
+Test your commands in extension tests:
+
+```typescript
+import * as assert from 'assert';
+import * as vscode from 'vscode';
+
+suite('Command Tests', () => {
+  test('Hello World command', async () => {
+    // Execute command
+    await vscode.commands.executeCommand('myExtension.helloWorld');
+    
+    // Verify side effects
+    // ...
+  });
+
+  test('Command with arguments', async () => {
+    const uri = vscode.Uri.file('/test/file.txt');
+    await vscode.commands.executeCommand('myExtension.showInfo', uri);
+  });
+});
+```
+
+## Common Patterns
+
+### Command with Progress
+
+```typescript
+vscode.commands.registerCommand('myExtension.processFiles', async () => {
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Processing files',
+      cancellable: true
+    },
+    async (progress, token) => {
+      for (let i = 0; i < 100; i++) {
+        if (token.isCancellationRequested) {
+          break;
+        }
+        progress.report({ increment: 1, message: `Step ${i + 1}/100` });
+        await doWork();
+      }
+    }
+  );
+});
+```
+
+### Command with Input
+
+```typescript
+vscode.commands.registerCommand('myExtension.createFile', async () => {
+  const name = await vscode.window.showInputBox({
+    prompt: 'Enter file name',
+    placeHolder: 'example.txt',
+    validateInput: (value) => {
+      return value.trim() === '' ? 'Name cannot be empty' : null;
+    }
+  });
+
+  if (name) {
+    // Create file...
+  }
+});
+```
+
+## Related Resources
+
+- [VS Code API - Commands](https://code.visualstudio.com/api/references/vscode-api#commands)
+- [When Clause Contexts](https://code.visualstudio.com/api/references/when-clause-contexts)
+- [Contribution Points - Commands](https://code.visualstudio.com/api/references/contribution-points#contributes.commands)

@@ -1,0 +1,380 @@
+---
+title: 'Your First Extension'
+description: 'Create your first Visual Studio Code extension from scratch'
+---
+
+# Your First Extension
+
+This guide walks you through creating your first Visual Studio Code extension. You'll create a simple "Hello World" extension that displays a notification message.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **Node.js**: Version 16.x or higher
+- **npm**: Version 8.x or higher
+- **Visual Studio Code**: Latest version
+- **Yeoman**: Extension generator tool
+- **VS Code Extension Generator**: `yo code` scaffolding tool
+
+## Install the Generator
+
+First, install Yeoman and the VS Code Extension generator:
+
+```bash
+npm install -g yo generator-code
+```
+
+## Generate the Extension
+
+Run the generator to scaffold a new extension:
+
+```bash
+yo code
+```
+
+Select the following options:
+
+1. **What type of extension?** → New Extension (TypeScript)
+2. **What's the name of your extension?** → hello-world
+3. **What's the identifier?** → hello-world
+4. **What's the description?** → My first VS Code extension
+5. **Initialize a git repository?** → Yes
+6. **Which package manager?** → npm
+
+<Note>
+The generator creates a complete extension project with TypeScript, build configuration, and example code.
+</Note>
+
+## Project Structure
+
+The generated extension has this structure:
+
+```
+hello-world/
+├── .vscode/
+│   ├── launch.json          # Debug configuration
+│   └── tasks.json           # Build tasks
+├── src/
+│   └── extension.ts         # Extension entry point
+├── package.json             # Extension manifest
+├── tsconfig.json           # TypeScript configuration
+└── README.md               # Extension documentation
+```
+
+## Understanding the Extension Code
+
+### package.json
+
+The extension manifest defines metadata and contributions:
+
+```json
+{
+  "name": "hello-world",
+  "displayName": "hello-world",
+  "description": "My first VS Code extension",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.5.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "hello-world.helloWorld",
+        "title": "Hello World"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.5.0",
+    "@types/node": "16.x",
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+<ParamField path="engines.vscode" type="string" required>
+  Minimum VS Code version required
+</ParamField>
+
+<ParamField path="activationEvents" type="string[]">
+  Events that trigger extension activation
+</ParamField>
+
+<ParamField path="main" type="string" required>
+  Entry point file path
+</ParamField>
+
+<ParamField path="contributes" type="object">
+  Extension contributions (commands, settings, etc.)
+</ParamField>
+
+### extension.ts
+
+The main extension code:
+
+```typescript
+import * as vscode from 'vscode';
+
+// This method is called when your extension is activated
+export function activate(context: vscode.ExtensionContext) {
+  console.log('Extension "hello-world" is now active!');
+
+  // Register a command
+  const disposable = vscode.commands.registerCommand(
+    'hello-world.helloWorld',
+    () => {
+      // Display a message box to the user
+      vscode.window.showInformationMessage('Hello World from hello-world!');
+    }
+  );
+
+  context.subscriptions.push(disposable);
+}
+
+// This method is called when your extension is deactivated
+export function deactivate() {}
+```
+
+## Key Concepts
+
+### Activation Function
+
+The `activate` function is called when your extension is activated:
+
+<ResponseField name="activate" type="(context: ExtensionContext) => void">
+  Called when the extension is activated. Use this to:
+  - Register commands
+  - Set up event listeners
+  - Initialize extension state
+</ResponseField>
+
+```typescript
+export function activate(context: vscode.ExtensionContext) {
+  // Extension activation code
+}
+```
+
+### Extension Context
+
+The context object provides access to extension resources:
+
+<ParamField path="subscriptions" type="Disposable[]">
+  Array to store disposables that will be cleaned up when the extension deactivates
+</ParamField>
+
+<ParamField path="extensionUri" type="Uri">
+  The absolute file path of the extension directory
+</ParamField>
+
+<ParamField path="globalState" type="Memento">
+  Workspace-independent state storage
+</ParamField>
+
+<ParamField path="workspaceState" type="Memento">
+  Workspace-specific state storage
+</ParamField>
+
+### Registering Commands
+
+Commands are registered using `commands.registerCommand`:
+
+```typescript
+const disposable = vscode.commands.registerCommand(
+  'extension.commandId',
+  (arg1, arg2) => {
+    // Command implementation
+    vscode.window.showInformationMessage('Command executed!');
+  }
+);
+
+context.subscriptions.push(disposable);
+```
+
+## Running the Extension
+
+### Debug the Extension
+
+1. Open the extension folder in VS Code
+2. Press `F5` or go to **Run → Start Debugging**
+3. A new VS Code window (Extension Development Host) opens
+4. In the new window, open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`)
+5. Type "Hello World" and select the command
+6. You'll see the "Hello World" notification
+
+<Tip>
+The Extension Development Host runs your extension in a separate VS Code instance, allowing you to test without affecting your main editor.
+</Tip>
+
+### Debug Configuration
+
+The `.vscode/launch.json` file configures debugging:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"]
+    }
+  ]
+}
+```
+
+## Enhancing Your Extension
+
+### Add a Keybinding
+
+Add a keyboard shortcut in `package.json`:
+
+```json
+{
+  "contributes": {
+    "commands": [
+      {
+        "command": "hello-world.helloWorld",
+        "title": "Hello World"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "hello-world.helloWorld",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h"
+      }
+    ]
+  }
+}
+```
+
+### Read Active Document
+
+Access the active text editor:
+
+```typescript
+const editor = vscode.window.activeTextEditor;
+if (editor) {
+  const document = editor.document;
+  const text = document.getText();
+  vscode.window.showInformationMessage(`Document has ${text.length} characters`);
+} else {
+  vscode.window.showWarningMessage('No active editor');
+}
+```
+
+### Show User Input
+
+Prompt the user for input:
+
+```typescript
+const name = await vscode.window.showInputBox({
+  prompt: 'What is your name?',
+  placeHolder: 'Enter your name'
+});
+
+if (name) {
+  vscode.window.showInformationMessage(`Hello, ${name}!`);
+}
+```
+
+### Show Quick Pick
+
+Display a selection menu:
+
+```typescript
+const options = ['Option 1', 'Option 2', 'Option 3'];
+const selection = await vscode.window.showQuickPick(options, {
+  placeHolder: 'Select an option'
+});
+
+if (selection) {
+  vscode.window.showInformationMessage(`You selected: ${selection}`);
+}
+```
+
+## Common Patterns
+
+### Working with Text Edits
+
+```typescript
+vscode.commands.registerCommand('extension.insertText', async () => {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return;
+
+  await editor.edit(editBuilder => {
+    const position = editor.selection.active;
+    editBuilder.insert(position, 'Hello, World!');
+  });
+});
+```
+
+### Listening to Document Changes
+
+```typescript
+vscode.workspace.onDidChangeTextDocument(event => {
+  console.log('Document changed:', event.document.uri.fsPath);
+  console.log('Changes:', event.contentChanges.length);
+});
+```
+
+### Reading Configuration
+
+```typescript
+const config = vscode.workspace.getConfiguration('hello-world');
+const setting = config.get<string>('mySetting', 'default');
+```
+
+## Testing Your Extension
+
+### Add Configuration
+
+Add settings to `package.json`:
+
+```json
+{
+  "contributes": {
+    "configuration": {
+      "title": "Hello World",
+      "properties": {
+        "hello-world.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Hello World extension"
+        }
+      }
+    }
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Extension Structure" icon="folder-tree" href="/api/extension-structure">
+    Learn about extension architecture
+  </Card>
+  <Card title="Commands" icon="terminal" href="/api/commands">
+    Master command registration and execution
+  </Card>
+  <Card title="Text Editor" icon="pen" href="/api/text-editor">
+    Work with text editors and documents
+  </Card>
+  <Card title="Workspace" icon="folder" href="/api/workspace">
+    Access workspace files and folders
+  </Card>
+</CardGroup>
+
+<Tip>
+Check out the [VS Code Extension Samples](https://github.com/microsoft/vscode-extension-samples) repository for more examples.
+</Tip>

@@ -1,0 +1,682 @@
+---
+title: 'Editor'
+description: 'Monaco Editor - The powerful code editor at the heart of VS Code'
+---
+
+## Overview
+
+The Editor component (`src/vs/editor/`) is the Monaco Editor - a powerful, feature-rich code editor that powers VS Code. It provides syntax highlighting, IntelliSense, bracket matching, diff viewing, and countless other features.
+
+**Location:** `src/vs/editor/`
+
+## Architecture
+
+### Core Components
+
+```
+┌──────────────────────────┐
+│  Editor Contributions   │  Extensions & Features
+├──────────────────────────┤
+│       View Layer        │  Rendering & DOM
+├──────────────────────────┤
+│      View Model         │  Layout & Coordinates
+├──────────────────────────┤
+│       Model            │  Text Buffer & Edits
+└──────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="Text Model" icon="file-code" href="#text-model">
+    Document content and change tracking
+  </Card>
+  <Card title="Editor Instance" icon="window-maximize" href="#editor-instance">
+    Main editor API and lifecycle
+  </Card>
+  <Card title="Language Features" icon="code" href="#language-features">
+    IntelliSense, diagnostics, and language support
+  </Card>
+  <Card title="Contributions" icon="puzzle-piece" href="#contributions">
+    Find, fold, bracket matching, etc.
+  </Card>
+</CardGroup>
+
+## Text Model {#text-model}
+
+**Location:** `src/vs/editor/common/model/`
+
+### ITextModel Interface
+
+**Location:** `src/vs/editor/common/model.ts:500`
+
+Represents the document content:
+
+```typescript
+export interface ITextModel {
+    readonly uri: URI;
+    readonly id: string;
+    
+    // Content access
+    getValue(): string;
+    getLineCount(): number;
+    getLineContent(lineNumber: number): string;
+    getValueInRange(range: IRange): string;
+    
+    // Editing
+    applyEdits(operations: IIdentifiedSingleEditOperation[]): void;
+    pushEditOperations(
+        beforeCursorState: Selection[] | null,
+        editOperations: IIdentifiedSingleEditOperation[],
+        cursorStateComputer: ICursorStateComputer | null
+    ): Selection[] | null;
+    
+    // Events
+    onDidChangeContent(listener: (e: IModelContentChangedEvent) => void): IDisposable;
+}
+```
+
+### Creating a Text Model
+
+```typescript
+import { IModelService } from 'vs/editor/common/services/model';
+import { URI } from 'vs/base/common/uri';
+
+export class DocumentManager {
+    constructor(
+        @IModelService private readonly modelService: IModelService
+    ) {}
+    
+    createDocument(uri: URI, content: string, languageId: string): ITextModel {
+        return this.modelService.createModel(
+            content,
+            { languageId },
+            uri
+        );
+    }
+    
+    getDocument(uri: URI): ITextModel | null {
+        return this.modelService.getModel(uri);
+    }
+}
+```
+
+### Editing Text Models
+
+```typescript
+import { Range } from 'vs/editor/common/core/range';
+import { ITextModel } from 'vs/editor/common/model';
+
+function editDocument(model: ITextModel): void {
+    // Simple edit
+    model.applyEdits([{
+        range: new Range(1, 1, 1, 1),
+        text: '// New comment\n'
+    }]);
+    
+    // Multiple edits with cursor tracking
+    const edits = [
+        {
+            range: new Range(1, 1, 1, 5),
+            text: 'replaced'
+        },
+        {
+            range: new Range(3, 1, 3, 1),
+            text: 'inserted'
+        }
+    ];
+    
+    model.pushEditOperations(
+        null,
+        edits,
+        () => null // Cursor state computer
+    );
+}
+```
+
+### Listening to Changes
+
+```typescript
+const model: ITextModel = /* ... */;
+
+// Content changes
+model.onDidChangeContent(e => {
+    console.log('Content changed');
+    for (const change of e.changes) {
+        console.log('Range:', change.range);
+        console.log('Text:', change.text);
+    }
+});
+
+// Language changes
+model.onDidChangeLanguage(e => {
+    console.log('Language changed to:', e.newLanguage);
+});
+```
+
+## Editor Instance {#editor-instance}
+
+**Location:** `src/vs/editor/browser/editorBrowser.ts`
+
+### ICodeEditor Interface
+
+**Location:** `src/vs/editor/browser/editorBrowser.ts:700`
+
+```typescript
+export interface ICodeEditor extends IEditor {
+    // Model
+    getModel(): ITextModel | null;
+    setModel(model: ITextModel | null): void;
+    
+    // Selection
+    getSelection(): Selection | null;
+    getSelections(): Selection[] | null;
+    setSelection(selection: IRange): void;
+    setSelections(selections: readonly ISelection[]): void;
+    
+    // Position
+    getPosition(): Position | null;
+    setPosition(position: IPosition): void;
+    revealPosition(position: IPosition, scrollType?: ScrollType): void;
+    
+    // Actions
+    trigger(source: string | null, handlerId: string, payload: any): void;
+    executeEdits(source: string, edits: IIdentifiedSingleEditOperation[]): boolean;
+    
+    // Layout
+    layout(dimension?: IDimension): void;
+    focus(): void;
+}
+```
+
+### Creating an Editor
+
+**Location:** `src/vs/editor/browser/services/codeEditorService.ts`
+
+```typescript
+import { ICodeEditorService } from 'vs/editor/browser/services/codeEditorService';
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+
+export class EditorContainer {
+    constructor(
+        private readonly container: HTMLElement,
+        @IInstantiationService private readonly instantiationService: IInstantiationService,
+        @ICodeEditorService private readonly editorService: ICodeEditorService
+    ) {}
+    
+    createEditor(): ICodeEditor {
+        const editor = this.instantiationService.createInstance(
+            CodeEditorWidget,
+            this.container,
+            {
+                // Editor options
+                lineNumbers: 'on',
+                minimap: { enabled: true },
+                automaticLayout: true,
+                theme: 'vs-dark'
+            },
+            {} // Override services
+        );
+        
+        return editor;
+    }
+}
+```
+
+### Editor Options
+
+**Location:** `src/vs/editor/common/config/editorOptions.ts`
+
+<Accordion title="Common Editor Options">
+
+```typescript
+const editorOptions: IEditorOptions = {
+    // Basic
+    value: 'initial content',
+    language: 'typescript',
+    theme: 'vs-dark',
+    
+    // Display
+    lineNumbers: 'on', // 'on' | 'off' | 'relative' | 'interval'
+    glyphMargin: true,
+    folding: true,
+    lineDecorationsWidth: 10,
+    
+    // Editing
+    readOnly: false,
+    wordWrap: 'on', // 'on' | 'off' | 'wordWrapColumn' | 'bounded'
+    tabSize: 4,
+    insertSpaces: true,
+    
+    // Minimap
+    minimap: {
+        enabled: true,
+        side: 'right',
+        showSlider: 'mouseover'
+    },
+    
+    // Scrolling
+    scrollBeyondLastLine: true,
+    smoothScrolling: true,
+    
+    // IntelliSense
+    quickSuggestions: true,
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnEnter: 'on',
+    
+    // Find
+    find: {
+        seedSearchStringFromSelection: 'always',
+        autoFindInSelection: 'never'
+    }
+};
+```
+
+</Accordion>
+
+## Language Features {#language-features}
+
+**Location:** `src/vs/editor/common/languages/`
+
+### Language Feature Registry
+
+**Location:** `src/vs/editor/common/languageFeatureRegistry.ts`
+
+Language features are registered and provided through a registry system:
+
+```typescript
+import * as languages from 'vs/editor/common/languages';
+import { ITextModel } from 'vs/editor/common/model';
+import { Position } from 'vs/editor/common/core/position';
+import { CancellationToken } from 'vs/base/common/cancellation';
+
+// Register completion provider
+languages.CompletionProviderRegistry.register('typescript', {
+    provideCompletionItems(
+        model: ITextModel,
+        position: Position,
+        context: languages.CompletionContext,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.CompletionList> {
+        return {
+            suggestions: [
+                {
+                    label: 'myFunction',
+                    kind: languages.CompletionItemKind.Function,
+                    insertText: 'myFunction()',
+                    range: {
+                        startLineNumber: position.lineNumber,
+                        startColumn: position.column,
+                        endLineNumber: position.lineNumber,
+                        endColumn: position.column
+                    }
+                }
+            ]
+        };
+    }
+});
+```
+
+### Key Language Features
+
+<CardGroup cols={2}>
+  <Card title="Completion" icon="sparkles">
+    **CompletionProviderRegistry**
+    
+    Auto-complete suggestions
+  </Card>
+  
+  <Card title="Hover" icon="info-circle">
+    **HoverProviderRegistry**
+    
+    Information on hover
+  </Card>
+  
+  <Card title="Definition" icon="arrow-right">
+    **DefinitionProviderRegistry**
+    
+    Go to definition
+  </Card>
+  
+  <Card title="References" icon="search">
+    **ReferenceProviderRegistry**
+    
+    Find all references
+  </Card>
+  
+  <Card title="Diagnostics" icon="triangle-exclamation">
+    **Markers**
+    
+    Errors and warnings
+  </Card>
+  
+  <Card title="Formatting" icon="align-left">
+    **DocumentFormattingEditProviderRegistry**
+    
+    Code formatting
+  </Card>
+</CardGroup>
+
+### Hover Provider Example
+
+```typescript
+languages.HoverProviderRegistry.register('javascript', {
+    provideHover(
+        model: ITextModel,
+        position: Position,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.Hover> {
+        const word = model.getWordAtPosition(position);
+        if (!word) return null;
+        
+        return {
+            contents: [
+                { value: `**${word.word}**` },
+                { value: 'Documentation for this symbol' }
+            ],
+            range: {
+                startLineNumber: position.lineNumber,
+                startColumn: word.startColumn,
+                endLineNumber: position.lineNumber,
+                endColumn: word.endColumn
+            }
+        };
+    }
+});
+```
+
+### Document Symbols Provider
+
+```typescript
+languages.DocumentSymbolProviderRegistry.register('typescript', {
+    provideDocumentSymbols(
+        model: ITextModel,
+        token: CancellationToken
+    ): languages.ProviderResult<languages.DocumentSymbol[]> {
+        return [
+            {
+                name: 'MyClass',
+                detail: 'class',
+                kind: languages.SymbolKind.Class,
+                range: /* full range */,
+                selectionRange: /* identifier range */,
+                children: [
+                    {
+                        name: 'myMethod',
+                        detail: '(): void',
+                        kind: languages.SymbolKind.Method,
+                        range: /* method range */,
+                        selectionRange: /* name range */
+                    }
+                ]
+            }
+        ];
+    }
+});
+```
+
+## Editor Contributions {#contributions}
+
+**Location:** `src/vs/editor/contrib/`
+
+Editor contributions add features to the editor:
+
+### Major Contributions
+
+<Accordion title="Built-in Editor Contributions">
+
+- **find/** - Find and replace widget
+- **folding/** - Code folding
+- **bracketMatching/** - Bracket pair matching
+- **suggest/** - IntelliSense suggestions
+- **codeAction/** - Quick fixes and refactorings
+- **hover/** - Hover information widget
+- **rename/** - Symbol renaming
+- **format/** - Document formatting
+- **snippet/** - Code snippets
+- **parameterHints/** - Parameter hints
+- **colorPicker/** - Color picker widget
+- **comment/** - Comment toggling
+- **indentation/** - Indentation helpers
+- **gotoError/** - Navigate to errors
+- **multicursor/** - Multiple cursor support
+
+</Accordion>
+
+### Creating an Editor Contribution
+
+```typescript
+import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
+import { IEditorContribution } from 'vs/editor/common/editorCommon';
+import { Disposable } from 'vs/base/common/lifecycle';
+
+class MyEditorContribution extends Disposable implements IEditorContribution {
+    public static readonly ID = 'editor.contrib.myContribution';
+    
+    constructor(
+        private readonly editor: ICodeEditor
+    ) {
+        super();
+        
+        // Listen to editor events
+        this._register(editor.onDidChangeModel(() => {
+            this.onModelChanged();
+        }));
+        
+        this._register(editor.onDidChangeCursorPosition(e => {
+            this.onCursorPositionChanged(e);
+        }));
+    }
+    
+    private onModelChanged(): void {
+        const model = this.editor.getModel();
+        if (model) {
+            // React to model changes
+        }
+    }
+    
+    private onCursorPositionChanged(e: ICursorPositionChangedEvent): void {
+        console.log('Cursor moved to:', e.position);
+    }
+}
+
+// Register the contribution
+import { registerEditorContribution } from 'vs/editor/browser/editorExtensions';
+
+registerEditorContribution(
+    MyEditorContribution.ID,
+    MyEditorContribution,
+    EditorContributionInstantiation.AfterFirstRender
+);
+```
+
+## Decorations and Overlays
+
+### Editor Decorations
+
+**Location:** `src/vs/editor/common/model/textModel.ts`
+
+Decorations add visual elements to the editor:
+
+```typescript
+import { IModelDeltaDecoration } from 'vs/editor/common/model';
+import { Range } from 'vs/editor/common/core/range';
+
+const model: ITextModel = /* ... */;
+
+// Add decorations
+const decorations: IModelDeltaDecoration[] = [
+    {
+        range: new Range(1, 1, 1, 10),
+        options: {
+            inlineClassName: 'my-inline-decoration',
+            glyphMarginClassName: 'my-glyph',
+            hoverMessage: { value: 'Hover message' },
+            isWholeLine: false
+        }
+    }
+];
+
+const decorationIds = model.deltaDecorations([], decorations);
+
+// Update decorations
+model.deltaDecorations(decorationIds, newDecorations);
+
+// Remove decorations
+model.deltaDecorations(decorationIds, []);
+```
+
+### Decoration Options
+
+```typescript
+interface IModelDecorationOptions {
+    // Styling
+    className?: string;           // CSS class for the decoration
+    inlineClassName?: string;     // CSS class for inline text
+    glyphMarginClassName?: string; // CSS class for glyph margin
+    
+    // Hover
+    hoverMessage?: IMarkdownString | IMarkdownString[];
+    
+    // Behavior
+    isWholeLine?: boolean;
+    stickiness?: TrackedRangeStickiness;
+    
+    // Visual
+    showIfCollapsed?: boolean;
+    overviewRuler?: IModelDecorationOverviewRulerOptions;
+    minimap?: IModelDecorationMinimapOptions;
+}
+```
+
+## Editor Commands and Actions
+
+**Location:** `src/vs/editor/browser/editorExtensions.ts`
+
+### Registering Editor Actions
+
+```typescript
+import { EditorAction, registerEditorAction } from 'vs/editor/browser/editorExtensions';
+import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
+import { EditorContextKeys } from 'vs/editor/common/editorContextKeys';
+import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
+
+class MyEditorAction extends EditorAction {
+    constructor() {
+        super({
+            id: 'myExtension.myAction',
+            label: 'My Action',
+            alias: 'My Action',
+            precondition: EditorContextKeys.editorTextFocus,
+            kbOpts: {
+                kbExpr: EditorContextKeys.editorTextFocus,
+                primary: KeyMod.CtrlCmd | KeyCode.KeyK,
+                weight: 100
+            }
+        });
+    }
+    
+    run(accessor: ServicesAccessor, editor: ICodeEditor): void {
+        const model = editor.getModel();
+        if (!model) return;
+        
+        const selection = editor.getSelection();
+        if (selection) {
+            // Perform action
+            console.log('Selected text:', model.getValueInRange(selection));
+        }
+    }
+}
+
+registerEditorAction(MyEditorAction);
+```
+
+## Diff Editor
+
+**Location:** `src/vs/editor/browser/widget/diffEditor/`
+
+### IDiffEditor Interface
+
+```typescript
+import { IDiffEditor } from 'vs/editor/browser/editorBrowser';
+
+interface IDiffEditor extends IEditor {
+    getOriginalEditor(): ICodeEditor;
+    getModifiedEditor(): ICodeEditor;
+    
+    setModel(model: IDiffEditorModel | null): void;
+    getModel(): IDiffEditorModel | null;
+    
+    // Navigation
+    goToDiff(target: 'previous' | 'next'): void;
+}
+```
+
+### Creating a Diff Editor
+
+```typescript
+import { DiffEditorWidget } from 'vs/editor/browser/widget/diffEditor/diffEditorWidget';
+
+const diffEditor = instantiationService.createInstance(
+    DiffEditorWidget,
+    container,
+    {
+        enableSplitViewResizing: true,
+        renderSideBySide: true,
+        ignoreTrimWhitespace: false
+    }
+);
+
+// Set models
+diffEditor.setModel({
+    original: originalModel,
+    modified: modifiedModel
+});
+```
+
+## Best Practices
+
+<Warning>
+**Model Lifecycle:** Always dispose text models when no longer needed. Use `IModelService` to create models for automatic lifecycle management.
+</Warning>
+
+<Tip>
+**Editor Performance:** For large files, consider using `readOnly` mode or disabling expensive features like minimap temporarily.
+</Tip>
+
+<Note>
+**Language Features:** Register language features early and make providers efficient. They're called frequently during editing.
+</Note>
+
+## Monaco Editor API
+
+**Location:** `src/vs/editor/editor.api.ts`
+
+The standalone Monaco Editor exposes a subset of functionality:
+
+```typescript
+import * as monaco from 'monaco-editor';
+
+// Create editor
+const editor = monaco.editor.create(container, {
+    value: 'console.log("Hello");',
+    language: 'javascript'
+});
+
+// Language features
+monaco.languages.registerCompletionItemProvider('javascript', {
+    provideCompletionItems: () => { /* ... */ }
+});
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Workbench" href="/components/workbench">
+    Editor integration in workbench
+  </Card>
+  <Card title="Language Features" href="/components/language-features">
+    Extension-provided language support
+  </Card>
+  <Card title="Themes" href="/components/themes">
+    Editor syntax highlighting themes
+  </Card>
+</CardGroup>

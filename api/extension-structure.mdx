@@ -1,0 +1,552 @@
+---
+title: 'Extension Structure'
+description: 'Understanding the structure and architecture of VS Code extensions'
+---
+
+# Extension Structure
+
+This guide explains the structure and architecture of Visual Studio Code extensions, including the manifest file, activation lifecycle, and contribution points.
+
+## Extension Manifest (package.json)
+
+The `package.json` file is the extension manifest that defines metadata, capabilities, and contributions.
+
+### Required Fields
+
+```json
+{
+  "name": "my-extension",
+  "displayName": "My Extension",
+  "description": "A great extension",
+  "version": "1.0.0",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.5.0"
+  },
+  "main": "./out/extension.js"
+}
+```
+
+<ParamField path="name" type="string" required>
+  Extension identifier (lowercase, no spaces)
+</ParamField>
+
+<ParamField path="displayName" type="string">
+  Human-readable name shown in VS Code
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  Extension version (semver format)
+</ParamField>
+
+<ParamField path="engines.vscode" type="string" required>
+  Minimum VS Code version required
+</ParamField>
+
+<ParamField path="main" type="string">
+  Entry point file (relative to extension root)
+</ParamField>
+
+## Activation Events
+
+Activation events control when your extension is loaded:
+
+```json
+{
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onCommand:myExtension.doSomething",
+    "onDebug",
+    "onFileSystem:sftp",
+    "workspaceContains:**/.editorconfig",
+    "onStartupFinished"
+  ]
+}
+```
+
+### Common Activation Events
+
+<Tabs>
+  <Tab title="onLanguage">
+    Activated when a file of a specific language is opened:
+    
+    ```json
+    "activationEvents": [
+      "onLanguage:javascript",
+      "onLanguage:typescript"
+    ]
+    ```
+  </Tab>
+  
+  <Tab title="onCommand">
+    Activated when a command is invoked:
+    
+    ```json
+    "activationEvents": [
+      "onCommand:extension.sayHello"
+    ]
+    ```
+  </Tab>
+  
+  <Tab title="onDebug">
+    Activated before debugging starts:
+    
+    ```json
+    "activationEvents": [
+      "onDebug",
+      "onDebugResolve:node",
+      "onDebugInitialConfigurations"
+    ]
+    ```
+  </Tab>
+  
+  <Tab title="workspaceContains">
+    Activated when a workspace contains matching files:
+    
+    ```json
+    "activationEvents": [
+      "workspaceContains:**/package.json",
+      "workspaceContains:**/.git"
+    ]
+    ```
+  </Tab>
+  
+  <Tab title="onStartupFinished">
+    Activated after VS Code starts (use for non-critical features):
+    
+    ```json
+    "activationEvents": [
+      "onStartupFinished"
+    ]
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Avoid using `"*"` as an activation event as it loads your extension at startup, slowing down VS Code.
+</Warning>
+
+## Contribution Points
+
+Contribution points declare what your extension adds to VS Code:
+
+### Commands
+
+Declare commands that users can invoke:
+
+```json
+{
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.sayHello",
+        "title": "Say Hello",
+        "category": "My Extension",
+        "icon": "$(heart)"
+      }
+    ]
+  }
+}
+```
+
+<ParamField path="command" type="string" required>
+  Unique command identifier
+</ParamField>
+
+<ParamField path="title" type="string" required>
+  Command title shown in Command Palette
+</ParamField>
+
+<ParamField path="category" type="string">
+  Category prefix for better organization
+</ParamField>
+
+<ParamField path="icon" type="string | object">
+  Icon using codicons (`$(icon-name)`) or file path
+</ParamField>
+
+### Configuration
+
+Add settings that users can configure:
+
+```json
+{
+  "contributes": {
+    "configuration": {
+      "title": "My Extension",
+      "properties": {
+        "myExtension.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable My Extension"
+        },
+        "myExtension.maxItems": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum number of items"
+        },
+        "myExtension.theme": {
+          "type": "string",
+          "enum": ["light", "dark", "auto"],
+          "default": "auto",
+          "description": "Color theme"
+        }
+      }
+    }
+  }
+}
+```
+
+### Keybindings
+
+Add keyboard shortcuts:
+
+```json
+{
+  "contributes": {
+    "keybindings": [
+      {
+        "command": "extension.sayHello",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h",
+        "when": "editorTextFocus"
+      }
+    ]
+  }
+}
+```
+
+<ParamField path="key" type="string" required>
+  Keyboard shortcut for Windows/Linux
+</ParamField>
+
+<ParamField path="mac" type="string">
+  Keyboard shortcut for macOS
+</ParamField>
+
+<ParamField path="when" type="string">
+  Context condition using when clause
+</ParamField>
+
+### Menus
+
+Add items to VS Code menus:
+
+```json
+{
+  "contributes": {
+    "menus": {
+      "editor/context": [
+        {
+          "command": "extension.sayHello",
+          "group": "navigation",
+          "when": "editorHasSelection"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "extension.processFile",
+          "when": "resourceExtname == .txt"
+        }
+      ]
+    }
+  }
+}
+```
+
+### Languages
+
+Register language support:
+
+```json
+{
+  "contributes": {
+    "languages": [
+      {
+        "id": "mylang",
+        "aliases": ["MyLanguage", "mylang"],
+        "extensions": [".ml"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mylang",
+        "scopeName": "source.mylang",
+        "path": "./syntaxes/mylang.tmLanguage.json"
+      }
+    ]
+  }
+}
+```
+
+## Extension Entry Point
+
+The main extension file exports `activate` and `deactivate` functions:
+
+```typescript
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext) {
+  console.log('Extension activated');
+  
+  // Register commands
+  const disposable = vscode.commands.registerCommand(
+    'extension.sayHello',
+    () => {
+      vscode.window.showInformationMessage('Hello!');
+    }
+  );
+  
+  context.subscriptions.push(disposable);
+}
+
+export function deactivate() {
+  console.log('Extension deactivated');
+}
+```
+
+### Extension Context
+
+The `ExtensionContext` provides access to extension resources:
+
+<ParamField path="subscriptions" type="Disposable[]">
+  Disposables array - add all disposables here for automatic cleanup
+</ParamField>
+
+<ParamField path="extensionUri" type="Uri">
+  Absolute URI of the extension directory
+</ParamField>
+
+<ParamField path="extensionPath" type="string" deprecated>
+  Absolute path (use `extensionUri` instead)
+</ParamField>
+
+<ParamField path="globalState" type="Memento">
+  Global state storage (persists across workspaces)
+</ParamField>
+
+<ParamField path="workspaceState" type="Memento">
+  Workspace-specific state storage
+</ParamField>
+
+<ParamField path="secrets" type="SecretStorage">
+  Secure storage for sensitive data
+</ParamField>
+
+<ParamField path="globalStorageUri" type="Uri">
+  URI for global storage location
+</ParamField>
+
+<ParamField path="logUri" type="Uri">
+  URI for log file storage
+</ParamField>
+
+### State Management
+
+```typescript
+// Store global state
+await context.globalState.update('myKey', { count: 0 });
+const value = context.globalState.get('myKey');
+
+// Store workspace state
+await context.workspaceState.update('lastFile', uri.fsPath);
+
+// Store secrets
+await context.secrets.store('apiKey', 'secret-value');
+const secret = await context.secrets.get('apiKey');
+```
+
+## File Organization
+
+A typical extension project structure:
+
+```
+my-extension/
+├── .vscode/
+│   ├── launch.json              # Debug configuration
+│   ├── tasks.json               # Build tasks
+│   └── settings.json            # Workspace settings
+├── src/
+│   ├── extension.ts             # Main entry point
+│   ├── commands/
+│   │   ├── helloCommand.ts      # Individual commands
+│   │   └── index.ts             # Commands index
+│   ├── providers/
+│   │   ├── completionProvider.ts
+│   │   └── hoverProvider.ts
+│   └── utils/
+│       └── helpers.ts           # Utility functions
+├── resources/
+│   ├── icons/
+│   └── snippets/
+├── syntaxes/                    # Language grammars
+├── language-configuration.json  # Language config
+├── package.json                 # Extension manifest
+├── tsconfig.json               # TypeScript config
+├── .vscodeignore               # Files to exclude
+└── README.md                    # Documentation
+```
+
+## Extension Dependencies
+
+### Extension Dependencies
+
+Declare dependencies on other extensions:
+
+```json
+{
+  "extensionDependencies": [
+    "vscode.git",
+    "ms-python.python"
+  ]
+}
+```
+
+### Extension Packs
+
+Bundle multiple extensions together:
+
+```json
+{
+  "extensionPack": [
+    "publisher.extension1",
+    "publisher.extension2"
+  ]
+}
+```
+
+## Extension Capabilities
+
+Declare what environments your extension supports:
+
+```json
+{
+  "capabilities": {
+    "virtualWorkspaces": true,
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Some features disabled in untrusted workspaces"
+    }
+  }
+}
+```
+
+## Publishing Information
+
+```json
+{
+  "publisher": "your-name",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-name/my-extension"
+  },
+  "bugs": {
+    "url": "https://github.com/your-name/my-extension/issues"
+  },
+  "homepage": "https://github.com/your-name/my-extension",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "javascript",
+    "typescript",
+    "linter"
+  ]
+}
+```
+
+## Real-World Example: Git Extension
+
+Here's a simplified version from VS Code's built-in Git extension:
+
+```json
+{
+  "name": "git",
+  "displayName": "Git",
+  "description": "Git SCM Integration",
+  "version": "1.0.0",
+  "publisher": "vscode",
+  "engines": {
+    "vscode": "^1.5.0"
+  },
+  "activationEvents": [
+    "*",
+    "onFileSystem:git"
+  ],
+  "main": "./out/main",
+  "contributes": {
+    "commands": [
+      {
+        "command": "git.clone",
+        "title": "Clone",
+        "category": "Git"
+      },
+      {
+        "command": "git.commit",
+        "title": "Commit",
+        "category": "Git",
+        "icon": "$(check)"
+      }
+    ],
+    "configuration": {
+      "title": "Git",
+      "properties": {
+        "git.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Git features"
+        }
+      }
+    }
+  }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Specific Activation Events">
+    Avoid `"*"` and use specific events like `onLanguage:` to improve startup performance.
+  </Accordion>
+  
+  <Accordion title="Organize Code by Feature">
+    Structure your code into logical modules (commands, providers, utils) for maintainability.
+  </Accordion>
+  
+  <Accordion title="Clean Up Resources">
+    Always add disposables to `context.subscriptions` for automatic cleanup:
+    
+    ```typescript
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*.js');
+    context.subscriptions.push(watcher);
+    ```
+  </Accordion>
+  
+  <Accordion title="Provide Good Defaults">
+    Set sensible defaults for all configuration properties.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands" icon="terminal" href="/api/commands">
+    Register and execute commands
+  </Card>
+  <Card title="Text Editor" icon="pen" href="/api/text-editor">
+    Work with editors and documents
+  </Card>
+  <Card title="Workspace" icon="folder" href="/api/workspace">
+    Access workspace files and settings
+  </Card>
+  <Card title="Languages" icon="code" href="/api/languages">
+    Provide language features
+  </Card>
+</CardGroup>

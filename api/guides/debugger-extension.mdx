@@ -1,0 +1,697 @@
+---
+title: 'Debugger Extension'
+description: 'Create debugger extensions using the Debug Adapter Protocol'
+---
+
+# Debugger Extension
+
+Debugger extensions integrate debugging capabilities into VS Code using the Debug Adapter Protocol (DAP). They enable breakpoints, stepping, variable inspection, and more.
+
+## Overview
+
+The Debug Adapter Protocol separates the debugger UI (VS Code) from the debugging logic (Debug Adapter), allowing:
+- Support for multiple languages and runtimes
+- Consistent debugging experience across languages
+- Debugging local and remote processes
+- Custom debug configurations
+
+<Note>
+  DAP is similar to LSP but focuses on debugging rather than language intelligence.
+</Note>
+
+## Architecture
+
+```
+┌─────────────────┐      DAP (JSON-RPC)      ┌─────────────────┐
+│  VS Code        │ <───────────────────────> │ Debug Adapter   │
+│  (Debug UI)     │                           │                 │
+│                 │                           │                 │
+│  - Breakpoints  │                           │  - Runtime      │
+│  - Variables    │                           │  - Breakpoints  │
+│  - Call Stack   │                           │  - Stepping     │
+└─────────────────┘                           └────────┬────────┘
+                                                       │
+                                                       ▼
+                                              ┌─────────────────┐
+                                              │   Debuggee      │
+                                              │   (Program)     │
+                                              └─────────────────┘
+```
+
+## Setting Up a Debugger Extension
+
+<Steps>
+  <Step title="Define debug configuration">
+    ```json package.json
+    {
+      "contributes": {
+        "breakpoints": [
+          {
+            "language": "myLanguage"
+          }
+        ],
+        "debuggers": [
+          {
+            "type": "myLanguage",
+            "label": "My Language Debugger",
+            "program": "./out/debugAdapter.js",
+            "runtime": "node",
+            "configurationAttributes": {
+              "launch": {
+                "required": ["program"],
+                "properties": {
+                  "program": {
+                    "type": "string",
+                    "description": "Absolute path to the program.",
+                    "default": "${workspaceFolder}/main.js"
+                  },
+                  "stopOnEntry": {
+                    "type": "boolean",
+                    "description": "Automatically stop after launch.",
+                    "default": true
+                  },
+                  "args": {
+                    "type": "array",
+                    "description": "Command line arguments.",
+                    "default": []
+                  }
+                }
+              },
+              "attach": {
+                "required": ["port"],
+                "properties": {
+                  "port": {
+                    "type": "number",
+                    "description": "Debug port to attach to.",
+                    "default": 5858
+                  }
+                }
+              }
+            },
+            "initialConfigurations": [
+              {
+                "type": "myLanguage",
+                "request": "launch",
+                "name": "Launch Program",
+                "program": "${workspaceFolder}/main.js"
+              }
+            ],
+            "configurationSnippets": [
+              {
+                "label": "My Language: Launch",
+                "description": "Launch a program",
+                "body": {
+                  "type": "myLanguage",
+                  "request": "launch",
+                  "name": "${2:Launch Program}",
+                  "program": "^\"\${workspaceFolder}/${1:main.js}\""
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Implement the Debug Adapter">
+    ```typescript debugAdapter.ts
+    import {
+      LoggingDebugSession,
+      InitializedEvent,
+      TerminatedEvent,
+      StoppedEvent,
+      Thread,
+      StackFrame,
+      Scope,
+      Source,
+      Breakpoint
+    } from '@vscode/debugadapter';
+    import { DebugProtocol } from '@vscode/debugprotocol';
+
+    interface LaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
+      program: string;
+      stopOnEntry?: boolean;
+      args?: string[];
+    }
+
+    export class MyDebugSession extends LoggingDebugSession {
+      private _runtime: RuntimeDebugger;
+
+      public constructor() {
+        super('myLanguage-debug.txt');
+        this._runtime = new RuntimeDebugger();
+
+        // Listen to runtime events
+        this._runtime.on('stopOnEntry', () => {
+          this.sendEvent(new StoppedEvent('entry', 1));
+        });
+        this._runtime.on('stopOnBreakpoint', () => {
+          this.sendEvent(new StoppedEvent('breakpoint', 1));
+        });
+        this._runtime.on('end', () => {
+          this.sendEvent(new TerminatedEvent());
+        });
+      }
+
+      protected initializeRequest(
+        response: DebugProtocol.InitializeResponse,
+        args: DebugProtocol.InitializeRequestArguments
+      ): void {
+        response.body = response.body || {};
+        response.body.supportsConfigurationDoneRequest = true;
+        response.body.supportsEvaluateForHovers = true;
+        response.body.supportsStepBack = false;
+        response.body.supportsSetVariable = true;
+
+        this.sendResponse(response);
+        this.sendEvent(new InitializedEvent());
+      }
+
+      protected launchRequest(
+        response: DebugProtocol.LaunchResponse,
+        args: LaunchRequestArguments
+      ): void {
+        // Start the program
+        this._runtime.start(args.program, args.stopOnEntry || false, args.args);
+        this.sendResponse(response);
+      }
+
+      protected setBreakPointsRequest(
+        response: DebugProtocol.SetBreakpointsResponse,
+        args: DebugProtocol.SetBreakpointsArguments
+      ): void {
+        const path = args.source.path!;
+        const clientLines = args.lines || [];
+
+        // Set breakpoints in runtime
+        const actualBreakpoints = this._runtime.setBreakpoints(path, clientLines);
+
+        response.body = {
+          breakpoints: actualBreakpoints.map(bp => ({
+            verified: bp.verified,
+            line: bp.line
+          }))
+        };
+        this.sendResponse(response);
+      }
+
+      protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
+        response.body = {
+          threads: [new Thread(1, 'Main Thread')]
+        };
+        this.sendResponse(response);
+      }
+
+      protected stackTraceRequest(
+        response: DebugProtocol.StackTraceResponse,
+        args: DebugProtocol.StackTraceArguments
+      ): void {
+        const stk = this._runtime.stack();
+        response.body = {
+          stackFrames: stk.frames.map((frame, index) => {
+            const sf = new StackFrame(
+              index,
+              frame.name,
+              new Source(frame.file, this.convertDebuggerPathToClient(frame.file)),
+              this.convertDebuggerLineToClient(frame.line)
+            );
+            return sf;
+          }),
+          totalFrames: stk.count
+        };
+        this.sendResponse(response);
+      }
+
+      protected scopesRequest(
+        response: DebugProtocol.ScopesResponse,
+        args: DebugProtocol.ScopesArguments
+      ): void {
+        response.body = {
+          scopes: [
+            new Scope('Local', this._runtime.getLocalVariablesReference(), false),
+            new Scope('Global', this._runtime.getGlobalVariablesReference(), true)
+          ]
+        };
+        this.sendResponse(response);
+      }
+
+      protected variablesRequest(
+        response: DebugProtocol.VariablesResponse,
+        args: DebugProtocol.VariablesArguments
+      ): void {
+        const variables = this._runtime.getVariables(args.variablesReference);
+        response.body = { variables };
+        this.sendResponse(response);
+      }
+
+      protected continueRequest(
+        response: DebugProtocol.ContinueResponse,
+        args: DebugProtocol.ContinueArguments
+      ): void {
+        this._runtime.continue();
+        this.sendResponse(response);
+      }
+
+      protected nextRequest(
+        response: DebugProtocol.NextResponse,
+        args: DebugProtocol.NextArguments
+      ): void {
+        this._runtime.stepOver();
+        this.sendResponse(response);
+      }
+
+      protected stepInRequest(
+        response: DebugProtocol.StepInResponse,
+        args: DebugProtocol.StepInArguments
+      ): void {
+        this._runtime.stepInto();
+        this.sendResponse(response);
+      }
+
+      protected stepOutRequest(
+        response: DebugProtocol.StepOutResponse,
+        args: DebugProtocol.StepOutArguments
+      ): void {
+        this._runtime.stepOut();
+        this.sendResponse(response);
+      }
+
+      protected evaluateRequest(
+        response: DebugProtocol.EvaluateResponse,
+        args: DebugProtocol.EvaluateArguments
+      ): void {
+        const result = this._runtime.evaluate(args.expression);
+        response.body = {
+          result: result.value,
+          variablesReference: result.variablesReference || 0
+        };
+        this.sendResponse(response);
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Start the debug adapter">
+    ```typescript extension.ts
+    import * as vscode from 'vscode';
+    import { MyDebugSession } from './debugAdapter';
+    import { DebugAdapterExecutable } from 'vscode';
+
+    export function activate(context: vscode.ExtensionContext) {
+      // Register debug adapter
+      context.subscriptions.push(
+        vscode.debug.registerDebugAdapterDescriptorFactory(
+          'myLanguage',
+          new DebugAdapterFactory()
+        )
+      );
+
+      // Register configuration provider
+      context.subscriptions.push(
+        vscode.debug.registerDebugConfigurationProvider(
+          'myLanguage',
+          new MyDebugConfigurationProvider()
+        )
+      );
+    }
+
+    class DebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
+      createDebugAdapterDescriptor(
+        session: vscode.DebugSession
+      ): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
+        // Return inline debug adapter
+        return new vscode.DebugAdapterInlineImplementation(new MyDebugSession());
+      }
+    }
+
+    class MyDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
+      resolveDebugConfiguration(
+        folder: vscode.WorkspaceFolder | undefined,
+        config: vscode.DebugConfiguration
+      ): vscode.ProviderResult<vscode.DebugConfiguration> {
+        // Resolve ${workspaceFolder}
+        if (config.program) {
+          config.program = config.program.replace(
+            '${workspaceFolder}',
+            folder?.uri.fsPath || ''
+          );
+        }
+
+        return config;
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Debug Configuration Provider
+
+Dynamically generate or modify debug configurations:
+
+```typescript
+class MyDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
+  async resolveDebugConfiguration(
+    folder: vscode.WorkspaceFolder | undefined,
+    config: vscode.DebugConfiguration,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.DebugConfiguration | undefined> {
+    // If launch.json is missing or empty
+    if (!config.type && !config.request && !config.name) {
+      const editor = vscode.window.activeTextEditor;
+      if (editor && editor.document.languageId === 'myLanguage') {
+        config.type = 'myLanguage';
+        config.name = 'Launch';
+        config.request = 'launch';
+        config.program = '${file}';
+        config.stopOnEntry = true;
+      }
+    }
+
+    // Validate configuration
+    if (!config.program) {
+      await vscode.window.showErrorMessage('Cannot find program to debug');
+      return undefined;
+    }
+
+    return config;
+  }
+
+  async resolveDebugConfigurationWithSubstitutedVariables(
+    folder: vscode.WorkspaceFolder | undefined,
+    config: vscode.DebugConfiguration,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.DebugConfiguration | undefined> {
+    // Variables are already substituted at this point
+    // Perform additional validation or transformation
+    return config;
+  }
+}
+```
+
+## Debug Adapter Types
+
+### Inline Debug Adapter
+
+Runs in the extension host (best for simple debuggers):
+
+```typescript
+class Factory implements vscode.DebugAdapterDescriptorFactory {
+  createDebugAdapterDescriptor(session: vscode.DebugSession) {
+    return new vscode.DebugAdapterInlineImplementation(new MyDebugSession());
+  }
+}
+```
+
+### Executable Debug Adapter
+
+Runs as a separate process:
+
+```typescript
+class Factory implements vscode.DebugAdapterDescriptorFactory {
+  createDebugAdapterDescriptor(
+    session: vscode.DebugSession,
+    executable: vscode.DebugAdapterExecutable | undefined
+  ) {
+    const command = 'node';
+    const args = ['./out/debugAdapter.js'];
+    return new vscode.DebugAdapterExecutable(command, args);
+  }
+}
+```
+
+### Server Debug Adapter
+
+Connects to a running debug adapter server:
+
+```typescript
+class Factory implements vscode.DebugAdapterDescriptorFactory {
+  private server?: Net.Server;
+
+  createDebugAdapterDescriptor(session: vscode.DebugSession) {
+    if (!this.server) {
+      this.server = Net.createServer(socket => {
+        const session = new MyDebugSession();
+        session.setRunAsServer(true);
+        session.start(socket, socket);
+      }).listen(0);
+    }
+
+    return new vscode.DebugAdapterServer(
+      (this.server.address() as Net.AddressInfo).port
+    );
+  }
+}
+```
+
+## Breakpoint Handling
+
+### Setting Breakpoints
+
+```typescript
+protected setBreakPointsRequest(
+  response: DebugProtocol.SetBreakpointsResponse,
+  args: DebugProtocol.SetBreakpointsArguments
+): void {
+  const path = args.source.path!;
+  const breakpoints = args.breakpoints || [];
+
+  const actualBreakpoints = breakpoints.map(bp => {
+    // Verify breakpoint can be set
+    const verified = this._runtime.canSetBreakpoint(path, bp.line);
+    const actualLine = this._runtime.setBreakpoint(path, bp.line);
+
+    return {
+      verified,
+      line: actualLine,
+      message: verified ? undefined : 'Cannot set breakpoint here'
+    };
+  });
+
+  response.body = { breakpoints: actualBreakpoints };
+  this.sendResponse(response);
+}
+```
+
+### Conditional Breakpoints
+
+```typescript
+protected setBreakPointsRequest(
+  response: DebugProtocol.SetBreakpointsResponse,
+  args: DebugProtocol.SetBreakpointsArguments
+): void {
+  const breakpoints = args.breakpoints || [];
+
+  const actualBreakpoints = breakpoints.map(bp => {
+    const breakpoint = {
+      line: bp.line,
+      condition: bp.condition,     // "x > 10"
+      hitCondition: bp.hitCondition, // "> 5"
+      logMessage: bp.logMessage     // "Value: {x}"
+    };
+
+    this._runtime.setBreakpoint(args.source.path!, breakpoint);
+
+    return {
+      verified: true,
+      line: bp.line
+    };
+  });
+
+  response.body = { breakpoints: actualBreakpoints };
+  this.sendResponse(response);
+}
+```
+
+## Variable Inspection
+
+```typescript
+protected variablesRequest(
+  response: DebugProtocol.VariablesResponse,
+  args: DebugProtocol.VariablesArguments
+): void {
+  const variables: DebugProtocol.Variable[] = [];
+  const scope = this._runtime.getScope(args.variablesReference);
+
+  for (const [name, value] of Object.entries(scope)) {
+    const variable: DebugProtocol.Variable = {
+      name,
+      value: this.formatValue(value),
+      type: typeof value,
+      variablesReference: this.getVariablesReference(value)
+    };
+
+    // Make primitive values editable
+    if (typeof value !== 'object') {
+      variable.evaluateName = name;
+    }
+
+    variables.push(variable);
+  }
+
+  response.body = { variables };
+  this.sendResponse(response);
+}
+
+private formatValue(value: any): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return `"${value}"`;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+private getVariablesReference(value: any): number {
+  if (typeof value === 'object' && value !== null) {
+    // Return reference for object inspection
+    return this._runtime.createVariableReference(value);
+  }
+  return 0;
+}
+```
+
+## Custom Debug UI
+
+### Debug Console Output
+
+```typescript
+import { OutputEvent } from '@vscode/debugadapter';
+
+// Send output to debug console
+this.sendEvent(new OutputEvent('Hello from debugger\n', 'stdout'));
+this.sendEvent(new OutputEvent('Error occurred\n', 'stderr'));
+this.sendEvent(new OutputEvent('Console: log message\n', 'console'));
+```
+
+### Custom Debug Actions
+
+```typescript
+// In package.json
+{
+  "contributes": {
+    "commands": [
+      {
+        "command": "myExtension.customAction",
+        "title": "Custom Debug Action",
+        "icon": "$(debug-alt)"
+      }
+    ],
+    "menus": {
+      "debug/toolbar": [
+        {
+          "command": "myExtension.customAction",
+          "when": "debugType == 'myLanguage'"
+        }
+      ]
+    }
+  }
+}
+
+// In extension.ts
+vscode.commands.registerCommand('myExtension.customAction', () => {
+  const session = vscode.debug.activeDebugSession;
+  if (session) {
+    session.customRequest('customAction', { param: 'value' });
+  }
+});
+```
+
+## Testing Debugger Extensions
+
+```typescript
+import * as vscode from 'vscode';
+import * as assert from 'assert';
+
+suite('Debugger Extension Tests', () => {
+  test('Starts debug session', async () => {
+    const config: vscode.DebugConfiguration = {
+      type: 'myLanguage',
+      request: 'launch',
+      name: 'Test',
+      program: '${workspaceFolder}/test.js',
+      stopOnEntry: true
+    };
+
+    const started = await vscode.debug.startDebugging(undefined, config);
+    assert.ok(started, 'Debug session should start');
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    assert.ok(vscode.debug.activeDebugSession);
+    await vscode.debug.stopDebugging();
+  });
+
+  test('Sets breakpoints', async () => {
+    const uri = vscode.Uri.file('test.js');
+    const breakpoint = new vscode.SourceBreakpoint(
+      new vscode.Location(uri, new vscode.Position(10, 0))
+    );
+
+    vscode.debug.addBreakpoints([breakpoint]);
+
+    const breakpoints = vscode.debug.breakpoints;
+    assert.ok(breakpoints.length > 0);
+  });
+});
+```
+
+## Best Practices
+
+1. **Support both launch and attach** - Provide flexibility
+2. **Validate configurations** - Check required fields
+3. **Handle errors gracefully** - Show meaningful error messages
+4. **Use inline adapter** - For simple debuggers
+5. **Implement stepping** - stepIn, stepOut, stepOver, continue
+6. **Support conditional breakpoints** - When possible
+7. **Format variables nicely** - Make inspection easy
+8. **Test thoroughly** - Test all debugging scenarios
+
+<Tip>
+  Use the `@vscode/debugadapter-testsupport` package for writing debugger tests.
+</Tip>
+
+## Common Patterns
+
+### Multi-Session Debugging
+
+```typescript
+vscode.debug.onDidStartDebugSession(session => {
+  console.log(`Started: ${session.name}`);
+});
+
+vscode.debug.onDidTerminateDebugSession(session => {
+  console.log(`Terminated: ${session.name}`);
+});
+
+// Start multiple sessions
+await vscode.debug.startDebugging(folder, config1);
+await vscode.debug.startDebugging(folder, config2);
+```
+
+### Custom Request Handling
+
+```typescript
+// In debug adapter
+protected customRequest(
+  command: string,
+  response: DebugProtocol.Response,
+  args: any
+): void {
+  if (command === 'getState') {
+    response.body = this._runtime.getState();
+    this.sendResponse(response);
+  } else {
+    super.customRequest(command, response, args);
+  }
+}
+
+// In extension
+const result = await session.customRequest('getState');
+```
+
+## Related Resources
+
+- [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/)
+- [Debugger Extension Guide](https://code.visualstudio.com/api/extension-guides/debugger-extension)
+- [Mock Debug Sample](https://github.com/microsoft/vscode-mock-debug)

@@ -1,0 +1,672 @@
+---
+title: Remote Development
+description: Architecture and implementation of VS Code's remote development capabilities
+---
+
+# Remote Development
+
+VS Code's remote development architecture enables developers to work with code on remote machines, containers, and WSL environments while maintaining a local-like editing experience.
+
+## Architecture Overview
+
+<Info>
+**Remote Architecture:**
+- **Local UI**: VS Code window runs locally (Electron or browser)
+- **Remote Server**: Extension host and file system run remotely
+- **IPC Bridge**: Secure connection between UI and server
+- **Protocol**: Custom binary protocol over WebSocket or SSH
+</Info>
+
+### Connection Types
+
+1. **SSH Remote**: Connect to remote machines via SSH
+2. **Dev Containers**: Develop inside Docker containers
+3. **WSL**: Work with Windows Subsystem for Linux
+4. **Tunnels**: Secure remote access without SSH
+
+## Remote Agent Service
+
+From `src/vs/workbench/services/remote/common/remoteAgentService.ts:15`:
+
+```typescript
+export const IRemoteAgentService = createDecorator<IRemoteAgentService>('remoteAgentService');
+
+export interface IRemoteAgentService {
+  readonly _serviceBrand: undefined;
+  
+  // Connection management
+  getConnection(): IRemoteAgentConnection | null;
+  getEnvironment(): Promise<IRemoteAgentEnvironment | null>;
+  getRawEnvironment(): Promise<IRemoteAgentEnvironment | null>;
+  
+  // Extension host
+  getExtensionHostExitInfo(reconnectionToken: string): Promise<IExtensionHostExitInfo | null>;
+  
+  // Diagnostics
+  getRoundTripTime(): Promise<number | undefined>;
+  getDiagnosticInfo(options: IDiagnosticInfoOptions): Promise<IDiagnosticInfo | undefined>;
+  
+  // Lifecycle
+  endConnection(): Promise<void>;
+}
+```
+
+## Remote Connection
+
+### Connection Interface
+
+```typescript
+export interface IRemoteAgentConnection {
+  readonly remoteAuthority: string;
+  
+  // Events
+  readonly onReconnecting: Event<void>;
+  readonly onDidStateChange: Event<PersistentConnectionEvent>;
+  
+  // Channel communication
+  getChannel<T extends IChannel>(channelName: string): T;
+  withChannel<T extends IChannel, R>(
+    channelName: string,
+    callback: (channel: T) => Promise<R>
+  ): Promise<R>;
+  registerChannel<T extends IServerChannel>(
+    channelName: string,
+    channel: T
+  ): void;
+  
+  // Metrics
+  getInitialConnectionTimeMs(): Promise<number>;
+  updateGraceTime(graceTime: number): void;
+  
+  // Lifecycle
+  end(): Promise<void>;
+  dispose(): void;
+}
+```
+
+### Establishing Connection
+
+```typescript
+// Client-side connection setup
+class RemoteAgentConnection implements IRemoteAgentConnection {
+  constructor(
+    public readonly remoteAuthority: string,
+    private readonly connectionInfo: IConnectionOptions,
+    private readonly socketFactory: ISocketFactory
+  ) {
+    this.connect();
+  }
+  
+  private async connect(): Promise<void> {
+    // Create persistent connection
+    this.connection = new PersistentConnection(
+      this.remoteAuthority,
+      this.connectionInfo,
+      this.socketFactory,
+      {
+        reconnectionGraceTime: 60000,
+        reconnectionShortGraceTime: 10000
+      }
+    );
+    
+    // Setup IPC
+    this.ipcClient = new IPCClient(
+      this.connection,
+      { timeoutDelay: 60000 }
+    );
+    
+    // Request remote environment
+    const environment = await this.getRemoteEnvironment();
+    this._onDidConnect.fire(environment);
+  }
+  
+  getChannel<T extends IChannel>(channelName: string): T {
+    return this.ipcClient.getChannel(channelName);
+  }
+}
+```
+
+## Remote Server
+
+The remote server runs on the remote machine:
+
+### Server Entry Point
+
+From `src/vs/server/node/server.main.ts`:
+
+```typescript
+class RemoteExtensionHostAgentServer {
+  async start(): Promise<void> {
+    // Initialize services
+    const services = await this.createServices();
+    
+    // Create IPC server
+    const server = await this.createIPCServer();
+    
+    // Register channels
+    this.registerChannels(server, services);
+    
+    // Start extension host
+    await this.startExtensionHost(services);
+  }
+  
+  private async createIPCServer(): Promise<IServer> {
+    return createServer({
+      host: this.options.host,
+      port: this.options.port,
+      socketPath: this.options.socketPath
+    });
+  }
+  
+  private registerChannels(server: IServer, services: ServiceCollection): void {
+    // File system channel
+    server.registerChannel(
+      'remoteFileSystem',
+      new RemoteFileSystemProviderChannel(services.get(IFileService))
+    );
+    
+    // Extension management channel
+    server.registerChannel(
+      'extensions',
+      new ExtensionManagementChannel(services.get(IExtensionManagementService))
+    );
+    
+    // Terminal channel
+    server.registerChannel(
+      'terminal',
+      new RemoteTerminalChannel(services.get(ITerminalService))
+    );
+  }
+}
+```
+
+## File System Provider
+
+Remote file system access is implemented through file system providers:
+
+```typescript
+class RemoteFileSystemProvider implements IFileSystemProvider {
+  readonly capabilities = 
+    FileSystemProviderCapabilities.FileReadWrite |
+    FileSystemProviderCapabilities.FileOpenReadWriteClose |
+    FileSystemProviderCapabilities.FileFolderCopy |
+    FileSystemProviderCapabilities.PathCaseSensitive;
+  
+  readonly onDidChangeCapabilities = Event.None;
+  readonly onDidChangeFile: Event<readonly IFileChange[]>;
+  
+  private channel: IChannel;
+  
+  constructor(channel: IChannel) {
+    this.channel = channel;
+    this.onDidChangeFile = this.channel.listen('onFileChange');
+  }
+  
+  // Read operations
+  async readFile(resource: URI): Promise<Uint8Array> {
+    const result = await this.channel.call('readFile', [resource.toString()]);
+    return new Uint8Array(result.buffer);
+  }
+  
+  async readdir(resource: URI): Promise<[string, FileType][]> {
+    return this.channel.call('readdir', [resource.toString()]);
+  }
+  
+  async stat(resource: URI): Promise<IStat> {
+    return this.channel.call('stat', [resource.toString()]);
+  }
+  
+  // Write operations
+  async writeFile(
+    resource: URI,
+    content: Uint8Array,
+    opts: IWriteFileOptions
+  ): Promise<void> {
+    await this.channel.call('writeFile', [
+      resource.toString(),
+      Array.from(content),
+      opts
+    ]);
+  }
+  
+  async mkdir(resource: URI): Promise<void> {
+    await this.channel.call('mkdir', [resource.toString()]);
+  }
+  
+  async delete(resource: URI, opts: IDeleteOptions): Promise<void> {
+    await this.channel.call('delete', [resource.toString(), opts]);
+  }
+  
+  async rename(
+    from: URI,
+    to: URI,
+    opts: IFileOverwriteOptions
+  ): Promise<void> {
+    await this.channel.call('rename', [
+      from.toString(),
+      to.toString(),
+      opts
+    ]);
+  }
+  
+  // Watch
+  watch(resource: URI, opts: IWatchOptions): IDisposable {
+    const id = this.channel.call('watch', [resource.toString(), opts]);
+    return {
+      dispose: () => this.channel.call('unwatch', [id])
+    };
+  }
+}
+```
+
+## Remote Extension Host
+
+Extensions run in a remote extension host:
+
+```typescript
+class RemoteExtensionHost {
+  private extensionService: IExtensionService;
+  private messagePort: MessagePort;
+  
+  async start(): Promise<void> {
+    // Initialize extension service
+    this.extensionService = await this.createExtensionService();
+    
+    // Setup message passing
+    this.messagePort.onmessage = (e) => this.handleMessage(e.data);
+    
+    // Activate extensions
+    await this.extensionService.activateByEvent('*');
+  }
+  
+  private handleMessage(message: any): void {
+    switch (message.type) {
+      case 'activate':
+        this.extensionService.activateById(message.extensionId);
+        break;
+      case 'call':
+        this.handleExtensionCall(message);
+        break;
+    }
+  }
+  
+  private async handleExtensionCall(message: any): Promise<void> {
+    const extension = this.extensionService.getExtension(message.extensionId);
+    const api = extension?.exports;
+    
+    if (api && typeof api[message.method] === 'function') {
+      const result = await api[message.method](...message.args);
+      this.messagePort.postMessage({
+        id: message.id,
+        result: result
+      });
+    }
+  }
+}
+```
+
+## Connection Latency Measurement
+
+From `src/vs/workbench/services/remote/common/remoteAgentService.ts:80`:
+
+```typescript
+export const remoteConnectionLatencyMeasurer = new class {
+  readonly maxSampleCount = 5;
+  readonly sampleDelay = 2000;
+  readonly highLatencyMultiple = 2;
+  readonly highLatencyMinThreshold = 500;
+  readonly highLatencyMaxThreshold = 1500;
+  
+  async measure(remoteAgentService: IRemoteAgentService): Promise<IRemoteConnectionLatencyMeasurement | undefined> {
+    const samples: number[] = [];
+    
+    // Take multiple samples
+    for (let i = 0; i < this.maxSampleCount; i++) {
+      const start = Date.now();
+      await remoteAgentService.getRoundTripTime();
+      const latency = Date.now() - start;
+      
+      samples.push(latency);
+      
+      if (i < this.maxSampleCount - 1) {
+        await timeout(this.sampleDelay);
+      }
+    }
+    
+    // Calculate metrics
+    const current = samples[samples.length - 1];
+    const average = samples.reduce((a, b) => a + b) / samples.length;
+    const initial = samples[0];
+    
+    // Determine if high latency
+    const threshold = Math.min(
+      Math.max(average * this.highLatencyMultiple, this.highLatencyMinThreshold),
+      this.highLatencyMaxThreshold
+    );
+    const high = current > threshold;
+    
+    return { initial, current, average, high };
+  }
+};
+```
+
+<Warning>
+**High Latency Handling:**
+- Connections with >500ms latency show indicators
+- Auto-save is adjusted for high latency connections
+- File watching is throttled
+- Some features may be disabled
+</Warning>
+
+## Port Forwarding
+
+Remote development includes automatic port forwarding:
+
+```typescript
+class PortForwardingService {
+  private forwardedPorts = new Map<number, IForwardedPort>();
+  
+  async forwardPort(port: number, name?: string): Promise<IForwardedPort> {
+    // Request forwarding from remote
+    const forwarded = await this.remoteAgentService
+      .withChannel<IRemoteAgentChannel, IForwardedPort>(
+        'remoteAgent',
+        async (channel) => {
+          return channel.call('forwardPort', [{ port, name }]);
+        }
+      );
+    
+    this.forwardedPorts.set(port, forwarded);
+    
+    // Show notification
+    this.notificationService.info(
+      `Port ${port} is now available at ${forwarded.localAddress}`
+    );
+    
+    return forwarded;
+  }
+  
+  async closePort(port: number): Promise<void> {
+    const forwarded = this.forwardedPorts.get(port);
+    if (forwarded) {
+      await this.remoteAgentService.withChannel(
+        'remoteAgent',
+        async (channel) => {
+          await channel.call('closePort', [port]);
+        }
+      );
+      this.forwardedPorts.delete(port);
+    }
+  }
+  
+  getForwardedPorts(): IForwardedPort[] {
+    return Array.from(this.forwardedPorts.values());
+  }
+}
+```
+
+## Auto-detection
+
+VS Code can auto-detect running servers:
+
+```typescript
+class PortAutoForwardService {
+  private scanner: ProcessScanner;
+  
+  async scanForPorts(): Promise<number[]> {
+    // Scan for listening processes
+    const processes = await this.scanner.scan();
+    
+    // Filter relevant ports
+    const ports = processes
+      .filter(p => this.isWebServer(p))
+      .map(p => p.port)
+      .filter(p => !this.isSystemPort(p));
+    
+    // Auto-forward detected ports
+    for (const port of ports) {
+      if (!this.isAlreadyForwarded(port)) {
+        await this.portForwardingService.forwardPort(
+          port,
+          `Auto-forwarded port ${port}`
+        );
+      }
+    }
+    
+    return ports;
+  }
+  
+  private isWebServer(process: ProcessInfo): boolean {
+    return /node|python|ruby|php|java/.test(process.command);
+  }
+  
+  private isSystemPort(port: number): boolean {
+    return port < 1024;
+  }
+}
+```
+
+## Remote Terminals
+
+Terminals run on the remote machine:
+
+```typescript
+class RemoteTerminalService {
+  private channel: IChannel;
+  
+  async createTerminal(
+    options: ITerminalOptions
+  ): Promise<ITerminalInstance> {
+    // Request terminal creation on remote
+    const terminalId = await this.channel.call(
+      'createTerminal',
+      [options]
+    );
+    
+    // Setup data streaming
+    const onData = this.channel.listen<string>(
+      `terminal:${terminalId}:data`
+    );
+    
+    const terminal: ITerminalInstance = {
+      id: terminalId,
+      onData,
+      
+      sendText: (text: string) => {
+        this.channel.call('terminalSendText', [terminalId, text]);
+      },
+      
+      resize: (cols: number, rows: number) => {
+        this.channel.call('terminalResize', [terminalId, cols, rows]);
+      },
+      
+      dispose: () => {
+        this.channel.call('terminalDispose', [terminalId]);
+      }
+    };
+    
+    return terminal;
+  }
+}
+```
+
+## Connection Recovery
+
+```typescript
+class ConnectionRecoveryService {
+  private reconnectionAttempts = 0;
+  private maxReconnectionAttempts = 10;
+  
+  async handleDisconnect(): Promise<void> {
+    this.showReconnectingIndicator();
+    
+    while (this.reconnectionAttempts < this.maxReconnectionAttempts) {
+      try {
+        await this.reconnect();
+        this.hideReconnectingIndicator();
+        this.reconnectionAttempts = 0;
+        return;
+      } catch (error) {
+        this.reconnectionAttempts++;
+        await this.wait(this.getBackoffDelay());
+      }
+    }
+    
+    // Failed to reconnect
+    this.showConnectionLostError();
+  }
+  
+  private getBackoffDelay(): number {
+    // Exponential backoff: 1s, 2s, 4s, 8s, ...
+    return Math.min(
+      1000 * Math.pow(2, this.reconnectionAttempts),
+      30000 // Max 30 seconds
+    );
+  }
+  
+  private async reconnect(): Promise<void> {
+    await this.remoteAgentService.getConnection()?.reconnect();
+  }
+}
+```
+
+<Info>
+**Reconnection Strategy:**
+- Grace period: 60 seconds for reconnection
+- Exponential backoff between attempts
+- Preserves editor state during reconnection
+- Shows reconnection UI indicator
+</Info>
+
+## Security
+
+### SSH Connection
+
+```typescript
+class SSHConnectionProvider {
+  async connect(options: ISSHConnectionOptions): Promise<IConnection> {
+    // Establish SSH tunnel
+    const ssh = await this.createSSHConnection({
+      host: options.host,
+      port: options.port || 22,
+      username: options.username,
+      privateKey: options.privateKeyPath
+        ? await fs.readFile(options.privateKeyPath)
+        : undefined,
+      passphrase: options.passphrase
+    });
+    
+    // Start remote server
+    const remoteServerPath = await this.installRemoteServer(ssh);
+    const serverProcess = await ssh.exec(
+      `${remoteServerPath} --start-server`
+    );
+    
+    // Create tunnel for IPC
+    const localPort = await this.findFreePort();
+    await ssh.forwardOut(
+      '127.0.0.1',
+      localPort,
+      '127.0.0.1',
+      serverProcess.port
+    );
+    
+    // Connect to local port
+    return this.createConnection(`ws://127.0.0.1:${localPort}`);
+  }
+}
+```
+
+### Connection Token
+
+From `src/vs/server/node/serverConnectionToken.ts`:
+
+```typescript
+export class ServerConnectionToken {
+  private static readonly TOKEN_ENV = 'VSCODE_SERVER_TOKEN';
+  
+  static async generate(): Promise<string> {
+    // Generate secure random token
+    const bytes = await randomBytes(32);
+    return bytes.toString('hex');
+  }
+  
+  static validate(token: string, expected: string): boolean {
+    // Constant-time comparison
+    if (token.length !== expected.length) {
+      return false;
+    }
+    
+    let result = 0;
+    for (let i = 0; i < token.length; i++) {
+      result |= token.charCodeAt(i) ^ expected.charCodeAt(i);
+    }
+    return result === 0;
+  }
+}
+```
+
+## Performance Optimizations
+
+### Data Compression
+
+```typescript
+class CompressedChannel {
+  constructor(private underlying: IChannel) {}
+  
+  async call(command: string, args: any[]): Promise<any> {
+    // Compress large payloads
+    const serialized = JSON.stringify(args);
+    
+    if (serialized.length > 1024) {
+      const compressed = await gzip(serialized);
+      return this.underlying.call(command, [{
+        _compressed: true,
+        data: compressed
+      }]);
+    }
+    
+    return this.underlying.call(command, args);
+  }
+}
+```
+
+### Caching
+
+```typescript
+class RemoteFileCache {
+  private cache = new Map<string, CacheEntry>();
+  
+  async readFile(uri: URI): Promise<Uint8Array> {
+    const key = uri.toString();
+    const cached = this.cache.get(key);
+    
+    if (cached && !this.isExpired(cached)) {
+      return cached.content;
+    }
+    
+    // Fetch from remote
+    const content = await this.fileService.readFile(uri);
+    
+    this.cache.set(key, {
+      content: content.value,
+      timestamp: Date.now(),
+      etag: content.etag
+    });
+    
+    return content.value;
+  }
+  
+  private isExpired(entry: CacheEntry): boolean {
+    return Date.now() - entry.timestamp > 5000; // 5 second cache
+  }
+}
+```
+
+## Related Files
+
+- `src/vs/workbench/services/remote/common/remoteAgentService.ts:15` - Remote agent interface
+- `src/vs/server/node/server.main.ts` - Remote server entry
+- `src/vs/server/node/remoteFileSystemProviderServer.ts` - File system provider
+- `src/vs/workbench/services/remote/common/remoteAgentConnection.ts` - Connection implementation
+- `src/vs/server/node/serverConnectionToken.ts` - Security token handling

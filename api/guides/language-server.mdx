@@ -1,0 +1,728 @@
+---
+title: 'Language Server Protocol'
+description: 'Implement language features using the Language Server Protocol'
+---
+
+# Language Server Protocol
+
+The Language Server Protocol (LSP) enables language intelligence features like autocomplete, go to definition, and diagnostics. It separates the language logic (server) from the editor (client).
+
+## Overview
+
+LSP provides:
+- **Autocomplete** - IntelliSense suggestions
+- **Diagnostics** - Error and warning messages
+- **Navigation** - Go to definition, find references
+- **Hover** - Documentation on hover
+- **Formatting** - Code formatting
+- **Refactoring** - Rename, code actions
+
+<Note>
+  LSP allows you to write your language server once and use it in multiple editors (VS Code, Vim, Emacs, etc.).
+</Note>
+
+## Architecture
+
+```
+┌─────────────────┐         JSON-RPC         ┌─────────────────┐
+│  VS Code        │ <─────────────────────> │ Language Server │
+│  (Client)       │    over stdio/socket     │   (Node.js)     │
+│                 │                          │                 │
+│  - UI           │                          │  - Parser       │
+│  - Commands     │                          │  - Analyzer     │
+│  - Events       │                          │  - Validator    │
+└─────────────────┘                          └─────────────────┘
+```
+
+## Setting Up a Language Server
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install --save vscode-languageclient
+    npm install --save-dev vscode-languageserver
+    ```
+  </Step>
+
+  <Step title="Create the language server">
+    ```typescript server/src/server.ts
+    import {
+      createConnection,
+      TextDocuments,
+      ProposedFeatures,
+      InitializeParams,
+      TextDocumentSyncKind,
+      CompletionItem,
+      CompletionItemKind,
+      Diagnostic,
+      DiagnosticSeverity
+    } from 'vscode-languageserver/node';
+    import { TextDocument } from 'vscode-languageserver-textdocument';
+
+    // Create connection
+    const connection = createConnection(ProposedFeatures.all);
+
+    // Document manager
+    const documents = new TextDocuments(TextDocument);
+
+    connection.onInitialize((params: InitializeParams) => {
+      return {
+        capabilities: {
+          textDocumentSync: TextDocumentSyncKind.Incremental,
+          completionProvider: {
+            resolveProvider: true
+          },
+          hoverProvider: true,
+          definitionProvider: true,
+          referencesProvider: true,
+          documentFormattingProvider: true
+        }
+      };
+    });
+
+    // Provide completions
+    connection.onCompletion((_textDocumentPosition) => {
+      return [
+        {
+          label: 'TypeScript',
+          kind: CompletionItemKind.Text,
+          data: 1
+        },
+        {
+          label: 'JavaScript',
+          kind: CompletionItemKind.Text,
+          data: 2
+        }
+      ];
+    });
+
+    connection.onCompletionResolve((item: CompletionItem) => {
+      if (item.data === 1) {
+        item.detail = 'TypeScript details';
+        item.documentation = 'TypeScript documentation';
+      }
+      return item;
+    });
+
+    // Validate documents
+    async function validateTextDocument(textDocument: TextDocument): Promise<void> {
+      const text = textDocument.getText();
+      const diagnostics: Diagnostic[] = [];
+
+      const pattern = /\b[A-Z]{2,}\b/g;
+      let match;
+
+      while ((match = pattern.exec(text))) {
+        const diagnostic: Diagnostic = {
+          severity: DiagnosticSeverity.Warning,
+          range: {
+            start: textDocument.positionAt(match.index),
+            end: textDocument.positionAt(match.index + match[0].length)
+          },
+          message: `${match[0]} is all uppercase.`,
+          source: 'my-language'
+        };
+        diagnostics.push(diagnostic);
+      }
+
+      connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
+    }
+
+    documents.onDidChangeContent(change => {
+      validateTextDocument(change.document);
+    });
+
+    // Make the text document manager listen on the connection
+    documents.listen(connection);
+    connection.listen();
+    ```
+  </Step>
+
+  <Step title="Create the language client">
+    ```typescript client/src/extension.ts
+    import * as path from 'path';
+    import { ExtensionContext } from 'vscode';
+    import {
+      LanguageClient,
+      LanguageClientOptions,
+      ServerOptions,
+      TransportKind
+    } from 'vscode-languageclient/node';
+
+    let client: LanguageClient;
+
+    export function activate(context: ExtensionContext) {
+      // Server module path
+      const serverModule = context.asAbsolutePath(
+        path.join('server', 'out', 'server.js')
+      );
+
+      // Debug options
+      const debugOptions = { execArgv: ['--nolazy', '--inspect=6009'] };
+
+      // Server options
+      const serverOptions: ServerOptions = {
+        run: { module: serverModule, transport: TransportKind.ipc },
+        debug: {
+          module: serverModule,
+          transport: TransportKind.ipc,
+          options: debugOptions
+        }
+      };
+
+      // Client options
+      const clientOptions: LanguageClientOptions = {
+        documentSelector: [{ scheme: 'file', language: 'plaintext' }],
+        synchronize: {
+          fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
+        }
+      };
+
+      // Create and start client
+      client = new LanguageClient(
+        'myLanguageServer',
+        'My Language Server',
+        serverOptions,
+        clientOptions
+      );
+
+      client.start();
+    }
+
+    export function deactivate(): Thenable<void> | undefined {
+      if (!client) {
+        return undefined;
+      }
+      return client.stop();
+    }
+    ```
+  </Step>
+
+  <Step title="Configure package.json">
+    ```json package.json
+    {
+      "name": "my-language",
+      "main": "./client/out/extension",
+      "activationEvents": ["onLanguage:plaintext"],
+      "contributes": {
+        "languages": [
+          {
+            "id": "plaintext",
+            "extensions": [".txt"]
+          }
+        ]
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Real Example: HTML Language Server
+
+The built-in HTML extension demonstrates a production-ready language server (extensions/html-language-features/client/src/htmlClient.ts:92-258):
+
+```typescript
+export async function startClient(
+  context: ExtensionContext,
+  newLanguageClient: LanguageClientConstructor,
+  runtime: Runtime
+): Promise<AsyncDisposable> {
+  const logOutputChannel = window.createOutputChannel('HTML Language Server', { log: true });
+  const languageParticipants = getLanguageParticipants();
+
+  // Client options
+  const clientOptions: LanguageClientOptions = {
+    documentSelector: languageParticipants.documentSelector,
+    synchronize: {
+      configurationSection: ['html', 'css', 'javascript']
+    },
+    initializationOptions: {
+      embeddedLanguages: { css: true, javascript: true },
+      handledSchemas: ['file'],
+      provideFormatter: false
+    },
+    middleware: {
+      provideCompletionItem(document, position, context, token, next) {
+        // Middleware to modify completion behavior
+        function updateRanges(item: CompletionItem) {
+          const range = item.range;
+          if (range instanceof Range && range.end.isAfter(position)) {
+            item.range = {
+              inserting: new Range(range.start, position),
+              replacing: range
+            };
+          }
+        }
+        const result = next(document, position, context, token);
+        if (result) {
+          (Array.isArray(result) ? result : result.items).forEach(updateRanges);
+        }
+        return result;
+      }
+    },
+    outputChannel: logOutputChannel
+  };
+
+  // Create the language client
+  const client = newLanguageClient('html', 'HTML Language Server', clientOptions);
+  client.registerProposedFeatures();
+
+  await client.start();
+
+  // Register semantic tokens provider
+  client.sendRequest(SemanticTokenLegendRequest.type).then(legend => {
+    if (legend) {
+      const provider: DocumentSemanticTokensProvider = {
+        provideDocumentSemanticTokens(doc) {
+          const params = {
+            textDocument: client.code2ProtocolConverter.asTextDocumentIdentifier(doc)
+          };
+          return client.sendRequest(SemanticTokenRequest.type, params).then(data => {
+            return data && new SemanticTokens(new Uint32Array(data));
+          });
+        }
+      };
+      languages.registerDocumentSemanticTokensProvider(
+        clientOptions.documentSelector!,
+        provider,
+        new SemanticTokensLegend(legend.types, legend.modifiers)
+      );
+    }
+  });
+
+  return {
+    dispose: async () => {
+      await client.stop();
+      logOutputChannel.dispose();
+    }
+  };
+}
+```
+
+## Language Features
+
+### Completions
+
+```typescript server.ts
+connection.onCompletion((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+
+  const text = document.getText();
+  const offset = document.offsetAt(params.position);
+  const word = getWordAtPosition(text, offset);
+
+  return [
+    {
+      label: 'function',
+      kind: CompletionItemKind.Keyword,
+      insertText: 'function ${1:name}(${2:params}) {\n\t$0\n}',
+      insertTextFormat: InsertTextFormat.Snippet,
+      documentation: 'Create a function'
+    },
+    {
+      label: 'console.log',
+      kind: CompletionItemKind.Function,
+      insertText: 'console.log($1)',
+      insertTextFormat: InsertTextFormat.Snippet
+    }
+  ];
+});
+```
+
+### Diagnostics
+
+```typescript
+interface ValidationResult {
+  diagnostics: Diagnostic[];
+}
+
+async function validateDocument(document: TextDocument): Promise<void> {
+  const diagnostics: Diagnostic[] = [];
+  const text = document.getText();
+
+  // Find syntax errors
+  const errors = parseSyntax(text);
+  for (const error of errors) {
+    diagnostics.push({
+      severity: DiagnosticSeverity.Error,
+      range: {
+        start: document.positionAt(error.start),
+        end: document.positionAt(error.end)
+      },
+      message: error.message,
+      source: 'my-linter',
+      code: error.code
+    });
+  }
+
+  // Find warnings
+  const warnings = checkStyle(text);
+  for (const warning of warnings) {
+    diagnostics.push({
+      severity: DiagnosticSeverity.Warning,
+      range: warning.range,
+      message: warning.message,
+      source: 'my-linter'
+    });
+  }
+
+  connection.sendDiagnostics({ uri: document.uri, diagnostics });
+}
+```
+
+### Go to Definition
+
+```typescript
+connection.onDefinition((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+
+  const position = params.position;
+  const word = getWordAtPosition(document, position);
+  const definition = findDefinition(document, word);
+
+  if (!definition) return null;
+
+  return {
+    uri: definition.uri,
+    range: {
+      start: document.positionAt(definition.start),
+      end: document.positionAt(definition.end)
+    }
+  };
+});
+```
+
+### Hover Information
+
+```typescript
+connection.onHover((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return null;
+
+  const position = params.position;
+  const word = getWordAtPosition(document, position);
+  const info = getSymbolInfo(word);
+
+  if (!info) return null;
+
+  return {
+    contents: {
+      kind: 'markdown',
+      value: `**${info.name}**: ${info.type}\n\n${info.documentation}`
+    },
+    range: {
+      start: document.positionAt(info.start),
+      end: document.positionAt(info.end)
+    }
+  };
+});
+```
+
+### Find References
+
+```typescript
+connection.onReferences((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+
+  const position = params.position;
+  const word = getWordAtPosition(document, position);
+  const references = findAllReferences(word);
+
+  return references.map(ref => ({
+    uri: ref.uri,
+    range: {
+      start: ref.start,
+      end: ref.end
+    }
+  }));
+});
+```
+
+### Document Formatting
+
+```typescript
+connection.onDocumentFormatting((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+
+  const text = document.getText();
+  const formatted = formatCode(text, params.options);
+
+  return [{
+    range: {
+      start: { line: 0, character: 0 },
+      end: document.positionAt(text.length)
+    },
+    newText: formatted
+  }];
+});
+```
+
+## Client Configuration
+
+### Document Selector
+
+Specify which files the language server handles:
+
+```typescript
+const clientOptions: LanguageClientOptions = {
+  documentSelector: [
+    { scheme: 'file', language: 'typescript' },
+    { scheme: 'file', language: 'javascript' },
+    { scheme: 'untitled', language: 'typescript' }
+  ]
+};
+```
+
+### Configuration Sync
+
+Sync VS Code settings to the server:
+
+```typescript
+const clientOptions: LanguageClientOptions = {
+  synchronize: {
+    configurationSection: 'myLanguage',
+    fileEvents: workspace.createFileSystemWatcher('**/*.config')
+  }
+};
+```
+
+### Middleware
+
+Intercept and modify LSP requests:
+
+```typescript
+const clientOptions: LanguageClientOptions = {
+  middleware: {
+    provideCompletionItem: (document, position, context, token, next) => {
+      // Modify completion behavior
+      const result = next(document, position, context, token);
+      // Post-process results
+      return result;
+    },
+    provideDefinition: (document, position, token, next) => {
+      // Custom definition logic
+      return next(document, position, token);
+    }
+  }
+};
+```
+
+## Advanced Features
+
+### Semantic Tokens
+
+Provide semantic highlighting:
+
+```typescript server.ts
+const tokenTypes = ['class', 'function', 'variable', 'parameter'];
+const tokenModifiers = ['declaration', 'readonly', 'static'];
+
+connection.onRequest('textDocument/semanticTokens/full', (params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return { data: [] };
+
+  const builder = new SemanticTokensBuilder();
+  const tokens = analyzeTokens(document);
+
+  for (const token of tokens) {
+    builder.push(
+      token.line,
+      token.character,
+      token.length,
+      token.type,
+      token.modifiers
+    );
+  }
+
+  return builder.build();
+});
+```
+
+### Code Actions
+
+Provide quick fixes and refactorings:
+
+```typescript
+connection.onCodeAction((params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return [];
+
+  const actions: CodeAction[] = [];
+
+  for (const diagnostic of params.context.diagnostics) {
+    if (diagnostic.code === 'unused-var') {
+      actions.push({
+        title: 'Remove unused variable',
+        kind: CodeActionKind.QuickFix,
+        diagnostics: [diagnostic],
+        edit: {
+          changes: {
+            [document.uri]: [{
+              range: diagnostic.range,
+              newText: ''
+            }]
+          }
+        }
+      });
+    }
+  }
+
+  return actions;
+});
+```
+
+### Workspace Symbols
+
+```typescript
+connection.onWorkspaceSymbol((params) => {
+  const query = params.query.toLowerCase();
+  const symbols: SymbolInformation[] = [];
+
+  // Search across all documents
+  for (const [uri, document] of documents.all()) {
+    const documentSymbols = findSymbols(document);
+    for (const symbol of documentSymbols) {
+      if (symbol.name.toLowerCase().includes(query)) {
+        symbols.push({
+          name: symbol.name,
+          kind: symbol.kind,
+          location: {
+            uri: uri,
+            range: symbol.range
+          }
+        });
+      }
+    }
+  }
+
+  return symbols;
+});
+```
+
+## Performance Optimization
+
+### Incremental Updates
+
+```typescript
+const documents = new TextDocuments(TextDocument);
+
+// Only reparse changed regions
+documents.onDidChangeContent(change => {
+  const document = change.document;
+  const changes = change.contentChanges;
+
+  for (const change of changes) {
+    // Incremental update
+    updateParse(document, change.range, change.text);
+  }
+
+  validateTextDocument(document);
+});
+```
+
+### Debouncing
+
+```typescript
+const pendingValidation = new Map<string, NodeJS.Timer>();
+
+documents.onDidChangeContent(change => {
+  const uri = change.document.uri;
+
+  // Clear existing timer
+  if (pendingValidation.has(uri)) {
+    clearTimeout(pendingValidation.get(uri)!);
+  }
+
+  // Debounce validation
+  const timer = setTimeout(() => {
+    validateTextDocument(change.document);
+    pendingValidation.delete(uri);
+  }, 300);
+
+  pendingValidation.set(uri, timer);
+});
+```
+
+### Caching
+
+```typescript
+const parseCache = new Map<string, ParseResult>();
+
+function getParsedDocument(document: TextDocument): ParseResult {
+  const cached = parseCache.get(document.uri);
+  if (cached && cached.version === document.version) {
+    return cached.result;
+  }
+
+  const result = parse(document.getText());
+  parseCache.set(document.uri, {
+    version: document.version,
+    result
+  });
+  return result;
+}
+```
+
+## Testing
+
+```typescript test/completion.test.ts
+import * as vscode from 'vscode';
+import * as assert from 'assert';
+
+suite('Language Server', () => {
+  test('Provides completions', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'myLanguage',
+      content: 'func'
+    });
+
+    const position = new vscode.Position(0, 4);
+    const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider',
+      doc.uri,
+      position
+    );
+
+    assert.ok(completions);
+    assert.ok(completions.items.length > 0);
+    assert.strictEqual(completions.items[0].label, 'function');
+  });
+
+  test('Shows diagnostics', async () => {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'myLanguage',
+      content: 'INVALID SYNTAX'
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+    assert.ok(diagnostics.length > 0);
+    assert.strictEqual(diagnostics[0].severity, vscode.DiagnosticSeverity.Error);
+  });
+});
+```
+
+## Best Practices
+
+1. **Incremental parsing** - Only reparse changed sections
+2. **Debounce validation** - Avoid excessive diagnostics
+3. **Cache results** - Store parsed ASTs and symbols
+4. **Use middleware** - Customize behavior without forking
+5. **Handle errors** - Gracefully handle malformed input
+6. **Test thoroughly** - Test all language features
+7. **Document protocol** - Explain custom LSP extensions
+
+<Warning>
+  Language servers run in a separate process. Memory leaks and infinite loops will affect performance.
+</Warning>
+
+## Related Resources
+
+- [Language Server Protocol Specification](https://microsoft.github.io/language-server-protocol/)
+- [LSP Sample Extension](https://github.com/microsoft/vscode-extension-samples/tree/main/lsp-sample)
+- [vscode-languageserver-node](https://github.com/microsoft/vscode-languageserver-node)

@@ -1,0 +1,447 @@
+---
+title: Pull Request Process
+description: Learn how to create, submit, and get your pull requests merged into Visual Studio Code
+icon: code-pull-request
+---
+
+This guide walks you through the process of creating and submitting pull requests to the VS Code repository.
+
+## Before You Start
+
+<Warning>
+Always associate an issue with your pull request. If an issue doesn't exist, create one first to discuss the proposed changes.
+</Warning>
+
+### Prerequisites Checklist
+
+Before creating a pull request, ensure you have:
+
+- [ ] Searched for existing issues and PRs to avoid duplicates
+- [ ] Created or identified an associated issue
+- [ ] Forked and cloned the repository
+- [ ] Set up your development environment
+- [ ] Read the [contribution guidelines](/contributing/guidelines)
+- [ ] Understood the [code style rules](/contributing/code-style)
+
+## Creating Your Pull Request
+
+<Steps>
+  <Step title="Create a Feature Branch">
+    Create a new branch from `main` for your changes:
+    
+    ```bash
+    git checkout main
+    git pull upstream main
+    git checkout -b fix/issue-12345
+    ```
+    
+    Use a descriptive branch name that includes the issue number:
+    - `fix/issue-12345` for bug fixes
+    - `feature/issue-12345` for new features
+    - `docs/issue-12345` for documentation updates
+  </Step>
+  
+  <Step title="Make Your Changes">
+    Implement your changes following the code style guidelines:
+    
+    - Write clean, focused commits
+    - Follow the existing code style
+    - Add tests for new functionality
+    - Update documentation as needed
+    
+    <Tip>
+    Keep your changes focused on solving one problem. If you need to fix multiple issues, create separate pull requests.
+    </Tip>
+  </Step>
+  
+  <Step title="Test Your Changes">
+    Before committing, ensure all tests pass:
+    
+    ```bash
+    # Run unit tests
+    ./scripts/test.sh
+    
+    # Run integration tests
+    ./scripts/test-integration.sh
+    
+    # Check for layering violations
+    npm run valid-layers-check
+    ```
+    
+    <Warning>
+    Always check the `VS Code - Build` watch task output for compilation errors before running tests.
+    </Warning>
+  </Step>
+  
+  <Step title="Commit Your Changes">
+    Create clear, descriptive commits:
+    
+    ```bash
+    git add .
+    git commit -m "Fix issue #12345: Description of the fix"
+    ```
+    
+    Good commit messages:
+    - Start with a verb (Fix, Add, Update, Remove)
+    - Reference the issue number
+    - Explain **why**, not just **what**
+    - Keep the first line under 72 characters
+  </Step>
+  
+  <Step title="Push to Your Fork">
+    Push your branch to your GitHub fork:
+    
+    ```bash
+    git push origin fix/issue-12345
+    ```
+  </Step>
+  
+  <Step title="Create the Pull Request">
+    Go to the [VS Code repository](https://github.com/microsoft/vscode) and click "New Pull Request":
+    
+    1. Select your fork and branch as the source
+    2. Ensure `main` is the target branch
+    3. Fill out the pull request template
+    4. Link the associated issue
+    5. Submit the pull request
+  </Step>
+</Steps>
+
+## Pull Request Template
+
+When creating a PR, fill out all sections of the template:
+
+```markdown
+<!-- Associate an issue with the Pull Request -->
+Fixes #12345
+
+## Description
+Brief description of what this PR does and why.
+
+## Changes
+- List of specific changes made
+- Another change
+
+## Testing
+How to test these changes:
+1. Step 1
+2. Step 2
+3. Expected result
+
+## Screenshots (if applicable)
+[Add screenshots or GIFs demonstrating the changes]
+```
+
+<Tip>
+A well-written PR description helps reviewers understand your changes quickly and increases the chances of a smooth review process.
+</Tip>
+
+## Pull Request Requirements
+
+Your pull request must meet these requirements:
+
+### Code Quality
+
+<CardGroup cols={2}>
+  <Card title="Compilation" icon="circle-check">
+    Code must compile without errors or warnings
+  </Card>
+  
+  <Card title="Tests" icon="vial">
+    All existing tests must pass, and new tests should be added for new functionality
+  </Card>
+  
+  <Card title="Code Style" icon="paintbrush">
+    Must follow the project's code style guidelines
+  </Card>
+  
+  <Card title="Documentation" icon="book">
+    User-facing changes must include documentation updates
+  </Card>
+</CardGroup>
+
+### Technical Requirements
+
+- **Copyright header**: All new files must include the Microsoft copyright header
+- **Localization**: User-facing strings must use the `nls.localize()` framework
+- **Disposables**: Proper disposal of resources (no memory leaks)
+- **Type safety**: Avoid `any` types; use proper TypeScript types
+- **No breaking changes**: Unless discussed and approved in the associated issue
+
+<Warning>
+Pull requests that don't meet these requirements will be asked to make changes before being merged.
+</Warning>
+
+## Review Process
+
+Once submitted, your PR enters the review process:
+
+### What to Expect
+
+1. **Automated Checks**: CI/CD pipelines will run tests and checks
+2. **Initial Review**: A maintainer will review your PR within a few days
+3. **Feedback**: You may receive feedback requesting changes
+4. **Iteration**: Make requested changes and push updates
+5. **Approval**: Once approved, your PR will be merged
+
+<Steps>
+  <Step title="Automated Checks Run">
+    GitHub Actions will automatically:
+    - Compile the code
+    - Run unit and integration tests
+    - Check code style with ESLint
+    - Verify layering rules
+    
+    Fix any failing checks before requesting review.
+  </Step>
+  
+  <Step title="Code Review">
+    Maintainers will review your code for:
+    - Correctness and completeness
+    - Code quality and style
+    - Test coverage
+    - Performance implications
+    - Breaking changes
+  </Step>
+  
+  <Step title="Address Feedback">
+    If changes are requested:
+    - Make the changes in your branch
+    - Push updates to the same branch
+    - Respond to review comments
+    - Request re-review when ready
+    
+    ```bash
+    # Make changes
+    git add .
+    git commit -m "Address review feedback"
+    git push origin fix/issue-12345
+    ```
+  </Step>
+  
+  <Step title="Merge">
+    Once approved:
+    - A maintainer will merge your PR
+    - Your changes will appear in the next release
+    - The associated issue will be closed automatically
+  </Step>
+</Steps>
+
+## Responding to Review Feedback
+
+### Best Practices
+
+<Tip>
+Be responsive and professional when receiving feedback. Remember that reviewers are volunteers helping improve the project.
+</Tip>
+
+**Do:**
+- Respond to all comments, even if just to acknowledge
+- Ask questions if feedback is unclear
+- Explain your reasoning when disagreeing (respectfully)
+- Mark resolved conversations as resolved
+- Be patient and courteous
+
+**Don't:**
+- Take feedback personally
+- Argue unnecessarily
+- Force-push over previous commits (reviewers need history)
+- Leave comments unaddressed
+- Rush reviewers
+
+### Making Changes
+
+When updating your PR based on feedback:
+
+```bash
+# Make your changes
+# ...
+
+# Create a new commit (don't amend)
+git add .
+git commit -m "Address review feedback: Improve error handling"
+
+# Push to the same branch
+git push origin fix/issue-12345
+```
+
+<Warning>
+Do NOT force push (`git push -f`) unless explicitly requested by a maintainer. This makes it difficult for reviewers to see what changed.
+</Warning>
+
+## Common Review Feedback
+
+Here are common issues found during review and how to address them:
+
+### Compilation Errors
+
+```typescript
+// Problem: Compilation error
+const value = someFunction(); // Error: Type 'unknown' is not assignable
+
+// Solution: Add proper typing
+const value: ExpectedType = someFunction();
+```
+
+### Missing Localization
+
+```typescript
+// Problem: Hardcoded user-facing string
+const message = "File saved successfully";
+
+// Solution: Use localization
+import * as nls from 'vs/nls';
+const message = nls.localize('fileSaved', "File saved successfully");
+```
+
+### Memory Leaks (Disposables)
+
+```typescript
+// Problem: Disposable not disposed
+class MyComponent {
+  constructor() {
+    this.onEvent(() => { /* ... */ });
+  }
+}
+
+// Solution: Use DisposableStore
+import { DisposableStore } from 'vs/base/common/lifecycle';
+
+class MyComponent {
+  private readonly disposables = new DisposableStore();
+  
+  constructor() {
+    this.disposables.add(this.onEvent(() => { /* ... */ }));
+  }
+  
+  dispose(): void {
+    this.disposables.dispose();
+  }
+}
+```
+
+### Missing Tests
+
+Every bug fix and new feature should include tests:
+
+```typescript
+import * as assert from 'assert';
+
+suite('MyComponent', () => {
+  test('should handle edge case', () => {
+    const component = new MyComponent();
+    const result = component.process(edgeCaseInput);
+    assert.strictEqual(result, expectedOutput);
+  });
+});
+```
+
+## Advanced Topics
+
+### Updating Your Branch
+
+Keep your branch up to date with `main`:
+
+```bash
+# Add upstream remote (first time only)
+git remote add upstream https://github.com/microsoft/vscode.git
+
+# Update your branch
+git checkout main
+git pull upstream main
+git checkout fix/issue-12345
+git rebase main
+
+# If conflicts occur, resolve them and continue
+git rebase --continue
+
+# Force push after rebase (only in this case)
+git push origin fix/issue-12345 --force-with-lease
+```
+
+<Warning>
+Only use `--force-with-lease` after rebasing. Never force push to `main` or other shared branches.
+</Warning>
+
+### Large Pull Requests
+
+For large changes:
+
+1. **Break it down**: Split into multiple smaller PRs when possible
+2. **Discuss first**: Open an issue or RFC to discuss the approach
+3. **Incremental changes**: Submit changes incrementally
+4. **Draft PRs**: Use draft PRs for early feedback
+
+<Tip>
+Smaller, focused pull requests are easier to review and merge faster than large, sweeping changes.
+</Tip>
+
+### Draft Pull Requests
+
+Use draft PRs when:
+- You want early feedback on your approach
+- Work is in progress
+- You're exploring a solution
+
+Mark your PR as "Ready for review" when it's complete.
+
+## After Your PR is Merged
+
+### Celebrate!
+
+Your contribution is now part of VS Code! 🎉
+
+### Next Steps
+
+1. **Delete your branch** (optional):
+   ```bash
+   git checkout main
+   git branch -D fix/issue-12345
+   git push origin --delete fix/issue-12345
+   ```
+
+2. **Update your fork**:
+   ```bash
+   git pull upstream main
+   git push origin main
+   ```
+
+3. **Monitor the issue**: Watch for any follow-up questions or issues
+
+4. **Find another issue**: Look for more ways to contribute!
+
+## Getting Help
+
+If you need help with the PR process:
+
+<CardGroup cols={2}>
+  <Card title="GitHub Discussions" icon="comments" href="https://github.com/microsoft/vscode/discussions">
+    Ask questions and discuss with the community
+  </Card>
+  
+  <Card title="Stack Overflow" icon="stack-overflow" href="https://stackoverflow.com/questions/tagged/visual-studio-code">
+    Get help with specific technical questions
+  </Card>
+  
+  <Card title="Contributing Wiki" icon="book" href="https://github.com/microsoft/vscode/wiki/How-to-Contribute">
+    Detailed contribution guide
+  </Card>
+  
+  <Card title="Issue Tracker" icon="bug" href="https://github.com/microsoft/vscode/issues">
+    Browse existing issues and PRs
+  </Card>
+</CardGroup>
+
+## Summary
+
+Successful pull requests:
+
+- Are associated with an issue
+- Have clear, focused changes
+- Include tests and documentation
+- Follow code style guidelines
+- Pass all automated checks
+- Are responsive to feedback
+- Are patient through the review process
+
+Thank you for contributing to VS Code!

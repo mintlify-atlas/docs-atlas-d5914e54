@@ -1,0 +1,564 @@
+---
+title: Security Overview
+description: Understanding VS Code's security model and best practices
+---
+
+# Security Overview
+
+VS Code implements multiple layers of security to protect users and their code. Understanding the security model is essential for contributors working on security-sensitive features.
+
+## Security Architecture
+
+<Info>
+**Security Layers:**
+- **Process Isolation**: Separate processes for UI and extensions
+- **Sandboxing**: Renderer processes run in sandbox
+- **Content Security Policy**: Strict CSP for webviews
+- **Extension Trust**: Workspace trust model
+- **Network Security**: HTTPS enforcement and certificate validation
+</Info>
+
+## Process Isolation
+
+VS Code uses Electron's multi-process architecture for security:
+
+```typescript
+// Main process (privileged)
+// - File system access
+// - Native APIs
+// - System integration
+
+// Renderer process (sandboxed)
+// - UI rendering
+// - Limited privileges
+// - IPC for sensitive operations
+
+// Extension host (isolated)
+// - Extension code execution
+// - Separate from UI
+// - Limited system access
+```
+
+### IPC Security
+
+Communication between processes is validated:
+
+```typescript
+import { validatedIpcMain } from 'vs/base/parts/ipc/electron-main/ipcMain';
+
+// Validated IPC handler
+validatedIpcMain.handle('myChannel', async (event, args) => {
+  // Validate sender
+  if (!isValidSender(event.sender)) {
+    throw new Error('Invalid sender');
+  }
+  
+  // Validate arguments
+  if (!isValidArgs(args)) {
+    throw new Error('Invalid arguments');
+  }
+  
+  // Perform operation
+  return await performSecureOperation(args);
+});
+
+function isValidSender(sender: Electron.WebContents): boolean {
+  // Verify sender is a legitimate VS Code window
+  return getAllWindowsExcludingOffscreen().some(w => 
+    w.win?.webContents === sender
+  );
+}
+```
+
+## Content Security Policy
+
+Webviews use strict CSP to prevent XSS:
+
+```typescript
+const csp = [
+  `default-src 'none'`,
+  `img-src ${webview.cspSource} https: data:`,
+  `script-src ${webview.cspSource} 'nonce-${nonce}'`,
+  `style-src ${webview.cspSource} 'unsafe-inline'`,
+  `font-src ${webview.cspSource}`
+].join('; ');
+
+// Webview HTML with CSP
+const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="Content-Security-Policy" content="${csp}">
+  <meta charset="UTF-8">
+</head>
+<body>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
+</body>
+</html>`;
+```
+
+### Nonce-based Script Loading
+
+```typescript
+import * as crypto from 'crypto';
+
+function getNonce(): string {
+  return crypto.randomBytes(16).toString('base64');
+}
+
+class SecureWebview {
+  private nonce: string;
+  
+  constructor() {
+    this.nonce = getNonce();
+  }
+  
+  getHtml(): string {
+    return `
+      <meta http-equiv="Content-Security-Policy" 
+            content="script-src 'nonce-${this.nonce}'">
+      <script nonce="${this.nonce}">
+        // Safe inline script
+      </script>
+    `;
+  }
+  
+  // Generate new nonce on refresh
+  refresh(): void {
+    this.nonce = getNonce();
+  }
+}
+```
+
+## Workspace Trust
+
+VS Code implements workspace trust to protect against malicious workspace settings:
+
+```typescript
+import { IWorkspaceTrustManagementService } from 'vs/platform/workspace/common/workspaceTrust';
+
+class SecureFeature {
+  constructor(
+    @IWorkspaceTrustManagementService private trustService: IWorkspaceTrustManagementService
+  ) {}
+  
+  async executeFeature(): Promise<void> {
+    // Check workspace trust
+    if (!this.trustService.isWorkspaceTrusted()) {
+      // Show trust dialog
+      const trusted = await this.trustService.requestWorkspaceTrust({
+        message: 'This feature requires workspace trust'
+      });
+      
+      if (!trusted) {
+        throw new Error('Workspace not trusted');
+      }
+    }
+    
+    // Proceed with trusted operation
+    await this.performTrustedOperation();
+  }
+  
+  private async performTrustedOperation(): Promise<void> {
+    // Execute potentially dangerous operation
+  }
+}
+```
+
+### Trust Model
+
+```typescript
+interface IWorkspaceTrustInfo {
+  // Trust state
+  uriTrustInfo: IUriTrustInfo[];
+  
+  // Trust decision
+  trusted: boolean;
+  
+  // Trust scope
+  scope: 'workspace' | 'folder' | 'file';
+}
+
+interface IUriTrustInfo {
+  uri: URI;
+  trusted: boolean;
+  
+  // Trust inheritance
+  inheritedFrom?: URI;
+}
+```
+
+## Extension Security
+
+### Extension Capabilities
+
+Extensions declare required capabilities:
+
+```json
+{
+  "name": "my-extension",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Some features disabled in untrusted workspaces"
+    },
+    "virtualWorkspaces": {
+      "supported": true,
+      "description": "Works with virtual file systems"
+    }
+  }
+}
+```
+
+### Safe Extension Loading
+
+```typescript
+class ExtensionLoader {
+  async loadExtension(extensionId: string): Promise<IExtension> {
+    // Verify extension signature
+    const verified = await this.verifyExtension(extensionId);
+    if (!verified) {
+      throw new Error('Extension signature verification failed');
+    }
+    
+    // Check extension manifest
+    const manifest = await this.loadManifest(extensionId);
+    if (!this.isValidManifest(manifest)) {
+      throw new Error('Invalid extension manifest');
+    }
+    
+    // Load in isolated context
+    return await this.loadInIsolation(extensionId, manifest);
+  }
+  
+  private async verifyExtension(extensionId: string): Promise<boolean> {
+    // Verify digital signature
+    return true; // Simplified
+  }
+  
+  private isValidManifest(manifest: any): boolean {
+    // Validate manifest structure
+    // Check for suspicious patterns
+    // Verify required fields
+    return true; // Simplified
+  }
+}
+```
+
+## Input Validation
+
+### URI Validation
+
+```typescript
+import { URI } from 'vs/base/common/uri';
+
+class URIValidator {
+  static isValid(uri: URI): boolean {
+    // Check scheme
+    if (!this.isSafeScheme(uri.scheme)) {
+      return false;
+    }
+    
+    // Check for path traversal
+    if (this.hasPathTraversal(uri.path)) {
+      return false;
+    }
+    
+    // Check for null bytes
+    if (this.hasNullBytes(uri.toString())) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  private static isSafeScheme(scheme: string): boolean {
+    const safeSchemes = ['file', 'vscode', 'vscode-userdata', 'vscode-remote'];
+    return safeSchemes.includes(scheme);
+  }
+  
+  private static hasPathTraversal(path: string): boolean {
+    return path.includes('../') || path.includes('..\\');
+  }
+  
+  private static hasNullBytes(str: string): boolean {
+    return str.includes('\0');
+  }
+}
+
+// Usage
+function openFile(uri: URI): void {
+  if (!URIValidator.isValid(uri)) {
+    throw new Error('Invalid URI');
+  }
+  
+  // Safe to open
+  workspace.openTextDocument(uri);
+}
+```
+
+### Command Validation
+
+```typescript
+class CommandValidator {
+  private readonly allowedCommands = new Set<string>([
+    'workbench.action.files.openFile',
+    'workbench.action.terminal.new',
+    // ...
+  ]);
+  
+  validateCommand(command: string, args?: any[]): boolean {
+    // Check if command is allowed
+    if (!this.allowedCommands.has(command)) {
+      console.warn(`Blocked potentially unsafe command: ${command}`);
+      return false;
+    }
+    
+    // Validate arguments
+    if (args && !this.validateArgs(command, args)) {
+      console.warn(`Invalid arguments for command: ${command}`);
+      return false;
+    }
+    
+    return true;
+  }
+  
+  private validateArgs(command: string, args: any[]): boolean {
+    // Command-specific validation
+    switch (command) {
+      case 'workbench.action.files.openFile':
+        return this.validateFileOpenArgs(args);
+      // ...
+    }
+    return true;
+  }
+  
+  private validateFileOpenArgs(args: any[]): boolean {
+    if (args.length === 0) return false;
+    
+    const uri = args[0];
+    if (!(uri instanceof URI)) return false;
+    
+    return URIValidator.isValid(uri);
+  }
+}
+```
+
+## Secure Data Storage
+
+### Secrets Management
+
+```typescript
+import { ISecretStorageService } from 'vs/platform/secrets/common/secrets';
+
+class SecretManager {
+  constructor(
+    @ISecretStorageService private secretStorage: ISecretStorageService
+  ) {}
+  
+  async storeToken(key: string, token: string): Promise<void> {
+    // Store in OS-level secure storage
+    await this.secretStorage.set(key, token);
+  }
+  
+  async getToken(key: string): Promise<string | undefined> {
+    return await this.secretStorage.get(key);
+  }
+  
+  async deleteToken(key: string): Promise<void> {
+    await this.secretStorage.delete(key);
+  }
+}
+
+// Usage
+const secretManager = new SecretManager(secretStorage);
+
+// Store sensitive data
+await secretManager.storeToken('github.token', accessToken);
+
+// Retrieve when needed
+const token = await secretManager.getToken('github.token');
+```
+
+### Encryption
+
+```typescript
+import { IEncryptionMainService } from 'vs/platform/encryption/common/encryptionService';
+
+class DataEncryption {
+  constructor(
+    @IEncryptionMainService private encryptionService: IEncryptionMainService
+  ) {}
+  
+  async encrypt(data: string): Promise<string> {
+    const encrypted = await this.encryptionService.encrypt(data);
+    return encrypted;
+  }
+  
+  async decrypt(encrypted: string): Promise<string> {
+    const decrypted = await this.encryptionService.decrypt(encrypted);
+    return decrypted;
+  }
+}
+
+// Usage
+const encryption = new DataEncryption(encryptionService);
+
+// Encrypt sensitive config
+const encrypted = await encryption.encrypt(JSON.stringify(sensitiveConfig));
+fs.writeFileSync('config.encrypted', encrypted);
+
+// Decrypt when needed
+const encryptedData = fs.readFileSync('config.encrypted', 'utf8');
+const decrypted = await encryption.decrypt(encryptedData);
+const config = JSON.parse(decrypted);
+```
+
+## Network Security
+
+### HTTPS Enforcement
+
+```typescript
+import { IRequestService } from 'vs/platform/request/common/request';
+
+class SecureHttp {
+  constructor(
+    @IRequestService private requestService: IRequestService
+  ) {}
+  
+  async fetch(url: string): Promise<any> {
+    // Enforce HTTPS
+    const uri = URI.parse(url);
+    if (uri.scheme !== 'https') {
+      throw new Error('Only HTTPS requests are allowed');
+    }
+    
+    // Make request with certificate validation
+    const response = await this.requestService.request({
+      url,
+      type: 'GET',
+      timeout: 30000,
+      followRedirects: 3
+    });
+    
+    return response;
+  }
+}
+```
+
+### Certificate Validation
+
+```typescript
+import * as https from 'https';
+
+const agent = new https.Agent({
+  // Validate certificates
+  rejectUnauthorized: true,
+  
+  // Check certificate revocation
+  checkServerIdentity: (hostname, cert) => {
+    // Custom certificate validation
+    return undefined; // No error
+  }
+});
+```
+
+## XSS Prevention
+
+### HTML Sanitization
+
+```typescript
+class HTMLSanitizer {
+  sanitize(html: string): string {
+    // Remove script tags
+    html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    
+    // Remove event handlers
+    html = html.replace(/on\w+\s*=\s*["'][^"']*["']/gi, '');
+    
+    // Remove javascript: URLs
+    html = html.replace(/javascript:/gi, '');
+    
+    return html;
+  }
+  
+  // Better: Use DOMPurify
+  sanitizeWithDOMPurify(html: string): string {
+    const purify = require('dompurify');
+    return purify.sanitize(html, {
+      ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br'],
+      ALLOWED_ATTR: ['href', 'title']
+    });
+  }
+}
+```
+
+### Output Encoding
+
+```typescript
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+// Usage in webview
+const userInput = getUserInput();
+const safeHtml = `<div>${escapeHtml(userInput)}</div>`;
+```
+
+## Security Best Practices
+
+<Warning>
+**Security Checklist:**
+- ✅ Validate all user input
+- ✅ Use CSP in webviews
+- ✅ Sanitize HTML content
+- ✅ Verify IPC message senders
+- ✅ Store secrets securely
+- ✅ Use HTTPS for network requests
+- ✅ Respect workspace trust
+- ✅ Implement least privilege
+- ✅ Audit extension permissions
+- ✅ Keep dependencies updated
+</Warning>
+
+## Vulnerability Reporting
+
+If you discover a security vulnerability:
+
+1. **Do not** open a public issue
+2. Email [email protected]
+3. Include detailed reproduction steps
+4. Wait for acknowledgment before disclosure
+
+## Security Headers
+
+```typescript
+// Set security headers on responses
+function setSecurityHeaders(response: http.ServerResponse): void {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('X-Frame-Options', 'DENY');
+  response.setHeader('X-XSS-Protection', '1; mode=block');
+  response.setHeader(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains'
+  );
+  response.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; script-src 'self'"
+  );
+}
+```
+
+## Related Files
+
+- `src/vs/base/parts/ipc/electron-main/ipcMain.ts` - Validated IPC
+- `src/vs/platform/workspace/common/workspaceTrust.ts` - Workspace trust
+- `src/vs/platform/secrets/common/secrets.ts` - Secret storage
+- `src/vs/platform/encryption/common/encryptionService.ts` - Encryption
+- `src/vs/base/parts/sandbox/common/sandboxTypes.ts` - Sandbox configuration

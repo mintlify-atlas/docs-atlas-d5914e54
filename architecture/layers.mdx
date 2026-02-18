@@ -1,0 +1,767 @@
+---
+title: Layered Architecture
+description: Deep dive into VS Code's four architectural layers and their responsibilities
+---
+
+## Overview
+
+VS Code's architecture is organized into four distinct layers, each building upon the layers below it. This strict layering ensures clear separation of concerns, maintainability, and the ability to reuse components across different contexts.
+
+```
+┌─────────────────────────────────────────┐
+│         workbench (Application)         │  ← Full VS Code experience
+├─────────────────────────────────────────┤
+│         editor (Monaco Editor)          │  ← Standalone text editor
+├─────────────────────────────────────────┤
+│        platform (Core Services)         │  ← Service infrastructure
+├─────────────────────────────────────────┤
+│       base (Foundation Utilities)       │  ← Basic primitives
+└─────────────────────────────────────────┘
+```
+
+<Note>
+Layers can only import from layers below them, never above. This is enforced by the `npm run valid-layers-check` command.
+</Note>
+
+## Layer 1: Base
+
+Location: `src/vs/base/`
+
+The **base layer** provides fundamental utilities and abstractions with zero dependencies on other VS Code layers. This layer is purely about providing building blocks.
+
+### Key Components
+
+<Tabs>
+  <Tab title="Lifecycle">
+    Resource management through the disposable pattern:
+    
+    ```typescript
+    // From src/vs/base/common/lifecycle.ts
+    export interface IDisposable {
+      dispose(): void;
+    }
+    
+    export class DisposableStore implements IDisposable {
+      private readonly _disposables = new Set<IDisposable>();
+      
+      public add<T extends IDisposable>(disposable: T): T {
+        this._disposables.add(disposable);
+        return disposable;
+      }
+      
+      public dispose(): void {
+        for (const disposable of this._disposables) {
+          disposable.dispose();
+        }
+        this._disposables.clear();
+      }
+    }
+    
+    export abstract class Disposable implements IDisposable {
+      private readonly _store = new DisposableStore();
+      
+      protected _register<T extends IDisposable>(t: T): T {
+        return this._store.add(t);
+      }
+      
+      dispose(): void {
+        this._store.dispose();
+      }
+    }
+    ```
+    
+    **Usage**: All long-lived objects that manage resources should extend `Disposable` or use `DisposableStore`.
+  </Tab>
+  
+  <Tab title="Events">
+    Type-safe event system for reactive programming:
+    
+    ```typescript
+    // From src/vs/base/common/event.ts
+    export interface Event<T> {
+      (listener: (e: T) => unknown, thisArgs?: any, disposables?: IDisposable[]): IDisposable;
+    }
+    
+    export class Emitter<T> {
+      private readonly _event: Event<T>;
+      
+      get event(): Event<T> {
+        return this._event;
+      }
+      
+      fire(event: T): void {
+        // Notify all listeners
+      }
+    }
+    
+    // Usage example
+    class MyClass {
+      private readonly _onDidChange = new Emitter<string>();
+      readonly onDidChange: Event<string> = this._onDidChange.event;
+      
+      private notifyChange(value: string): void {
+        this._onDidChange.fire(value);
+      }
+    }
+    
+    // Subscribing to events
+    const disposable = myClass.onDidChange(value => {
+      console.log('Changed:', value);
+    });
+    // Later: disposable.dispose();
+    ```
+    
+    **Key Features**:
+    - Automatic memory management via disposables
+    - Event composition (map, filter, debounce)
+    - Once, any, signal patterns
+  </Tab>
+  
+  <Tab title="Async Utilities">
+    Utilities for asynchronous operations:
+    
+    ```typescript
+    // From src/vs/base/common/async.ts
+    
+    // Debouncing
+    export class Delayer<T> {
+      constructor(defaultDelay: number);
+      trigger(task: () => Promise<T>, delay?: number): Promise<T>;
+    }
+    
+    // Throttling
+    export class ThrottledDelayer<T> extends Delayer<T> {
+      // Ensures task runs at most once per interval
+    }
+    
+    // Run once per scheduler tick
+    export class RunOnceScheduler {
+      constructor(runner: () => void, delay: number);
+      schedule(): void;
+      cancel(): void;
+    }
+    
+    // Sequential task queue
+    export class Queue<T> {
+      queue<T>(task: () => Promise<T>): Promise<T>;
+    }
+    
+    // Usage example
+    class AutoSave {
+      private readonly saveDelayer = new Delayer<void>(1000);
+      
+      triggerSave(): void {
+        this.saveDelayer.trigger(() => this.doSave());
+      }
+      
+      private async doSave(): Promise<void> {
+        // Save logic
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Data Structures">
+    Specialized data structures for common patterns:
+    
+    ```typescript
+    // Linked list for efficient insertion/removal
+    export class LinkedList<T> {
+      push(element: T): () => void;
+      unshift(element: T): () => void;
+      // Returns removal function
+    }
+    
+    // Resource map with URI keys
+    export class ResourceMap<T> {
+      set(key: URI, value: T): void;
+      get(key: URI): T | undefined;
+      // Handles URI comparison correctly
+    }
+    
+    // Lazy value initialization
+    export class Lazy<T> {
+      constructor(private readonly _getValue: () => T);
+      get value(): T {
+        // Computed only once
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="UI Components">
+    Basic UI building blocks (in `src/vs/base/browser/`):
+    
+    - **Tree**: Virtual scrolling tree component
+    - **List**: High-performance list rendering
+    - **Scrollbar**: Custom scrollbar implementation
+    - **SplitView**: Resizable split panels
+    - **Grid**: 2D grid layout
+    - **DOM utilities**: Safe DOM manipulation
+    
+    These are low-level components used by higher layers.
+  </Tab>
+</Tabs>
+
+### Platform Abstractions
+
+The base layer provides cross-platform abstractions:
+
+```typescript
+// From src/vs/base/common/platform.ts
+export const enum OperatingSystem {
+  Windows,
+  Macintosh,
+  Linux
+}
+
+export const OS: OperatingSystem;
+export const isWindows: boolean;
+export const isMacintosh: boolean;
+export const isLinux: boolean;
+export const isWeb: boolean;
+
+// From src/vs/base/common/path.ts
+export interface IPath {
+  normalize(path: string): string;
+  join(...paths: string[]): string;
+  basename(path: string): string;
+  dirname(path: string): string;
+  // Platform-aware path operations
+}
+```
+
+<Warning>
+Code in the base layer must work in all environments (browser, Node.js, Electron). Avoid platform-specific APIs.
+</Warning>
+
+## Layer 2: Platform
+
+Location: `src/vs/platform/`
+
+The **platform layer** provides core services and the dependency injection infrastructure. This layer defines service interfaces and their implementations.
+
+### Dependency Injection
+
+The instantiation service is the heart of the platform layer:
+
+```typescript
+// From src/vs/platform/instantiation/common/instantiation.ts
+export interface IInstantiationService {
+  createInstance<T>(ctor: new (...args: any[]) => T): T;
+  invokeFunction<R>(fn: (accessor: ServicesAccessor) => R): R;
+  createChild(services: ServiceCollection): IInstantiationService;
+}
+
+// Service decorator
+export function createDecorator<T>(serviceId: string): ServiceIdentifier<T>;
+
+// Example service definition
+export const IConfigurationService = createDecorator<IConfigurationService>('configurationService');
+
+export interface IConfigurationService {
+  readonly _serviceBrand: undefined;
+  getValue<T>(key: string): T;
+  updateValue(key: string, value: any): Promise<void>;
+}
+```
+
+See [Dependency Injection](/architecture/dependency-injection) for complete details.
+
+### Core Platform Services
+
+<Tabs>
+  <Tab title="File Service">
+    ```typescript
+    // From src/vs/platform/files/common/files.ts
+    export const IFileService = createDecorator<IFileService>('fileService');
+    
+    export interface IFileService {
+      // File operations
+      resolve(resource: URI): Promise<IFileStat>;
+      readFile(resource: URI): Promise<IFileContent>;
+      writeFile(resource: URI, content: VSBuffer): Promise<IFileStatWithMetadata>;
+      delete(resource: URI, options?: { useTrash?: boolean }): Promise<void>;
+      
+      // Watching
+      watch(resource: URI): IDisposable;
+      onDidFilesChange: Event<FileChangesEvent>;
+      
+      // Providers
+      registerProvider(scheme: string, provider: IFileSystemProvider): IDisposable;
+    }
+    ```
+    
+    Abstracts file system operations across different providers (disk, network, memory).
+  </Tab>
+  
+  <Tab title="Configuration Service">
+    ```typescript
+    // From src/vs/platform/configuration/common/configuration.ts
+    export const IConfigurationService = createDecorator<IConfigurationService>('configurationService');
+    
+    export interface IConfigurationService {
+      // Read configuration
+      getValue<T>(section?: string, overrides?: IConfigurationOverrides): T;
+      inspect<T>(key: string): IConfigurationValue<T>;
+      
+      // Write configuration
+      updateValue(key: string, value: any, target?: ConfigurationTarget): Promise<void>;
+      
+      // React to changes
+      onDidChangeConfiguration: Event<IConfigurationChangeEvent>;
+    }
+    
+    export const enum ConfigurationTarget {
+      USER,           // User settings
+      WORKSPACE,      // Workspace settings
+      WORKSPACE_FOLDER // Folder settings
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Log Service">
+    ```typescript
+    // From src/vs/platform/log/common/log.ts
+    export const ILogService = createDecorator<ILogService>('logService');
+    
+    export interface ILogService {
+      trace(message: string, ...args: any[]): void;
+      debug(message: string, ...args: any[]): void;
+      info(message: string, ...args: any[]): void;
+      warn(message: string, ...args: any[]): void;
+      error(message: string | Error, ...args: any[]): void;
+      
+      setLevel(level: LogLevel): void;
+      getLevel(): LogLevel;
+    }
+    
+    export enum LogLevel {
+      Trace,
+      Debug,
+      Info,
+      Warning,
+      Error,
+      Off
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Keybinding Service">
+    ```typescript
+    // From src/vs/platform/keybinding/common/keybinding.ts
+    export const IKeybindingService = createDecorator<IKeybindingService>('keybindingService');
+    
+    export interface IKeybindingService {
+      // Query keybindings
+      lookupKeybinding(commandId: string): ResolvedKeybinding | undefined;
+      getKeybindings(): readonly ResolvedKeybinding[];
+      
+      // Context
+      contextMatchesRules(rules: ContextKeyExpression | undefined): boolean;
+      
+      // Events
+      onDidUpdateKeybindings: Event<void>;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Service Registration
+
+```typescript
+// From src/vs/platform/instantiation/common/extensions.ts
+export const enum InstantiationType {
+  Eager = 0,    // Instantiate immediately
+  Delayed = 1   // Instantiate on first use (preferred)
+}
+
+export function registerSingleton<T>(
+  id: ServiceIdentifier<T>,
+  ctor: new (...args: any[]) => T,
+  instantiationType: InstantiationType
+): void;
+
+// Example registration
+registerSingleton(
+  IConfigurationService,
+  ConfigurationService,
+  InstantiationType.Delayed
+);
+```
+
+<Note>
+Prefer `InstantiationType.Delayed` to reduce startup time. Only use `Eager` for services that must initialize before any other code runs.
+</Note>
+
+## Layer 3: Editor
+
+Location: `src/vs/editor/`
+
+The **editor layer** implements the Monaco Editor, VS Code's standalone text editor. This layer can be used independently of the workbench.
+
+### Core Editor Components
+
+<Tabs>
+  <Tab title="Text Model">
+    ```typescript
+    // From src/vs/editor/common/model.ts
+    export interface ITextModel {
+      // Content
+      getValue(): string;
+      getLineContent(lineNumber: number): string;
+      getLineCount(): number;
+      
+      // Editing
+      applyEdits(operations: IIdentifiedSingleEditOperation[]): void;
+      pushEditOperations(
+        beforeCursorState: Selection[] | null,
+        editOperations: IIdentifiedSingleEditOperation[],
+        cursorStateComputer: ICursorStateComputer | null
+      ): Selection[] | null;
+      
+      // Events
+      onDidChangeContent: Event<IModelContentChangedEvent>;
+      onWillDispose: Event<void>;
+      
+      // Language
+      getLanguageId(): string;
+      setLanguage(languageId: string): void;
+    }
+    ```
+    
+    The text model represents the document being edited, handling all content modifications.
+  </Tab>
+  
+  <Tab title="Editor Interface">
+    ```typescript
+    // From src/vs/editor/browser/editorBrowser.ts
+    export interface ICodeEditor extends IEditor {
+      // Get/set value
+      getValue(options?: { preserveBOM: boolean; lineEnding: string }): string;
+      setValue(newValue: string): void;
+      
+      // Model
+      getModel(): ITextModel | null;
+      setModel(model: ITextModel | null): void;
+      
+      // Selection and position
+      getSelection(): Selection | null;
+      setSelection(selection: IRange): void;
+      getPosition(): Position | null;
+      setPosition(position: IPosition): void;
+      
+      // Actions
+      trigger(source: string | null | undefined, handlerId: string, payload: any): void;
+      
+      // Layout
+      layout(dimension?: IDimension): void;
+      focus(): void;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Language Features">
+    Language features are provided through registries:
+    
+    ```typescript
+    // From src/vs/editor/common/languages.ts
+    export interface CompletionItemProvider {
+      provideCompletionItems(
+        model: ITextModel,
+        position: Position,
+        context: CompletionContext,
+        token: CancellationToken
+      ): ProviderResult<CompletionList>;
+    }
+    
+    export interface HoverProvider {
+      provideHover(
+        model: ITextModel,
+        position: Position,
+        token: CancellationToken
+      ): ProviderResult<Hover>;
+    }
+    
+    export interface DefinitionProvider {
+      provideDefinition(
+        model: ITextModel,
+        position: Position,
+        token: CancellationToken
+      ): ProviderResult<Definition | LocationLink[]>;
+    }
+    
+    // Register providers
+    const languageFeaturesService: ILanguageFeaturesService;
+    languageFeaturesService.completionProvider.register('typescript', myCompletionProvider);
+    ```
+  </Tab>
+  
+  <Tab title="Editor Contributions">
+    Editor features are added through contributions:
+    
+    ```typescript
+    // From src/vs/editor/contrib/folding/browser/folding.ts
+    export class FoldingController extends Disposable implements IEditorContribution {
+      public static readonly ID = 'editor.contrib.folding';
+      
+      constructor(
+        private readonly editor: ICodeEditor,
+        @IContextKeyService private readonly contextKeyService: IContextKeyService,
+        @ILanguageFeaturesService private readonly languageFeaturesService: ILanguageFeaturesService
+      ) {
+        super();
+        // Initialize folding
+      }
+      
+      public foldAll(): void {
+        // Implementation
+      }
+    }
+    
+    // Register contribution
+    registerEditorContribution(
+      FoldingController.ID,
+      FoldingController,
+      EditorContributionInstantiation.AfterFirstRender
+    );
+    ```
+    
+    Located in: `src/vs/editor/contrib/*/browser/`
+  </Tab>
+</Tabs>
+
+### Editor Services
+
+The editor layer has its own services:
+
+```typescript
+// Model service
+export const IModelService = createDecorator<IModelService>('modelService');
+export interface IModelService {
+  createModel(value: string, languageSelection: ILanguageSelection | null, resource?: URI): ITextModel;
+  getModel(resource: URI): ITextModel | null;
+  getModels(): ITextModel[];
+}
+
+// Language configuration
+export const ILanguageConfigurationService = createDecorator<ILanguageConfigurationService>('languageConfigurationService');
+
+// Language features
+export const ILanguageFeaturesService = createDecorator<ILanguageFeaturesService>('languageFeaturesService');
+```
+
+<Note>
+The editor layer is designed to be embeddable. It can run standalone in a web page without the full workbench.
+</Note>
+
+## Layer 4: Workbench
+
+Location: `src/vs/workbench/`
+
+The **workbench layer** provides the complete VS Code application experience, built on top of the editor.
+
+### Workbench Structure
+
+```
+src/vs/workbench/
+├── browser/           # Core workbench UI
+│   ├── workbench.ts   # Main workbench class
+│   ├── layout.ts      # Layout management
+│   └── parts/         # UI parts (sidebar, panel, etc.)
+├── services/          # Workbench services
+│   ├── textfile/      # Text file handling
+│   ├── extensions/    # Extension management
+│   ├── debug/         # Debug service
+│   └── search/        # Search service
+├── contrib/           # Feature contributions
+│   ├── files/         # File explorer
+│   ├── search/        # Search view
+│   ├── debug/         # Debug view
+│   ├── terminal/      # Integrated terminal
+│   └── git/           # Git integration
+└── api/               # Extension API implementation
+    └── common/        # VS Code API
+```
+
+### Workbench Layout
+
+The workbench is divided into parts:
+
+```
+┌─────────────────────────────────────────────┐
+│              Title Bar                       │
+├─────────┬───────────────────────┬────────────┤
+│ Activity│                       │            │
+│  Bar    │   Editor Area         │  Sidebar   │
+│         │                       │            │
+├─────────┴───────────────────────┴────────────┤
+│              Panel                           │
+├──────────────────────────────────────────────┤
+│              Status Bar                      │
+└──────────────────────────────────────────────┘
+```
+
+### Contribution Points
+
+<Tabs>
+  <Tab title="Views">
+    ```typescript
+    // From src/vs/workbench/common/views.ts
+    export interface IViewDescriptor {
+      readonly id: string;
+      readonly name: string;
+      readonly ctorDescriptor: SyncDescriptor<IView>;
+      readonly when?: ContextKeyExpression;
+      readonly order?: number;
+      readonly weight?: number;
+      readonly collapsed?: boolean;
+    }
+    
+    // Register a view
+    const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+    viewsRegistry.registerViews([{
+      id: 'workbench.view.search',
+      name: 'Search',
+      ctorDescriptor: new SyncDescriptor(SearchView),
+      canToggleVisibility: true,
+      order: 1
+    }], viewContainer);
+    ```
+  </Tab>
+  
+  <Tab title="Commands">
+    ```typescript
+    // From src/vs/platform/commands/common/commands.ts
+    CommandsRegistry.registerCommand({
+      id: 'workbench.action.files.save',
+      handler: (accessor) => {
+        const editorService = accessor.get(IEditorService);
+        return editorService.activeEditor?.save();
+      }
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Menus">
+    ```typescript
+    // From src/vs/platform/actions/common/actions.ts
+    MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+      command: {
+        id: 'workbench.action.files.save',
+        title: 'Save',
+        icon: saveIcon
+      },
+      group: 'navigation',
+      order: 1,
+      when: ContextKeyExpr.and(
+        EditorContextKeys.writable,
+        EditorContextKeys.dirty
+      )
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Keybindings">
+    ```typescript
+    // From src/vs/platform/keybinding/common/keybindingsRegistry.ts
+    KeybindingsRegistry.registerKeybindingRule({
+      id: 'workbench.action.files.save',
+      weight: KeybindingWeight.WorkbenchContrib,
+      when: undefined,
+      primary: KeyMod.CtrlCmd | KeyCode.KeyS
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### Workbench Services
+
+Key workbench-level services:
+
+```typescript
+// Editor service
+export const IEditorService = createDecorator<IEditorService>('editorService');
+export interface IEditorService {
+  openEditor(editor: IEditorInput, options?: IEditorOptions): Promise<IEditorPane | undefined>;
+  activeEditor: IEditorInput | undefined;
+  activeEditorPane: IEditorPane | undefined;
+}
+
+// Extension service
+export const IExtensionService = createDecorator<IExtensionService>('extensionService');
+export interface IExtensionService {
+  activateByEvent(activationEvent: string): Promise<void>;
+  whenInstalledExtensionsRegistered(): Promise<boolean>;
+}
+
+// Workspace service
+export const IWorkspaceContextService = createDecorator<IWorkspaceContextService>('contextService');
+export interface IWorkspaceContextService {
+  getWorkspace(): IWorkspace;
+  getWorkbenchState(): WorkbenchState;
+  onDidChangeWorkspaceFolders: Event<IWorkspaceFoldersChangeEvent>;
+}
+```
+
+### Feature Contributions
+
+Features are modular and self-contained:
+
+```typescript
+// From src/vs/workbench/contrib/search/browser/search.contribution.ts
+
+// Register service
+registerSingleton(
+  ISearchHistoryService,
+  SearchHistoryService,
+  InstantiationType.Delayed
+);
+
+// Register view
+const viewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry)
+  .registerViewContainer({
+    id: 'workbench.view.search',
+    title: 'Search',
+    icon: searchViewIcon,
+    order: 1
+  }, ViewContainerLocation.Sidebar);
+
+Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry)
+  .registerViews([{
+    id: 'workbench.view.search',
+    name: 'Search',
+    ctorDescriptor: new SyncDescriptor(SearchView)
+  }], viewContainer);
+
+// Register commands, keybindings, menus...
+```
+
+## Layer Validation
+
+VS Code enforces layer dependencies:
+
+```bash
+# Check layer violations
+npm run valid-layers-check
+```
+
+Common violations:
+- Base importing from platform
+- Editor importing from workbench
+- Common importing from browser/node
+
+<Warning>
+Always run layer validation before submitting pull requests. Layer violations will fail CI builds.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Dependency Injection" icon="plug" href="/architecture/dependency-injection">
+    Learn how services are injected
+  </Card>
+  <Card title="Contribution Model" icon="puzzle-piece" href="/architecture/contribution-model">
+    Understand feature contributions
+  </Card>
+</CardGroup>

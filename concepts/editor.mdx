@@ -1,0 +1,509 @@
+---
+title: 'Monaco Editor'
+description: 'Understanding the Monaco editor core, its architecture, and integration with VS Code'
+---
+
+## Overview
+
+The **Monaco Editor** is the code editor that powers Visual Studio Code. It's a browser-based editor that provides rich editing features including syntax highlighting, IntelliSense, diff viewing, and more.
+
+<Info>
+Monaco is the foundation of VS Code's editing experience. While Monaco can be used standalone in web applications, VS Code extends it with additional services, language features, and workbench integration.
+</Info>
+
+## Editor Architecture
+
+The Monaco editor is organized into layers:
+
+```
+┌──────────────────────────────────────┐
+│        Editor Browser Layer          │
+│  (CodeEditor, DiffEditor, Widgets)   │
+├──────────────────────────────────────┤
+│        Editor Common Layer           │
+│  (Model, ViewModel, Controllers)     │
+├──────────────────────────────────────┤
+│       Language Features              │
+│  (IntelliSense, Diagnostics, etc.)   │
+└──────────────────────────────────────┘
+```
+
+## Core Components
+
+### Code Editor
+
+The main editor interface for editing text:
+
+```typescript
+// Location: src/vs/editor/browser/editorBrowser.ts
+export interface ICodeEditor extends IEditor {
+  // DOM
+  getDomNode(): HTMLElement | null;
+  
+  // Model
+  getModel(): ITextModel | null;
+  setModel(model: ITextModel | null): void;
+  
+  // Selection & Position
+  getPosition(): Position | null;
+  setPosition(position: IPosition): void;
+  getSelection(): Selection | null;
+  setSelection(selection: IRange | Selection): void;
+  
+  // Actions
+  executeEdits(source: string, edits: IIdentifiedSingleEditOperation[]): boolean;
+  trigger(source: string, handlerId: string, payload: any): void;
+  
+  // View
+  layoutContentWidget(widget: IContentWidget): void;
+  addOverlayWidget(widget: IOverlayWidget): void;
+}
+```
+
+### Text Model
+
+The document model that holds the text content:
+
+```typescript
+// Location: src/vs/editor/common/model.ts
+export interface ITextModel {
+  // Content
+  getValue(): string;
+  getLineCount(): number;
+  getLineContent(lineNumber: number): string;
+  
+  // Language
+  getLanguageId(): string;
+  setLanguage(languageId: string): void;
+  
+  // Editing
+  applyEdits(operations: IIdentifiedSingleEditOperation[]): void;
+  pushEditOperations(
+    beforeCursorState: Selection[],
+    editOperations: IIdentifiedSingleEditOperation[],
+    cursorStateComputer: ICursorStateComputer
+  ): Selection[] | null;
+  
+  // Decorations
+  deltaDecorations(
+    oldDecorations: string[],
+    newDecorations: IModelDeltaDecoration[]
+  ): string[];
+  
+  // Events
+  onDidChangeContent: Event<IModelContentChangedEvent>;
+  onWillDispose: Event<void>;
+}
+```
+
+<Tip>
+The text model is **decoupled** from the view. Multiple editors can share the same model, and a model can exist without being displayed in an editor. This design enables features like diff views and multi-cursor editing.
+</Tip>
+
+### View Model
+
+The view model bridges the text model and the visual representation:
+
+```typescript
+// Location: src/vs/editor/common/viewModel.ts
+export interface IViewModel {
+  // Coordinates conversion
+  coordinatesConverter: ICoordinatesConverter;
+  
+  // View lines (handles wrapping, folding)
+  getViewLineCount(): number;
+  getViewLineContent(viewLineNumber: number): string;
+  
+  // Decorations
+  getDecorationsInViewport(startLineNumber: number, endLineNumber: number): IModelDecoration[];
+  
+  // Cursor
+  getCursorColumnSelectData(): ICursorColumnSelectData;
+}
+```
+
+## Editor Creation
+
+### Standalone Editor
+
+Creating a Monaco editor standalone (outside VS Code):
+
+```typescript
+// Location: src/vs/editor/standalone/browser/standaloneEditor.ts
+import * as monaco from 'monaco-editor';
+
+const editor = monaco.editor.create(container, {
+  value: 'function hello() {\n\tconsole.log("Hello world!");\n}',
+  language: 'javascript',
+  theme: 'vs-dark',
+  automaticLayout: true,
+  minimap: { enabled: true },
+  scrollBeyondLastLine: false
+});
+```
+
+### VS Code Editor Service
+
+In VS Code, editors are created through the editor service:
+
+```typescript
+// Location: src/vs/workbench/services/editor/browser/editorService.ts
+export interface IEditorService {
+  // Open editor
+  openEditor(
+    editor: IEditorInput,
+    options?: IEditorOptions,
+    group?: PreferredGroup
+  ): Promise<IEditorPane | undefined>;
+  
+  // Active editor
+  readonly activeEditor: IEditorInput | undefined;
+  readonly activeEditorPane: IEditorPane | undefined;
+  readonly activeTextEditorControl: ICodeEditor | undefined;
+  
+  // Editor groups
+  readonly visibleEditorPanes: IVisibleEditorPane[];
+}
+```
+
+<Steps>
+  <Step title="Create Editor Input">
+    An `EditorInput` represents the resource to edit (file, diff, etc.)
+    ```typescript
+    const input = this.instantiationService.createInstance(
+      FileEditorInput,
+      resource,
+      undefined,
+      undefined
+    );
+    ```
+  </Step>
+  
+  <Step title="Open in Group">
+    Open the input in an editor group
+    ```typescript
+    await this.editorService.openEditor(input, {
+      pinned: true,
+      preserveFocus: false
+    }, ACTIVE_GROUP);
+    ```
+  </Step>
+  
+  <Step title="Get Code Editor">
+    Access the underlying Monaco editor instance
+    ```typescript
+    const codeEditor = this.editorService.activeTextEditorControl;
+    if (isCodeEditor(codeEditor)) {
+      // Work with Monaco editor
+      codeEditor.setPosition({ lineNumber: 10, column: 1 });
+    }
+    ```
+  </Step>
+</Steps>
+
+## Editor Configuration
+
+The editor is highly configurable:
+
+```typescript
+// Location: src/vs/editor/common/config/editorOptions.ts
+export interface IEditorOptions {
+  // Basic
+  readOnly?: boolean;
+  wordWrap?: 'off' | 'on' | 'wordWrapColumn' | 'bounded';
+  lineNumbers?: 'on' | 'off' | 'relative' | 'interval';
+  
+  // Indentation
+  tabSize?: number;
+  insertSpaces?: boolean;
+  detectIndentation?: boolean;
+  
+  // Rendering
+  renderWhitespace?: 'none' | 'boundary' | 'selection' | 'all';
+  renderLineHighlight?: 'none' | 'gutter' | 'line' | 'all';
+  cursorBlinking?: 'blink' | 'smooth' | 'phase' | 'expand' | 'solid';
+  
+  // Features
+  suggestOnTriggerCharacters?: boolean;
+  quickSuggestions?: boolean | IQuickSuggestionsOptions;
+  parameterHints?: IEditorParameterHintOptions;
+  
+  // Minimap
+  minimap?: IEditorMinimapOptions;
+}
+```
+
+### VS Code Settings Integration
+
+```json
+{
+  "editor.fontSize": 14,
+  "editor.fontFamily": "'Cascadia Code', Consolas, monospace",
+  "editor.fontLigatures": true,
+  "editor.lineHeight": 20,
+  "editor.rulers": [80, 120],
+  "editor.wordWrap": "on",
+  "editor.minimap.enabled": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.inlineSuggest.enabled": true
+}
+```
+
+## Editor View Parts
+
+The editor view is composed of multiple parts:
+
+<CardGroup cols={2}>
+  <Card title="Lines Content" icon="lines">
+    The main text rendering area with syntax highlighting
+  </Card>
+  <Card title="Glyph Margin" icon="bookmark">
+    Left margin for breakpoints, errors, and custom glyphs
+  </Card>
+  <Card title="Line Numbers" icon="list-ol">
+    Line number column (can be absolute or relative)
+  </Card>
+  <Card title="Minimap" icon="map">
+    Overview map on the right side
+  </Card>
+  <Card title="Scrollbars" icon="arrows-up-down">
+    Vertical and horizontal scroll bars
+  </Card>
+  <Card title="Overview Ruler" icon="ruler-vertical">
+    Decorations overview next to scrollbar
+  </Card>
+  <Card title="Cursors" icon="i-cursor">
+    Cursor rendering (supports multiple cursors)
+  </Card>
+  <Card title="Selections" icon="highlighter">
+    Selection highlighting
+  </Card>
+</CardGroup>
+
+### View Zones
+
+View zones are custom HTML elements inserted between editor lines:
+
+```typescript
+// Add a view zone
+editor.changeViewZones((accessor) => {
+  const domNode = document.createElement('div');
+  domNode.innerHTML = 'Custom zone content';
+  
+  const viewZoneId = accessor.addZone({
+    afterLineNumber: 10,
+    heightInLines: 3,
+    domNode: domNode
+  });
+});
+```
+
+Use cases:
+- Inline blame annotations
+- Inline debugging results
+- Code lens
+- Inline diffs
+
+### Content Widgets
+
+Content widgets are positioned relative to editor content:
+
+```typescript
+class MyWidget implements IContentWidget {
+  getId(): string {
+    return 'my.widget';
+  }
+  
+  getDomNode(): HTMLElement {
+    return this.domNode;
+  }
+  
+  getPosition(): IContentWidgetPosition {
+    return {
+      position: { lineNumber: 5, column: 10 },
+      preference: [ContentWidgetPositionPreference.ABOVE]
+    };
+  }
+}
+
+editor.addContentWidget(new MyWidget());
+```
+
+### Overlay Widgets
+
+Overlay widgets are positioned absolutely on top of the editor:
+
+```typescript
+class MyOverlayWidget implements IOverlayWidget {
+  getId(): string {
+    return 'my.overlay.widget';
+  }
+  
+  getDomNode(): HTMLElement {
+    return this.domNode;
+  }
+  
+  getPosition(): IOverlayWidgetPosition {
+    return {
+      preference: OverlayWidgetPositionPreference.TOP_RIGHT_CORNER
+    };
+  }
+}
+
+editor.addOverlayWidget(new MyOverlayWidget());
+```
+
+## Editor Commands
+
+The editor exposes built-in commands:
+
+```typescript
+// Core commands (always available)
+editor.trigger('source', 'editor.action.formatDocument', {});
+editor.trigger('source', 'editor.action.commentLine', {});
+editor.trigger('source', 'editor.action.indentLines', {});
+
+// Execute command with handler
+CommandsRegistry.registerCommand('myCommand', (accessor, ...args) => {
+  const editorService = accessor.get(IEditorService);
+  const editor = editorService.activeTextEditorControl;
+  // ... command logic
+});
+```
+
+<Info>
+Editor commands use the **command registry** system, which integrates with keyboard shortcuts, context menus, and the command palette. Commands can have preconditions (when clauses) that control their visibility and enablement.
+</Info>
+
+## Diff Editor
+
+The diff editor shows differences between two text models:
+
+```typescript
+// Create diff editor
+const diffEditor = monaco.editor.createDiffEditor(container, {
+  enableSplitViewResizing: true,
+  renderSideBySide: true,
+  ignoreTrimWhitespace: false
+});
+
+// Set models
+diffEditor.setModel({
+  original: originalModel,
+  modified: modifiedModel
+});
+```
+
+### Diff Algorithm
+
+```typescript
+// Location: src/vs/editor/common/diff/legacyLinesDiffComputer.ts
+export interface IDiffComputationResult {
+  quitEarly: boolean;
+  changes: ILineChange[];
+}
+
+export interface ILineChange {
+  originalStartLineNumber: number;
+  originalEndLineNumber: number;
+  modifiedStartLineNumber: number;
+  modifiedEndLineNumber: number;
+  charChanges?: ICharChange[];
+}
+```
+
+## Language Features
+
+The editor supports rich language features through providers:
+
+```typescript
+// Location: src/vs/editor/common/services/languageFeaturesService.ts
+
+// Completion (IntelliSense)
+monaco.languages.registerCompletionItemProvider('javascript', {
+  provideCompletionItems: (model, position) => {
+    return {
+      suggestions: [
+        {
+          label: 'myFunction',
+          kind: monaco.languages.CompletionItemKind.Function,
+          insertText: 'myFunction()',
+          documentation: 'My custom function'
+        }
+      ]
+    };
+  }
+});
+
+// Hover
+monaco.languages.registerHoverProvider('javascript', {
+  provideHover: (model, position) => {
+    return {
+      contents: [
+        { value: '**myFunction**' },
+        { value: 'Returns a string' }
+      ]
+    };
+  }
+});
+
+// Diagnostics (Errors, Warnings)
+monaco.editor.setModelMarkers(model, 'owner', [
+  {
+    severity: monaco.MarkerSeverity.Error,
+    message: 'Undefined variable',
+    startLineNumber: 5,
+    startColumn: 10,
+    endLineNumber: 5,
+    endColumn: 15
+  }
+]);
+```
+
+## Editor API Entry Point
+
+The Monaco API is exported from:
+
+```typescript
+// Location: src/vs/editor/editor.api.ts
+const api = createMonacoBaseAPI();
+api.editor = createMonacoEditorAPI();
+api.languages = createMonacoLanguagesAPI();
+
+export const editor = api.editor;
+export const languages = api.languages;
+export const Position = api.Position;
+export const Range = api.Range;
+export const Selection = api.Selection;
+export const Uri = api.Uri;
+```
+
+## Key Implementation Files
+
+| File | Description |
+|------|-------------|
+| `editor/editor.main.ts` | Main entry point |
+| `editor/editor.api.ts` | Public API exports |
+| `editor/browser/editorBrowser.ts` | Editor interfaces |
+| `editor/common/model.ts` | Text model |
+| `editor/common/viewModel.ts` | View model |
+| `editor/browser/view.ts` | Editor view rendering |
+| `editor/standalone/` | Standalone editor |
+| `editor/contrib/` | Editor features (find, multicursor, etc.) |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Workbench" href="/concepts/workbench" icon="window">
+    Learn about the workbench architecture
+  </Card>
+  <Card title="Language Features" href="/components/language-features" icon="code">
+    Explore language service integration
+  </Card>
+  <Card title="Extensions" href="/concepts/extensions" icon="puzzle-piece">
+    Build editor extensions
+  </Card>
+  <Card title="Monaco Deep Dive" href="/advanced/monaco-editor" icon="magnifying-glass">
+    Advanced Monaco editor topics
+  </Card>
+</CardGroup>

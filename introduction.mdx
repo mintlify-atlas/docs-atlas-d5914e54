@@ -1,0 +1,299 @@
+---
+title: "Welcome to Visual Studio Code"
+description: "The open-source code editor that combines simplicity with powerful development tools for your entire edit-build-debug cycle"
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="VS Code Hero Light"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="VS Code Hero Dark"
+/>
+
+## What is Visual Studio Code?
+
+Visual Studio Code is a free, open-source code editor built with TypeScript, web technologies, and Electron. It combines the simplicity of a code editor with powerful features developers need for their core edit-build-debug cycle.
+
+This repository ("Code - OSS") is where Microsoft develops Visual Studio Code together with the community. The source code is available to everyone under the standard [MIT license](https://github.com/microsoft/vscode/blob/main/LICENSE.txt).
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card
+    title="Intelligent Code Editing"
+    icon="code"
+    href="/concepts/editor"
+  >
+    Advanced text editor with IntelliSense, syntax highlighting, bracket matching, auto-indentation, and multi-cursor editing
+  </Card>
+  <Card
+    title="Rich Extension API"
+    icon="puzzle-piece"
+    href="/api/overview"
+  >
+    Extensible architecture with thousands of extensions for languages, debuggers, themes, and tools
+  </Card>
+  <Card
+    title="Built-in Git Integration"
+    icon="git-alt"
+    href="/components/git"
+  >
+    Review diffs, stage files, make commits, and push/pull changes directly from the editor
+  </Card>
+  <Card
+    title="Powerful Debugging"
+    icon="bug"
+    href="/components/debug"
+  >
+    Debug Node.js, Python, C++, and more with breakpoints, call stacks, and an interactive console
+  </Card>
+  <Card
+    title="Integrated Terminal"
+    icon="terminal"
+    href="/components/terminal"
+  >
+    Full-featured terminal right in your editor with multiple shell support and custom profiles
+  </Card>
+  <Card
+    title="Cross-Platform"
+    icon="desktop"
+    href="/installation"
+  >
+    Available for Windows, macOS, and Linux with consistent experience across all platforms
+  </Card>
+</CardGroup>
+
+## Architecture Highlights
+
+VS Code is built with a layered architecture designed for extensibility and performance:
+
+<Steps>
+  <Step title="Base Layer">
+    Foundation utilities and cross-platform abstractions in `src/vs/base/` provide core functionality like lifecycle management, events, and data structures
+  </Step>
+  <Step title="Platform Services">
+    Dependency injection infrastructure in `src/vs/platform/` powers the service-based architecture used throughout the codebase
+  </Step>
+  <Step title="Editor Core">
+    The Monaco editor in `src/vs/editor/` delivers rich text editing with language services and syntax highlighting
+  </Step>
+  <Step title="Workbench">
+    The main application shell in `src/vs/workbench/` provides the UI, view management, and feature contributions
+  </Step>
+</Steps>
+
+## Quick Start Guide
+
+<CardGroup cols={2}>
+  <Card
+    title="Get Started"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Set up your development environment and build VS Code from source in minutes
+  </Card>
+  <Card
+    title="Installation Guide"
+    icon="download"
+    href="/installation"
+  >
+    Detailed installation instructions for Windows, macOS, and Linux
+  </Card>
+  <Card
+    title="Architecture Overview"
+    icon="sitemap"
+    href="/architecture/overview"
+  >
+    Understand the layered architecture and core design principles
+  </Card>
+  <Card
+    title="Build Your First Extension"
+    icon="wrench"
+    href="/api/your-first-extension"
+  >
+    Create and publish your first VS Code extension
+  </Card>
+</CardGroup>
+
+## Technology Stack
+
+VS Code leverages modern web technologies and tools:
+
+<CodeGroup>
+
+```json package.json
+{
+  "name": "code-oss-dev",
+  "version": "1.110.0",
+  "author": {
+    "name": "Microsoft Corporation"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@vscode/ripgrep": "^1.15.13",
+    "@xterm/xterm": "^6.1.0-beta.165",
+    "vscode-textmate": "^9.3.2",
+    "vscode-oniguruma": "1.7.0"
+  },
+  "devDependencies": {
+    "electron": "39.6.0",
+    "typescript": "^6.0.0-dev.20260130"
+  }
+}
+```
+
+```typescript src/vs/platform/instantiation/common/instantiation.ts
+/**
+ * Dependency injection service for creating instances with automatic
+ * service resolution
+ */
+export interface IInstantiationService {
+  readonly _serviceBrand: undefined;
+
+  /**
+   * Synchronously creates an instance that is denoted by the descriptor
+   */
+  createInstance<T>(descriptor: SyncDescriptor0<T>): T;
+  createInstance<Ctor extends new (...args: any[]) => unknown>(
+    ctor: Ctor,
+    ...args: GetLeadingNonServiceArgs<ConstructorParameters<Ctor>>
+  ): InstanceType<Ctor>;
+
+  /**
+   * Calls a function with a service accessor
+   */
+  invokeFunction<R, TS extends any[] = []>(
+    fn: (accessor: ServicesAccessor, ...args: TS) => R,
+    ...args: TS
+  ): R;
+}
+```
+
+</CodeGroup>
+
+## By the Numbers
+
+<CardGroup cols={3}>
+  <Card>
+    **14M+** active users worldwide
+  </Card>
+  <Card>
+    **40,000+** extensions available
+  </Card>
+  <Card>
+    **2M+** lines of TypeScript code
+  </Card>
+</CardGroup>
+
+## Contributing to VS Code
+
+There are many ways to contribute to the VS Code project:
+
+<CardGroup cols={2}>
+  <Card
+    title="Report Issues"
+    icon="bug"
+    href="/contributing/issue-tracking"
+  >
+    Help us improve by reporting bugs and requesting features
+  </Card>
+  <Card
+    title="Submit Pull Requests"
+    icon="code-pull-request"
+    href="/contributing/pull-requests"
+  >
+    Fix issues and contribute directly to the codebase
+  </Card>
+  <Card
+    title="Code Style Guidelines"
+    icon="paintbrush"
+    href="/contributing/code-style"
+  >
+    Follow our coding conventions and best practices
+  </Card>
+  <Card
+    title="Join the Community"
+    icon="users"
+    href="https://github.com/microsoft/vscode/discussions"
+  >
+    Connect with other contributors and ask questions
+  </Card>
+</CardGroup>
+
+<Note>
+  VS Code is updated monthly with new features and bug fixes. Download it for Windows, macOS, and Linux on [Visual Studio Code's website](https://code.visualstudio.com/Download).
+</Note>
+
+## Next Steps
+
+<Steps>
+  <Step title="Follow the Quickstart">
+    Get VS Code running from source in under 10 minutes
+    
+    <Card
+      title="Start Building"
+      icon="play"
+      href="/quickstart"
+      horizontal
+    />
+  </Step>
+  
+  <Step title="Explore the Architecture">
+    Learn about the layered design and key architectural patterns
+    
+    <Card
+      title="Learn the Architecture"
+      icon="book"
+      href="/architecture/overview"
+      horizontal
+    />
+  </Step>
+  
+  <Step title="Build Extensions">
+    Create your own extensions using the powerful Extension API
+    
+    <Card
+      title="Extension API"
+      icon="puzzle-piece"
+      href="/api/overview"
+      horizontal
+    />
+  </Step>
+</Steps>
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card
+    title="GitHub Repository"
+    icon="github"
+    href="https://github.com/microsoft/vscode"
+  >
+    Browse the source code and contribute
+  </Card>
+  <Card
+    title="User Documentation"
+    icon="book-open"
+    href="https://code.visualstudio.com/docs"
+  >
+    Learn how to use VS Code effectively
+  </Card>
+  <Card
+    title="Stack Overflow"
+    icon="stack-overflow"
+    href="https://stackoverflow.com/questions/tagged/visual-studio-code"
+  >
+    Get help from the community
+  </Card>
+  <Card
+    title="Twitter"
+    icon="twitter"
+    href="https://twitter.com/code"
+  >
+    Follow @code for updates
+  </Card>
+</CardGroup>

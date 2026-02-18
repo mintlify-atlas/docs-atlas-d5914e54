@@ -1,0 +1,830 @@
+---
+title: Profiling & Diagnostics
+description: Tools and techniques for profiling VS Code performance
+---
+
+# Profiling & Diagnostics
+
+Profiling is essential for identifying performance bottlenecks in VS Code. This guide covers the available profiling tools and techniques.
+
+## Built-in Profiling Tools
+
+### Developer Tools
+
+Access Chrome DevTools for detailed profiling:
+
+```bash
+# Open DevTools
+Help > Toggle Developer Tools
+# Or: Cmd/Ctrl + Shift + I
+
+# DevTools tabs:
+# - Performance: CPU profiling
+# - Memory: Heap snapshots
+# - Network: Request timing
+# - Sources: Breakpoint debugging
+```
+
+### Startup Performance View
+
+```typescript
+// Open startup performance view
+vscode.commands.executeCommand('workbench.action.startupPerformance');
+
+// Shows:
+// - Startup timings
+// - Extension activation times
+// - Performance marks
+// - System info
+```
+
+### Process Explorer
+
+```typescript
+// Open process explorer
+vscode.commands.executeCommand('workbench.action.showProcessExplorer');
+
+// Displays:
+// - All VS Code processes
+// - CPU usage per process
+// - Memory usage per process
+// - Process tree
+```
+
+## CPU Profiling
+
+### Chrome DevTools CPU Profile
+
+<Info>
+**Steps to Profile:**
+1. Open Developer Tools (Cmd/Ctrl + Shift + I)
+2. Go to Performance tab
+3. Click Record button
+4. Perform the operation you want to profile
+5. Click Stop
+6. Analyze the flame chart
+</Info>
+
+### Programmatic CPU Profiling
+
+```typescript
+import * as v8Profiler from 'v8-profiler-next';
+import * as fs from 'fs';
+
+class CPUProfiler {
+  private profiling = false;
+  private profileId = 0;
+  
+  start(title?: string): void {
+    if (this.profiling) {
+      console.warn('Profiling already in progress');
+      return;
+    }
+    
+    const profileTitle = title || `profile-${++this.profileId}`;
+    v8Profiler.startProfiling(profileTitle, true);
+    this.profiling = true;
+    
+    console.log(`Started CPU profiling: ${profileTitle}`);
+  }
+  
+  stop(outputPath: string): void {
+    if (!this.profiling) {
+      console.warn('No profiling in progress');
+      return;
+    }
+    
+    const profile = v8Profiler.stopProfiling();
+    this.profiling = false;
+    
+    // Export to file
+    profile.export((error, result) => {
+      if (error) {
+        console.error('Failed to export profile:', error);
+        return;
+      }
+      
+      fs.writeFileSync(outputPath, result);
+      console.log(`CPU profile saved to ${outputPath}`);
+      
+      // Delete profile from memory
+      profile.delete();
+    });
+  }
+}
+
+// Usage
+const profiler = new CPUProfiler();
+
+profiler.start('my-operation');
+await performExpensiveOperation();
+profiler.stop('./cpu-profile.cpuprofile');
+
+// Load the .cpuprofile file in Chrome DevTools
+// DevTools > Performance > Load Profile
+```
+
+### Sampling Profiler
+
+```typescript
+class SamplingProfiler {
+  private samples: Sample[] = [];
+  private interval: NodeJS.Timeout | undefined;
+  
+  start(sampleInterval: number = 100): void {
+    this.samples = [];
+    
+    this.interval = setInterval(() => {
+      const cpuUsage = process.cpuUsage();
+      const memUsage = process.memoryUsage();
+      
+      this.samples.push({
+        timestamp: Date.now(),
+        cpu: cpuUsage,
+        memory: memUsage,
+        activeHandles: (process as any)._getActiveHandles?.().length || 0,
+        activeRequests: (process as any)._getActiveRequests?.().length || 0
+      });
+    }, sampleInterval);
+  }
+  
+  stop(): ProfileReport {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = undefined;
+    }
+    
+    return this.analyze();
+  }
+  
+  private analyze(): ProfileReport {
+    const totalCPU = this.samples.reduce(
+      (sum, s) => sum + s.cpu.user + s.cpu.system,
+      0
+    );
+    const avgCPU = totalCPU / this.samples.length;
+    
+    const totalMem = this.samples.reduce((sum, s) => sum + s.memory.heapUsed, 0);
+    const avgMem = totalMem / this.samples.length;
+    
+    const maxMem = Math.max(...this.samples.map(s => s.memory.heapUsed));
+    const minMem = Math.min(...this.samples.map(s => s.memory.heapUsed));
+    
+    return {
+      sampleCount: this.samples.length,
+      avgCPU,
+      avgMemory: avgMem,
+      maxMemory: maxMem,
+      minMemory: minMem,
+      memoryGrowth: maxMem - minMem
+    };
+  }
+}
+
+// Usage
+const profiler = new SamplingProfiler();
+profiler.start(50); // Sample every 50ms
+
+await performOperation();
+
+const report = profiler.stop();
+console.log('Profile Report:', report);
+```
+
+## Memory Profiling
+
+### Heap Snapshots
+
+```typescript
+import * as v8 from 'v8';
+import * as fs from 'fs';
+
+class HeapProfiler {
+  takeSnapshot(filename: string): string {
+    const snapshotPath = v8.writeHeapSnapshot(filename);
+    const stats = fs.statSync(snapshotPath);
+    
+    console.log(
+      `Heap snapshot written to ${snapshotPath} ` +
+      `(${(stats.size / 1024 / 1024).toFixed(2)}MB)`
+    );
+    
+    return snapshotPath;
+  }
+  
+  compareSnapshots(before: string, after: string): SnapshotComparison {
+    const beforeSnapshot = this.loadSnapshot(before);
+    const afterSnapshot = this.loadSnapshot(after);
+    
+    const comparison: SnapshotComparison = {
+      memoryGrowth: afterSnapshot.totalSize - beforeSnapshot.totalSize,
+      objectsAdded: afterSnapshot.nodeCount - beforeSnapshot.nodeCount,
+      topGrowthTypes: this.findTopGrowthTypes(beforeSnapshot, afterSnapshot)
+    };
+    
+    return comparison;
+  }
+  
+  private loadSnapshot(path: string): HeapSnapshot {
+    const content = fs.readFileSync(path, 'utf8');
+    const snapshot = JSON.parse(content);
+    
+    return {
+      totalSize: snapshot.snapshot.meta.total_size,
+      nodeCount: snapshot.snapshot.node_count,
+      nodes: snapshot.nodes,
+      edges: snapshot.edges
+    };
+  }
+  
+  private findTopGrowthTypes(
+    before: HeapSnapshot,
+    after: HeapSnapshot
+  ): TypeGrowth[] {
+    const beforeCounts = this.countByType(before);
+    const afterCounts = this.countByType(after);
+    
+    const growth: TypeGrowth[] = [];
+    
+    for (const [type, afterCount] of afterCounts) {
+      const beforeCount = beforeCounts.get(type) || 0;
+      const delta = afterCount - beforeCount;
+      
+      if (delta > 0) {
+        growth.push({ type, count: delta });
+      }
+    }
+    
+    return growth.sort((a, b) => b.count - a.count).slice(0, 10);
+  }
+  
+  private countByType(snapshot: HeapSnapshot): Map<string, number> {
+    const counts = new Map<string, number>();
+    // Analyze snapshot structure...
+    return counts;
+  }
+}
+
+// Usage
+const profiler = new HeapProfiler();
+
+const before = profiler.takeSnapshot('before.heapsnapshot');
+await performOperation();
+const after = profiler.takeSnapshot('after.heapsnapshot');
+
+const comparison = profiler.compareSnapshots(before, after);
+console.log('Memory Growth:', comparison);
+```
+
+### Allocation Timeline
+
+```typescript
+import * as inspector from 'inspector';
+
+class AllocationProfiler {
+  private session: inspector.Session | undefined;
+  private samples: AllocationSample[] = [];
+  
+  async start(): Promise<void> {
+    this.session = new inspector.Session();
+    this.session.connect();
+    
+    // Start heap profiling with allocation tracking
+    await new Promise((resolve, reject) => {
+      this.session!.post('HeapProfiler.enable', (err) => {
+        if (err) reject(err);
+        else resolve(undefined);
+      });
+    });
+    
+    await new Promise((resolve, reject) => {
+      this.session!.post(
+        'HeapProfiler.startTrackingHeapObjects',
+        { trackAllocations: true },
+        (err) => {
+          if (err) reject(err);
+          else resolve(undefined);
+        }
+      );
+    });
+    
+    // Listen for allocation events
+    this.session.on('HeapProfiler.heapStatsUpdate', (params) => {
+      this.samples.push({
+        timestamp: Date.now(),
+        statsUpdate: params
+      });
+    });
+  }
+  
+  async stop(): Promise<AllocationProfile> {
+    if (!this.session) {
+      throw new Error('Profiler not started');
+    }
+    
+    const profile = await new Promise<any>((resolve, reject) => {
+      this.session!.post(
+        'HeapProfiler.stopTrackingHeapObjects',
+        { reportProgress: false },
+        (err, params) => {
+          if (err) reject(err);
+          else resolve(params);
+        }
+      );
+    });
+    
+    await new Promise((resolve) => {
+      this.session!.post('HeapProfiler.disable', resolve);
+    });
+    
+    this.session.disconnect();
+    this.session = undefined;
+    
+    return {
+      samples: this.samples,
+      profile: profile
+    };
+  }
+}
+
+// Usage
+const allocProfiler = new AllocationProfiler();
+await allocProfiler.start();
+
+await performOperation();
+
+const profile = await allocProfiler.stop();
+console.log('Allocation Profile:', profile);
+```
+
+## Extension Profiling
+
+### Runtime Extension Performance
+
+```typescript
+// Open runtime extension profiler
+vscode.commands.executeCommand('workbench.action.showRuntimeExtensions');
+
+// Shows for each extension:
+// - Activation time
+// - Loading time
+// - Main thread time
+// - Status (running/stopped)
+```
+
+### Extension Activation Profiling
+
+```typescript
+class ExtensionProfiler {
+  private activationTimes = new Map<string, number>();
+  
+  async profileExtension(extensionId: string): Promise<ExtensionProfile> {
+    const start = Date.now();
+    
+    // Activate extension
+    const extension = vscode.extensions.getExtension(extensionId);
+    if (!extension) {
+      throw new Error(`Extension not found: ${extensionId}`);
+    }
+    
+    await extension.activate();
+    
+    const activationTime = Date.now() - start;
+    this.activationTimes.set(extensionId, activationTime);
+    
+    // Get extension memory usage
+    const memUsage = await this.getExtensionMemory(extensionId);
+    
+    return {
+      extensionId,
+      activationTime,
+      memoryUsage: memUsage,
+      mainThreadTime: await this.getMainThreadTime(extensionId)
+    };
+  }
+  
+  private async getExtensionMemory(extensionId: string): Promise<number> {
+    // Get memory usage from extension host process
+    // This is approximate as extensions share a process
+    return 0; // Simplified
+  }
+  
+  private async getMainThreadTime(extensionId: string): Promise<number> {
+    // Get time spent on main thread
+    return 0; // Simplified
+  }
+}
+```
+
+## Performance Marks API
+
+VS Code's performance marking system:
+
+```typescript
+import { mark, getMarks } from 'vs/base/common/performance';
+
+class OperationProfiler {
+  profile<T>(name: string, fn: () => T): T {
+    mark(`${name}/start`);
+    try {
+      const result = fn();
+      mark(`${name}/end`);
+      this.logDuration(name);
+      return result;
+    } catch (error) {
+      mark(`${name}/error`);
+      throw error;
+    }
+  }
+  
+  async profileAsync<T>(name: string, fn: () => Promise<T>): Promise<T> {
+    mark(`${name}/start`);
+    try {
+      const result = await fn();
+      mark(`${name}/end`);
+      this.logDuration(name);
+      return result;
+    } catch (error) {
+      mark(`${name}/error`);
+      throw error;
+    }
+  }
+  
+  private logDuration(name: string): void {
+    const marks = getMarks();
+    const start = marks.find(m => m.name === `${name}/start`);
+    const end = marks.find(m => m.name === `${name}/end`);
+    
+    if (start && end) {
+      const duration = end.startTime - start.startTime;
+      console.log(`${name}: ${duration.toFixed(2)}ms`);
+      
+      // Report to telemetry
+      this.reportTelemetry(name, duration);
+    }
+  }
+  
+  private reportTelemetry(operation: string, duration: number): void {
+    // Send to telemetry service
+  }
+}
+
+// Usage
+const profiler = new OperationProfiler();
+
+const result = await profiler.profileAsync('parseDocument', async () => {
+  return await parseDocument(uri);
+});
+```
+
+## Network Profiling
+
+### Request Timing
+
+```typescript
+import { IRequestService } from 'vs/platform/request/common/request';
+
+class NetworkProfiler {
+  constructor(
+    @IRequestService private requestService: IRequestService
+  ) {}
+  
+  async profileRequest(url: string): Promise<RequestProfile> {
+    const start = Date.now();
+    let dnsTime = 0;
+    let connectTime = 0;
+    let downloadTime = 0;
+    
+    try {
+      const response = await this.requestService.request({
+        url,
+        timeout: 30000
+      });
+      
+      const totalTime = Date.now() - start;
+      
+      return {
+        url,
+        statusCode: response.res.statusCode || 0,
+        totalTime,
+        dnsTime,
+        connectTime,
+        downloadTime,
+        size: parseInt(response.res.headers['content-length'] || '0')
+      };
+    } catch (error) {
+      return {
+        url,
+        statusCode: 0,
+        totalTime: Date.now() - start,
+        error: error.message
+      };
+    }
+  }
+}
+```
+
+## Flame Graphs
+
+### Generating Flame Graphs
+
+```typescript
+import * as fs from 'fs';
+
+class FlameGraphGenerator {
+  generate(cpuProfile: CPUProfile, outputPath: string): void {
+    const stacks = this.extractStacks(cpuProfile);
+    const collapsed = this.collapseStacks(stacks);
+    
+    // Write collapsed stacks format
+    fs.writeFileSync(outputPath, collapsed.join('\n'));
+    
+    console.log(
+      `Flame graph data written to ${outputPath}\n` +
+      'Generate SVG with: flamegraph.pl ' + outputPath + ' > flamegraph.svg'
+    );
+  }
+  
+  private extractStacks(profile: CPUProfile): Stack[] {
+    const stacks: Stack[] = [];
+    
+    // Walk through profile samples
+    for (let i = 0; i < profile.samples.length; i++) {
+      const nodeId = profile.samples[i];
+      const stack = this.buildStack(profile, nodeId);
+      stacks.push(stack);
+    }
+    
+    return stacks;
+  }
+  
+  private buildStack(profile: CPUProfile, nodeId: number): Stack {
+    const frames: string[] = [];
+    let currentId = nodeId;
+    
+    while (currentId !== undefined) {
+      const node = profile.nodes[currentId];
+      if (node) {
+        frames.unshift(node.callFrame.functionName || '(anonymous)');
+        currentId = node.parent;
+      } else {
+        break;
+      }
+    }
+    
+    return { frames };
+  }
+  
+  private collapseStacks(stacks: Stack[]): string[] {
+    const collapsed = new Map<string, number>();
+    
+    for (const stack of stacks) {
+      const key = stack.frames.join(';');
+      const count = collapsed.get(key) || 0;
+      collapsed.set(key, count + 1);
+    }
+    
+    const result: string[] = [];
+    for (const [stack, count] of collapsed) {
+      result.push(`${stack} ${count}`);
+    }
+    
+    return result;
+  }
+}
+```
+
+## Performance Testing
+
+### Benchmark Suite
+
+```typescript
+class Benchmark {
+  async run(
+    name: string,
+    fn: () => void | Promise<void>,
+    iterations: number = 100
+  ): Promise<BenchmarkResult> {
+    const times: number[] = [];
+    
+    // Warmup
+    for (let i = 0; i < 10; i++) {
+      await fn();
+    }
+    
+    // Force GC before benchmark
+    if (global.gc) {
+      global.gc();
+    }
+    
+    // Run benchmark
+    for (let i = 0; i < iterations; i++) {
+      const start = performance.now();
+      await fn();
+      const end = performance.now();
+      times.push(end - start);
+    }
+    
+    return this.analyze(name, times);
+  }
+  
+  private analyze(name: string, times: number[]): BenchmarkResult {
+    const sorted = times.sort((a, b) => a - b);
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    
+    return {
+      name,
+      iterations: times.length,
+      mean: sum / times.length,
+      median: sorted[Math.floor(sorted.length / 2)],
+      min: sorted[0],
+      max: sorted[sorted.length - 1],
+      p95: sorted[Math.floor(sorted.length * 0.95)],
+      p99: sorted[Math.floor(sorted.length * 0.99)],
+      stdDev: this.calculateStdDev(times, sum / times.length)
+    };
+  }
+  
+  private calculateStdDev(values: number[], mean: number): number {
+    const squareDiffs = values.map(value => Math.pow(value - mean, 2));
+    const avgSquareDiff = squareDiffs.reduce((a, b) => a + b) / values.length;
+    return Math.sqrt(avgSquareDiff);
+  }
+}
+
+// Usage
+const benchmark = new Benchmark();
+
+const result = await benchmark.run(
+  'parseDocument',
+  () => parseDocument(sampleUri),
+  1000
+);
+
+console.log(`
+Benchmark Results for ${result.name}:
+` +
+  `  Mean: ${result.mean.toFixed(2)}ms\n` +
+  `  Median: ${result.median.toFixed(2)}ms\n` +
+  `  Min: ${result.min.toFixed(2)}ms\n` +
+  `  Max: ${result.max.toFixed(2)}ms\n` +
+  `  P95: ${result.p95.toFixed(2)}ms\n` +
+  `  P99: ${result.p99.toFixed(2)}ms\n` +
+  `  StdDev: ${result.stdDev.toFixed(2)}ms`
+);
+```
+
+### Regression Detection
+
+```typescript
+class RegressionDetector {
+  private baseline = new Map<string, BenchmarkResult>();
+  
+  setBaseline(name: string, result: BenchmarkResult): void {
+    this.baseline.set(name, result);
+  }
+  
+  checkRegression(
+    name: string,
+    current: BenchmarkResult,
+    threshold: number = 0.1 // 10% threshold
+  ): RegressionReport {
+    const baseline = this.baseline.get(name);
+    
+    if (!baseline) {
+      return {
+        hasRegression: false,
+        message: 'No baseline found'
+      };
+    }
+    
+    const delta = (current.mean - baseline.mean) / baseline.mean;
+    const hasRegression = delta > threshold;
+    
+    return {
+      hasRegression,
+      baselineMean: baseline.mean,
+      currentMean: current.mean,
+      delta: delta * 100,
+      message: hasRegression
+        ? `Performance regression detected: ${(delta * 100).toFixed(1)}% slower`
+        : 'No regression detected'
+    };
+  }
+}
+
+// Usage in CI
+const detector = new RegressionDetector();
+
+// Load baseline from previous run
+const baselineData = JSON.parse(fs.readFileSync('baseline.json', 'utf8'));
+detector.setBaseline('parseDocument', baselineData.parseDocument);
+
+// Run current benchmark
+const current = await benchmark.run('parseDocument', () => parseDocument(uri));
+
+// Check for regression
+const report = detector.checkRegression('parseDocument', current);
+
+if (report.hasRegression) {
+  console.error(report.message);
+  process.exit(1);
+}
+```
+
+## Continuous Profiling
+
+```typescript
+class ContinuousProfiler {
+  private profiles: ProfileSnapshot[] = [];
+  private interval: NodeJS.Timeout | undefined;
+  
+  start(intervalMs: number = 60000): void {
+    this.interval = setInterval(() => {
+      this.takeSnapshot();
+    }, intervalMs);
+  }
+  
+  stop(): void {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = undefined;
+    }
+  }
+  
+  private async takeSnapshot(): Promise<void> {
+    const snapshot: ProfileSnapshot = {
+      timestamp: Date.now(),
+      memory: process.memoryUsage(),
+      cpu: process.cpuUsage(),
+      handles: (process as any)._getActiveHandles?.().length || 0,
+      requests: (process as any)._getActiveRequests?.().length || 0
+    };
+    
+    this.profiles.push(snapshot);
+    
+    // Keep last 100 snapshots
+    if (this.profiles.length > 100) {
+      this.profiles.shift();
+    }
+    
+    // Check for anomalies
+    this.detectAnomalies();
+  }
+  
+  private detectAnomalies(): void {
+    if (this.profiles.length < 10) {
+      return;
+    }
+    
+    const recent = this.profiles.slice(-10);
+    const avgMem = recent.reduce((s, p) => s + p.memory.heapUsed, 0) / 10;
+    const current = this.profiles[this.profiles.length - 1];
+    
+    if (current.memory.heapUsed > avgMem * 2) {
+      console.warn('Memory spike detected!');
+    }
+  }
+  
+  generateReport(): ProfileReport {
+    return {
+      snapshots: this.profiles.length,
+      timeRange: {
+        start: this.profiles[0]?.timestamp,
+        end: this.profiles[this.profiles.length - 1]?.timestamp
+      },
+      averages: this.calculateAverages(),
+      peaks: this.findPeaks()
+    };
+  }
+  
+  private calculateAverages() {
+    // Calculate averages...
+    return {};
+  }
+  
+  private findPeaks() {
+    // Find peak usage...
+    return {};
+  }
+}
+```
+
+<Warning>
+**Profiling Best Practices:**
+- ✅ Profile in production-like environments
+- ✅ Use multiple profiling techniques
+- ✅ Profile both cold and warm scenarios
+- ✅ Establish performance baselines
+- ✅ Monitor for regressions in CI
+- ✅ Profile with realistic data sizes
+- ✅ Consider async operations carefully
+- ✅ Document performance expectations
+</Warning>
+
+## Related Files
+
+- `src/vs/base/common/performance.ts` - Performance marking API
+- `src/vs/workbench/contrib/performance/browser/startupTimings.ts` - Startup profiling
+- `src/vs/workbench/contrib/performance/electron-browser/startupProfiler.ts` - Startup profiler
+- `src/vs/platform/diagnostics/common/diagnostics.ts` - Diagnostics interfaces

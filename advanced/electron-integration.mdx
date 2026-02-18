@@ -1,0 +1,406 @@
+---
+title: Electron Integration
+description: Deep dive into VS Code's Electron architecture and main process integration
+---
+
+# Electron Integration
+
+VS Code is built on Electron, providing a native desktop application experience while leveraging web technologies. Understanding the Electron integration is crucial for working on platform-specific features, window management, and IPC communication.
+
+## Architecture Overview
+
+VS Code's Electron architecture follows a multi-process model with distinct responsibilities:
+
+<Info>
+**Process Architecture:**
+- **Main Process**: Single Node.js process managing application lifecycle, native APIs, and windows
+- **Renderer Processes**: Multiple processes for UI rendering (one per window)
+- **Utility Processes**: Additional processes for extension hosts and shared services
+</Info>
+
+### Main Process Entry Point
+
+The main process starts in `src/vs/code/electron-main/main.ts:86`:
+
+```typescript
+class CodeMain {
+  main(): void {
+    try {
+      this.startup();
+    } catch (error) {
+      console.error(error.message);
+      app.exit(1);
+    }
+  }
+
+  private async startup(): Promise<void> {
+    // Set error handler early
+    setUnexpectedErrorHandler(err => console.error(err));
+    
+    // Create services
+    const [instantiationService, ...] = this.createServices();
+    
+    // Initialize and start application
+    await instantiationService.createInstance(CodeApplication, ...).startup();
+  }
+}
+```
+
+## Service Initialization
+
+The main process initializes core services through dependency injection (`src/vs/code/electron-main/main.ts:162`):
+
+### Core Services
+
+```typescript
+private createServices(): [IInstantiationService, ...] {
+  const services = new ServiceCollection();
+  
+  // Product & Environment
+  services.set(IProductService, productService);
+  services.set(IEnvironmentMainService, environmentMainService);
+  
+  // File System
+  const fileService = new FileService(logService);
+  fileService.registerProvider(Schemas.file, diskFileSystemProvider);
+  
+  // State & Configuration
+  services.set(IStateService, stateService);
+  services.set(IConfigurationService, configurationService);
+  
+  // Lifecycle
+  services.set(ILifecycleMainService, new SyncDescriptor(LifecycleMainService));
+  
+  return [new InstantiationService(services), ...];
+}
+```
+
+<Warning>
+**Service Registration Order Matters**: Services must be registered before they are consumed by other services. The main process carefully orders service initialization to handle dependencies.
+</Warning>
+
+## IPC Communication
+
+VS Code uses multiple IPC mechanisms for inter-process communication:
+
+### IPC Server Setup
+
+The main process creates an IPC server (`src/vs/code/electron-main/main.ts:303`):
+
+```typescript
+private async claimInstance(): Promise<NodeIPCServer> {
+  // Try to be the first instance
+  const mainProcessNodeIpcServer = await nodeIPCServe(
+    environmentMainService.mainIPCHandle
+  );
+  
+  // Register shutdown cleanup
+  Event.once(lifecycleMainService.onWillShutdown)(() => 
+    mainProcessNodeIpcServer.dispose()
+  );
+  
+  return mainProcessNodeIpcServer;
+}
+```
+
+### IPC Channel Registration
+
+Channels expose services from main to renderer processes (`src/vs/code/electron-main/app.ts`):
+
+```typescript
+// Example: Launch service channel
+mainProcessNodeIpcServer.registerChannel('launch', 
+  ProxyChannel.fromService(launchMainService)
+);
+
+// Extension host debugging
+mainProcessNodeIpcServer.registerChannel('extensionHostDebug',
+  new ElectronExtensionHostDebugBroadcastChannel()
+);
+```
+
+### IPC Client Usage
+
+Renderer processes connect to channels:
+
+```typescript
+// In renderer process
+const launchService = ProxyChannel.toService<ILaunchMainService>(
+  client.getChannel('launch'),
+  { disableMarshalling: true }
+);
+```
+
+<Expandable title="IPC Performance Optimization">
+**Key Optimizations:**
+- **Channel Multiplexing**: Single IPC connection supports multiple logical channels
+- **Message Batching**: Related messages are batched to reduce round trips
+- **Buffer Sharing**: Large data uses shared buffers instead of serialization
+- **Lazy Channels**: Services are proxied on-demand using `getDelayedChannel`
+</Expandable>
+
+## Window Management
+
+VS Code manages multiple windows through the Windows Service:
+
+### Window Creation
+
+```typescript
+// Window creation with configuration
+const window = await windowsMainService.open({
+  context: OpenContext.CLI,
+  cli: args,
+  forceNewWindow: args['new-window'],
+  forceReuseWindow: args['reuse-window'],
+  preferNewWindow: !args._.length,
+  diffMode: args.diff,
+  addMode: args.add
+});
+```
+
+### Window State Management
+
+```typescript
+// Window state persistence
+interface IWindowState {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  mode?: WindowMode; // Maximized, Fullscreen, Normal
+}
+
+// Restore window state from storage
+const state = stateService.getItem<IWindowState>(
+  `window.state.${workspaceId}`
+);
+```
+
+## Native Integration
+
+Electron provides access to native OS functionality:
+
+### System Dialogs
+
+```typescript
+import { dialog } from 'electron';
+
+// File open dialog
+const result = await dialog.showOpenDialog({
+  title: 'Open File',
+  properties: ['openFile', 'multiSelections'],
+  filters: [{ name: 'Text Files', extensions: ['txt', 'md'] }]
+});
+```
+
+### Menu Integration
+
+```typescript
+// Application menu (macOS)
+const menu = Menu.buildFromTemplate([
+  {
+    label: app.name,
+    submenu: [
+      { role: 'about' },
+      { type: 'separator' },
+      { role: 'quit' }
+    ]
+  }
+]);
+Menu.setApplicationMenu(menu);
+```
+
+### Native Notifications
+
+```typescript
+import { Notification } from 'electron';
+
+const notification = new Notification({
+  title: 'Build Complete',
+  body: 'Your project compiled successfully',
+  silent: false
+});
+notification.show();
+```
+
+## App Lifecycle Management
+
+The main process handles application lifecycle events:
+
+```typescript
+// Application ready
+app.on('ready', async () => {
+  await instantiationService.createInstance(
+    CodeApplication,
+    mainProcessNodeIpcServer
+  ).startup();
+});
+
+// All windows closed
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// Before quit
+app.on('before-quit', async (e) => {
+  e.preventDefault();
+  await lifecycleMainService.shutdown();
+  app.exit(0);
+});
+```
+
+## Instance Management
+
+VS Code ensures single instance operation (`src/vs/code/electron-main/main.ts:303`):
+
+```typescript
+private async claimInstance(): Promise<NodeIPCServer> {
+  try {
+    // Try to create IPC server (fails if instance exists)
+    mainProcessNodeIpcServer = await nodeIPCServe(
+      environmentMainService.mainIPCHandle
+    );
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') {
+      // Another instance running, connect to it
+      const client = await nodeIPCConnect(
+        environmentMainService.mainIPCHandle
+      );
+      
+      // Send args to existing instance
+      const launchService = ProxyChannel.toService(
+        client.getChannel('launch')
+      );
+      await launchService.start(args, process.env);
+      
+      throw new ExpectedError('Sent to existing instance');
+    }
+    throw error;
+  }
+  
+  // Write lockfile
+  await FSPromises.writeFile(
+    environmentMainService.mainLockfile,
+    String(process.pid)
+  );
+  
+  return mainProcessNodeIpcServer;
+}
+```
+
+<Warning>
+**Platform-Specific Behavior**: Instance detection uses named pipes on Windows (`\\\\.\\pipe\\...`) and Unix domain sockets on macOS/Linux.
+</Warning>
+
+## Security Considerations
+
+### Context Isolation
+
+```typescript
+// Create window with security settings
+const window = new BrowserWindow({
+  webPreferences: {
+    nodeIntegration: false,
+    contextIsolation: true,
+    sandbox: true,
+    preload: path.join(__dirname, 'preload.js')
+  }
+});
+```
+
+### CSP Headers
+
+```typescript
+// Content Security Policy
+session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+  callback({
+    responseHeaders: {
+      ...details.responseHeaders,
+      'Content-Security-Policy': [
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+      ]
+    }
+  });
+});
+```
+
+## Debugging Tips
+
+### Main Process Debugging
+
+```bash
+# Debug main process
+code --inspect-brk=5874
+
+# Attach Chrome DevTools to chrome://inspect
+```
+
+### IPC Message Tracing
+
+```typescript
+// Enable IPC tracing
+process.env.VSCODE_IPC_HOOK_TRACE = '1';
+
+// Messages logged to console
+```
+
+### Performance Monitoring
+
+```typescript
+import { mark, getMarks } from 'vs/base/common/performance';
+
+// Mark performance points
+mark('code/willStartMainServer');
+const server = await nodeIPCServe(handle);
+mark('code/didStartMainServer');
+
+// Get all marks
+const marks = getMarks();
+const duration = marks.find(m => m.name === 'code/didStartMainServer').startTime -
+                 marks.find(m => m.name === 'code/willStartMainServer').startTime;
+```
+
+## Common Patterns
+
+### Graceful Shutdown
+
+```typescript
+// Register shutdown handler
+lifecycleMainService.onWillShutdown(event => {
+  // Perform cleanup
+  event.join('cleanup', async () => {
+    await saveState();
+    await closeConnections();
+  });
+});
+```
+
+### Environment Variable Patching
+
+```typescript
+private patchEnvironment(): IProcessEnvironment {
+  const instanceEnvironment = {
+    VSCODE_IPC_HOOK: environmentMainService.mainIPCHandle
+  };
+  
+  ['VSCODE_NLS_CONFIG', 'VSCODE_PORTABLE'].forEach(key => {
+    const value = process.env[key];
+    if (typeof value === 'string') {
+      instanceEnvironment[key] = value;
+    }
+  });
+  
+  Object.assign(process.env, instanceEnvironment);
+  return instanceEnvironment;
+}
+```
+
+## Related Files
+
+- `src/vs/code/electron-main/main.ts:78` - Main process entry point
+- `src/vs/code/electron-main/app.ts` - CodeApplication class
+- `src/vs/platform/windows/electron-main/windowsMainService.ts` - Window management
+- `src/vs/base/parts/ipc/electron-main/ipc.electron.ts` - Electron IPC implementation
+- `src/vs/platform/lifecycle/electron-main/lifecycleMainService.ts` - Lifecycle management

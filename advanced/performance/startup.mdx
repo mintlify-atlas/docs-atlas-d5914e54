@@ -1,0 +1,590 @@
+---
+title: Startup Performance
+description: Optimizing VS Code startup time and understanding the startup sequence
+---
+
+# Startup Performance
+
+VS Code's startup performance is critical for developer productivity. Understanding the startup sequence and optimization techniques helps contributors improve performance.
+
+## Startup Sequence
+
+<Info>
+**Startup Phases:**
+1. **Process Creation**: Electron main process starts
+2. **Service Initialization**: Core services are created
+3. **Window Opening**: Renderer process and window creation
+4. **Workbench Load**: UI components initialization
+5. **Extension Activation**: Extensions are loaded
+6. **Ready State**: Editor is fully interactive
+</Info>
+
+## Performance Markers
+
+VS Code uses performance markers to track timing (`src/vs/base/common/performance.ts:113`):
+
+```typescript
+import { mark, getMarks, PerformanceMark } from 'vs/base/common/performance';
+
+// Mark important points
+mark('code/timeOrigin');
+mark('code/willStartMainServer');
+const server = await nodeIPCServe(handle);
+mark('code/didStartMainServer');
+
+// Retrieve all marks
+const marks: PerformanceMark[] = getMarks();
+marks.forEach(m => {
+  console.log(`${m.name}: ${m.startTime}ms`);
+});
+
+// Calculate duration
+function getDuration(from: string, to: string): number {
+  const marks = getMarks();
+  const start = marks.find(m => m.name === from)?.startTime || 0;
+  const end = marks.find(m => m.name === to)?.startTime || 0;
+  return end - start;
+}
+
+const serverStartup = getDuration(
+  'code/willStartMainServer',
+  'code/didStartMainServer'
+);
+console.log(`Server startup: ${serverStartup}ms`);
+```
+
+### Key Performance Marks
+
+```typescript
+// Main process marks
+mark('code/timeOrigin');              // Process start
+mark('code/willStartMainServer');     // Before IPC server
+mark('code/didStartMainServer');      // After IPC server
+mark('code/mainAppReady');            // Main process ready
+
+// Renderer process marks
+mark('code/willOpenNewWindow');       // Before window creation
+mark('code/didOpenNewWindow');        // After window creation
+mark('code/willLoadWorkbench');       // Before workbench load
+mark('code/didLoadWorkbench');        // After workbench load
+
+// Extension marks
+mark('code/willActivateExtension');   // Before extension activation
+mark('code/didActivateExtension');    // After extension activation
+```
+
+## Startup Timing Measurement
+
+From `src/vs/workbench/contrib/performance/browser/startupTimings.ts:34`:
+
+```typescript
+export abstract class StartupTimings {
+  protected async _isStandardStartup(): Promise<string | undefined> {
+    // Check for standard startup conditions:
+    // * New window (no reload)
+    // * Workspace is trusted
+    // * Explorer viewlet visible
+    // * One text editor open
+    // * Latest version
+    
+    if (this._lifecycleService.startupKind !== StartupKind.NewWindow) {
+      return StartupKindToString(this._lifecycleService.startupKind);
+    }
+    
+    if (!this._workspaceTrustService.isWorkspaceTrusted()) {
+      return 'Workspace not trusted';
+    }
+    
+    const activeViewlet = this._paneCompositeService.getActivePaneComposite(
+      ViewContainerLocation.Sidebar
+    );
+    if (!activeViewlet || activeViewlet.getId() !== files.VIEWLET_ID) {
+      return 'Explorer viewlet not visible';
+    }
+    
+    const visibleEditorPanes = this._editorService.visibleEditorPanes;
+    if (visibleEditorPanes.length !== 1) {
+      return `Expected text editor count: 1, Actual: ${visibleEditorPanes.length}`;
+    }
+    
+    return undefined;
+  }
+}
+```
+
+<Warning>
+**Standard Startup**: Performance metrics focus on "standard startup" conditions to ensure consistent measurements. Non-standard startups (reloads, untrusted workspaces, multiple editors) are excluded from baseline metrics.
+</Warning>
+
+## Optimization Techniques
+
+### 1. Lazy Service Initialization
+
+```typescript
+import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
+import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
+
+// Defer service creation until first use
+services.set(
+  IMyService,
+  new SyncDescriptor(MyService, undefined, true) // true = singleton
+);
+
+// Service is only created when first accessed
+const myService = instantiationService.invokeFunction(accessor => {
+  return accessor.get(IMyService); // Created here
+});
+```
+
+### 2. Code Splitting
+
+```typescript
+// Use dynamic imports for large modules
+class MyFeature {
+  async heavyOperation(): Promise<void> {
+    // Only load when needed
+    const { HeavyModule } = await import('vs/my/heavy/module');
+    const instance = new HeavyModule();
+    await instance.process();
+  }
+}
+
+// Avoid:
+import { HeavyModule } from 'vs/my/heavy/module'; // Loaded at startup
+```
+
+### 3. Extension Activation Events
+
+```json
+{
+  "activationEvents": [
+    "onLanguage:typescript",  // Only activate for TypeScript files
+    "onCommand:myext.command", // Only activate when command is invoked
+    "onView:myext.view",       // Only activate when view is shown
+    "workspaceContains:**/*.ts" // Only activate if TS files exist
+  ]
+}
+```
+
+Avoid using `"*"` (activate on startup) unless absolutely necessary:
+
+```json
+// BAD - Always activates at startup
+{
+  "activationEvents": ["*"]
+}
+
+// GOOD - Activates only when needed
+{
+  "activationEvents": [
+    "onLanguage:mylang",
+    "onCommand:mylang.command"
+  ]
+}
+```
+
+### 4. Deferred Initialization
+
+```typescript
+class MyExtension {
+  private _heavyFeature: HeavyFeature | undefined;
+  
+  activate(context: vscode.ExtensionContext) {
+    // Register command immediately
+    context.subscriptions.push(
+      vscode.commands.registerCommand('myext.command', () => {
+        this.ensureHeavyFeature();
+      })
+    );
+    
+    // Don't initialize heavy features yet
+  }
+  
+  private ensureHeavyFeature(): void {
+    if (!this._heavyFeature) {
+      this._heavyFeature = new HeavyFeature();
+    }
+  }
+}
+```
+
+### 5. Workbench Contributions
+
+```typescript
+// Use lazy workbench contributions
+import { Registry } from 'vs/platform/registry/common/platform';
+import { IWorkbenchContributionsRegistry, Extensions } from 'vs/workbench/common/contributions';
+
+// Register contribution that loads later
+Registry.as<IWorkbenchContributionsRegistry>(Extensions.Workbench)
+  .registerWorkbenchContribution(
+    MyContribution,
+    LifecyclePhase.Eventually // Not during startup
+  );
+
+// Lifecycle phases in order:
+// Starting -> Restoring -> Ready -> Eventually
+```
+
+### 6. Bundle Optimization
+
+```typescript
+// webpack.config.js
+module.exports = {
+  optimization: {
+    splitChunks: {
+      chunks: 'async',
+      cacheGroups: {
+        vendors: {
+          test: /[\\/]node_modules[\\/]/,
+          priority: -10
+        }
+      }
+    }
+  }
+};
+```
+
+## Measuring Extension Performance
+
+### Built-in Profiler
+
+Use the Developer: Startup Performance command:
+
+```bash
+# Open VS Code with performance profiling
+code --prof-startup
+
+# View results
+Developer: Startup Performance
+```
+
+### Extension Activation Timing
+
+```typescript
+import * as vscode from 'vscode';
+
+export async function activate(context: vscode.ExtensionContext) {
+  const startTime = Date.now();
+  
+  // Extension initialization
+  await setupExtension();
+  
+  const duration = Date.now() - startTime;
+  console.log(`Extension activated in ${duration}ms`);
+  
+  // Warn if activation is slow
+  if (duration > 1000) {
+    console.warn('Extension activation exceeded 1 second!');
+  }
+}
+```
+
+### Custom Telemetry
+
+```typescript
+class PerformanceTracker {
+  private marks = new Map<string, number>();
+  
+  start(name: string): void {
+    this.marks.set(name, Date.now());
+  }
+  
+  end(name: string): number {
+    const start = this.marks.get(name);
+    if (!start) {
+      throw new Error(`No start mark for ${name}`);
+    }
+    
+    const duration = Date.now() - start;
+    this.marks.delete(name);
+    
+    // Report to telemetry
+    this.telemetryService.publicLog('performance', {
+      operation: name,
+      duration: duration
+    });
+    
+    return duration;
+  }
+}
+
+// Usage
+const tracker = new PerformanceTracker();
+
+tracker.start('parseFile');
+await parseFile(uri);
+const duration = tracker.end('parseFile');
+
+console.log(`Parse took ${duration}ms`);
+```
+
+## Cold vs Warm Startup
+
+### Cold Startup
+
+```typescript
+// First startup - no cache
+// - Code cache not available
+// - Extension cache not available
+// - File system cache empty
+```
+
+### Warm Startup
+
+```typescript
+// Subsequent startups - with cache
+// - V8 code cache available
+// - Extension cache available
+// - File system cache populated
+```
+
+### Code Cache
+
+VS Code generates V8 code cache to speed up warm startups:
+
+```typescript
+// Code cache location
+const codeCachePath = path.join(
+  app.getPath('userData'),
+  'CachedData',
+  productService.commit
+);
+
+// Cache is version-specific
+// Invalidated on VS Code update
+```
+
+## Startup Performance Budget
+
+<Info>
+**Performance Targets:**
+- **Main Process Init**: < 500ms
+- **Window Creation**: < 200ms
+- **Workbench Restore**: < 1000ms
+- **Extension Host**: < 500ms
+- **Total Cold Start**: < 3000ms
+- **Total Warm Start**: < 1500ms
+</Info>
+
+## Monitoring and Alerts
+
+```typescript
+class StartupPerformanceMonitor {
+  private readonly warningThreshold = 3000; // 3 seconds
+  private readonly errorThreshold = 5000;   // 5 seconds
+  
+  async measureStartup(): Promise<void> {
+    const marks = getMarks();
+    const timeOrigin = marks.find(m => m.name === 'code/timeOrigin');
+    const workbenchReady = marks.find(m => m.name === 'code/didLoadWorkbench');
+    
+    if (!timeOrigin || !workbenchReady) {
+      return;
+    }
+    
+    const startupTime = workbenchReady.startTime - timeOrigin.startTime;
+    
+    if (startupTime > this.errorThreshold) {
+      console.error(`Slow startup: ${startupTime}ms`);
+      this.showSlowStartupNotification(startupTime);
+    } else if (startupTime > this.warningThreshold) {
+      console.warn(`Startup took ${startupTime}ms`);
+    }
+    
+    // Report telemetry
+    this.telemetryService.publicLog('startupTime', {
+      duration: startupTime,
+      kind: this.lifecycleService.startupKind
+    });
+  }
+  
+  private showSlowStartupNotification(duration: number): void {
+    this.notificationService.warn(
+      `VS Code took ${(duration / 1000).toFixed(1)}s to start. ` +
+      'Consider disabling some extensions to improve startup time.',
+      'Show Extension Report'
+    ).then(result => {
+      if (result) {
+        this.commandService.executeCommand(
+          'workbench.action.showRuntimeExtensions'
+        );
+      }
+    });
+  }
+}
+```
+
+## Common Performance Issues
+
+### 1. Synchronous File I/O
+
+```typescript
+// BAD - Blocks startup
+import * as fs from 'fs';
+const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+
+// GOOD - Async loading
+import * as fs from 'fs/promises';
+const config = JSON.parse(await fs.readFile('config.json', 'utf8'));
+
+// BETTER - Lazy loading
+let _config: Config | undefined;
+async function getConfig(): Promise<Config> {
+  if (!_config) {
+    const content = await fs.readFile('config.json', 'utf8');
+    _config = JSON.parse(content);
+  }
+  return _config;
+}
+```
+
+### 2. Large Dependencies
+
+```typescript
+// BAD - Imports entire lodash at startup
+import _ from 'lodash';
+
+// GOOD - Import only what you need
+import debounce from 'lodash/debounce';
+import throttle from 'lodash/throttle';
+
+// BETTER - Use VS Code utilities
+import { Throttler } from 'vs/base/common/async';
+```
+
+### 3. Extension Host Blocking
+
+```typescript
+// BAD - Blocks extension host
+export function activate(context: vscode.ExtensionContext) {
+  // Heavy synchronous work
+  const data = processLargeDataset();
+  registerCommands(data);
+}
+
+// GOOD - Deferred processing
+export async function activate(context: vscode.ExtensionContext) {
+  // Register commands immediately with lazy data
+  registerCommands();
+  
+  // Process data in background
+  setTimeout(async () => {
+    await processLargeDataset();
+  }, 0);
+}
+```
+
+### 4. Too Many File Watchers
+
+```typescript
+// BAD - Watches entire workspace
+const watcher = vscode.workspace.createFileSystemWatcher('**/*');
+
+// GOOD - Specific patterns
+const watcher = vscode.workspace.createFileSystemWatcher('**/*.ts');
+
+// BETTER - Multiple specific watchers
+const tsWatcher = vscode.workspace.createFileSystemWatcher('**/*.ts');
+const jsWatcher = vscode.workspace.createFileSystemWatcher('**/*.js');
+```
+
+## Profiling Tools
+
+### Chrome DevTools Profiling
+
+```bash
+# Start with debugging enabled
+code --inspect-extensions=9333
+
+# Open chrome://inspect
+# Click "Open dedicated DevTools for Node"
+# Go to Profiler tab
+# Record startup
+```
+
+### VS Code Performance View
+
+```typescript
+// Open performance view
+vscode.commands.executeCommand('workbench.action.showRuntimeExtensions');
+
+// Shows:
+// - Extension activation time
+// - Main thread time
+// - Extension host time
+```
+
+### Custom Profiling
+
+```typescript
+class Profiler {
+  private sessions = new Map<string, ProfileSession>();
+  
+  start(name: string): void {
+    this.sessions.set(name, {
+      name,
+      startTime: performance.now(),
+      startMemory: process.memoryUsage()
+    });
+  }
+  
+  end(name: string): ProfileResult {
+    const session = this.sessions.get(name);
+    if (!session) {
+      throw new Error(`No profile session: ${name}`);
+    }
+    
+    const endTime = performance.now();
+    const endMemory = process.memoryUsage();
+    
+    const result: ProfileResult = {
+      name,
+      duration: endTime - session.startTime,
+      memoryDelta: {
+        heapUsed: endMemory.heapUsed - session.startMemory.heapUsed,
+        external: endMemory.external - session.startMemory.external
+      }
+    };
+    
+    this.sessions.delete(name);
+    console.log(
+      `${name}: ${result.duration.toFixed(2)}ms, ` +
+      `heap: ${(result.memoryDelta.heapUsed / 1024 / 1024).toFixed(2)}MB`
+    );
+    
+    return result;
+  }
+}
+
+// Usage
+const profiler = new Profiler();
+
+profiler.start('extension.activate');
+await activateExtension();
+profiler.end('extension.activate');
+```
+
+## Best Practices Summary
+
+<Warning>
+**Startup Optimization Checklist:**
+- ✅ Use specific activation events (not `"*"`)
+- ✅ Defer heavy initialization
+- ✅ Use async/await for I/O operations
+- ✅ Minimize dependencies
+- ✅ Use code splitting for large modules
+- ✅ Cache expensive computations
+- ✅ Avoid synchronous file operations
+- ✅ Limit file system watchers
+- ✅ Profile regularly
+- ✅ Test both cold and warm startups
+</Warning>
+
+## Related Files
+
+- `src/vs/base/common/performance.ts:113` - Performance marking utilities
+- `src/vs/workbench/contrib/performance/browser/startupTimings.ts:34` - Startup measurement
+- `src/vs/code/electron-main/main.ts:97` - Main process startup
+- `src/vs/workbench/browser/workbench.ts` - Workbench initialization
+- `src/vs/workbench/services/lifecycle/browser/lifecycleService.ts` - Lifecycle phases

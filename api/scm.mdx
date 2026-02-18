@@ -1,0 +1,611 @@
+---
+title: 'Source Control API'
+description: 'Implement source control providers in VS Code extensions'
+---
+
+# Source Control API
+
+The Source Control (SCM) API allows extensions to integrate version control systems into VS Code, providing a unified interface for source control operations.
+
+## scm Namespace
+
+The `vscode.scm` namespace provides functions for creating source control providers:
+
+```typescript
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext) {
+  // Create source control
+  const scm = vscode.scm.createSourceControl(
+    'myScm',
+    'My SCM',
+    vscode.Uri.file('/workspace')
+  );
+  
+  context.subscriptions.push(scm);
+}
+```
+
+## Creating Source Control
+
+### createSourceControl()
+
+Create a source control provider:
+
+```typescript
+function createSourceControl(
+  id: string,
+  label: string,
+  rootUri?: Uri
+): SourceControl
+```
+
+<ParamField path="id" type="string" required>
+  Unique identifier (e.g., 'git', 'svn')
+</ParamField>
+
+<ParamField path="label" type="string" required>
+  Human-readable label (e.g., 'Git', 'SVN')
+</ParamField>
+
+<ParamField path="rootUri" type="Uri">
+  Root URI of the source control
+</ParamField>
+
+```typescript
+const scm = vscode.scm.createSourceControl('git', 'Git');
+
+// Configure the source control
+scm.quickDiffProvider = {
+  provideOriginalResource(uri) {
+    // Return URI of original resource for diff
+    return vscode.Uri.parse(`git:${uri.fsPath}`);
+  }
+};
+
+scm.acceptInputCommand = {
+  command: 'git.commit',
+  title: 'Commit'
+};
+
+scm.statusBarCommands = [
+  {
+    command: 'git.sync',
+    title: '$(sync) Sync',
+    tooltip: 'Synchronize changes'
+  }
+];
+```
+
+## SourceControl Interface
+
+<ResponseField name="id" type="string" required>
+  The identifier of this source control
+</ResponseField>
+
+<ResponseField name="label" type="string" required>
+  The human-readable label of this source control
+</ResponseField>
+
+<ResponseField name="rootUri" type="Uri | undefined">
+  The root URI of this source control
+</ResponseField>
+
+<ResponseField name="inputBox" type="SourceControlInputBox" required>
+  The input box for this source control
+</ResponseField>
+
+<ResponseField name="count" type="number">
+  Badge counter shown on source control icon
+</ResponseField>
+
+<ResponseField name="quickDiffProvider" type="QuickDiffProvider">
+  Provider for quick diff functionality
+</ResponseField>
+
+<ResponseField name="commitTemplate" type="string">
+  Template for commit messages
+</ResponseField>
+
+<ResponseField name="acceptInputCommand" type="Command">
+  Command executed when input is accepted
+</ResponseField>
+
+<ResponseField name="statusBarCommands" type="Command[]">
+  Commands shown in the status bar
+</ResponseField>
+
+## Resource Groups
+
+Organize changes into groups:
+
+```typescript
+const scm = vscode.scm.createSourceControl('git', 'Git');
+
+// Create resource groups
+const changes = scm.createResourceGroup(
+  'workingTree',
+  'Changes'
+);
+
+const staged = scm.createResourceGroup(
+  'index',
+  'Staged Changes'
+);
+
+context.subscriptions.push(changes, staged);
+```
+
+### SourceControlResourceGroup
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the group
+</ResponseField>
+
+<ResponseField name="label" type="string" required>
+  Human-readable label
+</ResponseField>
+
+<ResponseField name="hideWhenEmpty" type="boolean">
+  Hide group when it has no resources
+</ResponseField>
+
+<ResponseField name="resourceStates" type="SourceControlResourceState[]" required>
+  Array of resources in this group
+</ResponseField>
+
+```typescript
+changes.hideWhenEmpty = true;
+changes.resourceStates = [
+  {
+    resourceUri: vscode.Uri.file('/workspace/file1.txt'),
+    decorations: {
+      strikeThrough: false,
+      faded: false,
+      tooltip: 'Modified',
+      iconPath: new vscode.ThemeIcon(
+        'diff-modified',
+        new vscode.ThemeColor('gitDecoration.modifiedResourceForeground')
+      )
+    }
+  },
+  {
+    resourceUri: vscode.Uri.file('/workspace/file2.txt'),
+    decorations: {
+      tooltip: 'Added',
+      iconPath: new vscode.ThemeIcon('diff-added')
+    }
+  }
+];
+```
+
+## Resource States
+
+Represent individual files:
+
+```typescript
+interface SourceControlResourceState {
+  /** URI of the resource */
+  readonly resourceUri: vscode.Uri;
+  
+  /** Command to execute when resource is opened */
+  readonly command?: vscode.Command;
+  
+  /** Decorations for the resource */
+  readonly decorations?: SourceControlResourceDecorations;
+  
+  /** Context value for menu contributions */
+  readonly contextValue?: string;
+}
+```
+
+### Example: Create Resources
+
+```typescript
+const resources: vscode.SourceControlResourceState[] = [];
+
+for (const file of modifiedFiles) {
+  resources.push({
+    resourceUri: vscode.Uri.file(file.path),
+    command: {
+      title: 'Open Diff',
+      command: 'git.openDiff',
+      arguments: [file]
+    },
+    decorations: {
+      tooltip: getTooltip(file.status),
+      iconPath: getIcon(file.status),
+      strikeThrough: file.status === 'deleted',
+      faded: false
+    },
+    contextValue: file.status
+  });
+}
+
+changes.resourceStates = resources;
+```
+
+## Input Box
+
+The commit message input:
+
+```typescript
+const scm = vscode.scm.createSourceControl('git', 'Git');
+const inputBox = scm.inputBox;
+
+// Set placeholder
+inputBox.placeholder = 'Message (Ctrl+Enter to commit)';
+
+// Set value
+inputBox.value = 'Initial commit';
+
+// Listen to changes
+context.subscriptions.push(
+  inputBox.onDidChange(value => {
+    console.log('Input changed:', value);
+  })
+);
+
+// Listen to accept (Ctrl+Enter)
+context.subscriptions.push(
+  inputBox.onDidAccept(() => {
+    console.log('Accepted:', inputBox.value);
+    commitChanges(inputBox.value);
+    inputBox.value = '';
+  })
+);
+```
+
+## Quick Diff Provider
+
+Provide original content for diff:
+
+```typescript
+scm.quickDiffProvider = {
+  provideOriginalResource(uri, token) {
+    // Return URI of HEAD version
+    return vscode.Uri.parse(`git:${uri.fsPath}?ref=HEAD`);
+  }
+};
+
+// Register a document content provider
+vscode.workspace.registerTextDocumentContentProvider('git', {
+  provideTextDocumentContent(uri) {
+    // Parse git URI and return original content
+    const ref = new URLSearchParams(uri.query).get('ref');
+    return getGitContent(uri.fsPath, ref);
+  }
+});
+```
+
+## Resource Decorations
+
+Customize how resources appear:
+
+```typescript
+interface SourceControlResourceDecorations {
+  /** Strike through the resource */
+  strikeThrough?: boolean;
+  
+  /** Fade the resource */
+  faded?: boolean;
+  
+  /** Tooltip text */
+  tooltip?: string;
+  
+  /** Icon path */
+  iconPath?: string | Uri | ThemeIcon;
+  
+  /** Light theme icon */
+  light?: { iconPath: string | Uri };
+  
+  /** Dark theme icon */
+  dark?: { iconPath: string | Uri };
+}
+```
+
+### Status Icons
+
+```typescript
+function getDecorations(status: string): vscode.SourceControlResourceDecorations {
+  switch (status) {
+    case 'modified':
+      return {
+        tooltip: 'Modified',
+        iconPath: new vscode.ThemeIcon(
+          'diff-modified',
+          new vscode.ThemeColor('gitDecoration.modifiedResourceForeground')
+        )
+      };
+      
+    case 'added':
+      return {
+        tooltip: 'Added',
+        iconPath: new vscode.ThemeIcon('diff-added')
+      };
+      
+    case 'deleted':
+      return {
+        tooltip: 'Deleted',
+        strikeThrough: true,
+        iconPath: new vscode.ThemeIcon('diff-removed')
+      };
+      
+    case 'renamed':
+      return {
+        tooltip: 'Renamed',
+        iconPath: new vscode.ThemeIcon('diff-renamed')
+      };
+      
+    case 'conflict':
+      return {
+        tooltip: 'Conflict',
+        iconPath: new vscode.ThemeIcon('warning')
+      };
+  }
+}
+```
+
+## Real-World Example: Git-like SCM
+
+### Complete Implementation
+
+```typescript
+class GitSCM {
+  private scm: vscode.SourceControl;
+  private changesGroup: vscode.SourceControlResourceGroup;
+  private stagedGroup: vscode.SourceControlResourceGroup;
+  
+  constructor(rootUri: vscode.Uri) {
+    // Create source control
+    this.scm = vscode.scm.createSourceControl('git', 'Git', rootUri);
+    
+    // Configure
+    this.scm.inputBox.placeholder = 'Message (Ctrl+Enter to commit)';
+    this.scm.acceptInputCommand = {
+      command: 'git.commit',
+      title: 'Commit'
+    };
+    this.scm.quickDiffProvider = this;
+    
+    // Create groups
+    this.changesGroup = this.scm.createResourceGroup('changes', 'Changes');
+    this.stagedGroup = this.scm.createResourceGroup('staged', 'Staged Changes');
+    
+    // Update status
+    this.update();
+    
+    // Watch for file changes
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*');
+    watcher.onDidChange(() => this.update());
+    watcher.onDidCreate(() => this.update());
+    watcher.onDidDelete(() => this.update());
+  }
+  
+  async update() {
+    const status = await this.getStatus();
+    
+    // Update changes group
+    this.changesGroup.resourceStates = status.changes.map(file => ({
+      resourceUri: vscode.Uri.file(file.path),
+      command: {
+        title: 'Open Changes',
+        command: 'git.openChange',
+        arguments: [file]
+      },
+      decorations: getDecorations(file.status),
+      contextValue: file.status
+    }));
+    
+    // Update staged group
+    this.stagedGroup.resourceStates = status.staged.map(file => ({
+      resourceUri: vscode.Uri.file(file.path),
+      command: {
+        title: 'Open Changes',
+        command: 'git.openChange',
+        arguments: [file]
+      },
+      decorations: getDecorations(file.status),
+      contextValue: 'staged'
+    }));
+    
+    // Update count
+    this.scm.count = status.changes.length + status.staged.length;
+  }
+  
+  async getStatus() {
+    // Get git status
+    // Return { changes: [], staged: [] }
+    return { changes: [], staged: [] };
+  }
+  
+  // QuickDiffProvider implementation
+  provideOriginalResource(uri: vscode.Uri) {
+    return vscode.Uri.parse(`git:${uri.fsPath}?ref=HEAD`);
+  }
+  
+  dispose() {
+    this.scm.dispose();
+  }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders) return;
+  
+  folders.forEach(folder => {
+    const git = new GitSCM(folder.uri);
+    context.subscriptions.push(git);
+  });
+  
+  // Register commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('git.commit', async () => {
+      const scm = vscode.scm.inputBox;
+      const message = scm.value;
+      
+      if (!message) {
+        vscode.window.showErrorMessage('Please enter a commit message');
+        return;
+      }
+      
+      await commitChanges(message);
+      scm.value = '';
+      vscode.window.showInformationMessage('Committed successfully');
+    })
+  );
+  
+  context.subscriptions.push(
+    vscode.commands.registerCommand('git.stage', async (resource) => {
+      await stageFile(resource.resourceUri.fsPath);
+      // Refresh will happen via file watcher
+    })
+  );
+  
+  context.subscriptions.push(
+    vscode.commands.registerCommand('git.unstage', async (resource) => {
+      await unstageFile(resource.resourceUri.fsPath);
+    })
+  );
+}
+```
+
+## Contributing Menus
+
+Add commands to SCM menus in `package.json`:
+
+```json
+{
+  "contributes": {
+    "commands": [
+      {
+        "command": "git.stage",
+        "title": "Stage Changes",
+        "icon": "$(add)"
+      },
+      {
+        "command": "git.unstage",
+        "title": "Unstage Changes",
+        "icon": "$(remove)"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "git.refresh",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "git.stageAll",
+          "when": "scmProvider == git && scmResourceGroup == changes",
+          "group": "inline"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "git.stage",
+          "when": "scmProvider == git && scmResourceGroup == changes",
+          "group": "inline"
+        },
+        {
+          "command": "git.unstage",
+          "when": "scmProvider == git && scmResourceGroup == staged",
+          "group": "inline"
+        }
+      ]
+    }
+  }
+}
+```
+
+## When Clauses
+
+Control command visibility:
+
+- `scmProvider`: The source control provider ID
+- `scmResourceGroup`: The resource group ID
+- `scmResourceState`: Context value of the resource
+
+```json
+{
+  "when": "scmProvider == git",
+  "when": "scmResourceGroup == changes",
+  "when": "scmResourceState == modified"
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Update Efficiently">
+    Batch updates and avoid excessive refreshes:
+    
+    ```typescript
+    private updateTimeout: NodeJS.Timeout | undefined;
+    
+    scheduleUpdate() {
+      if (this.updateTimeout) {
+        clearTimeout(this.updateTimeout);
+      }
+      this.updateTimeout = setTimeout(() => {
+        this.update();
+      }, 500);
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Provide Good Icons">
+    Use appropriate theme icons:
+    
+    ```typescript
+    iconPath: new vscode.ThemeIcon(
+      'diff-modified',
+      new vscode.ThemeColor('gitDecoration.modifiedResourceForeground')
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Support Quick Diff">
+    Implement QuickDiffProvider for inline diffs:
+    
+    ```typescript
+    scm.quickDiffProvider = {
+      provideOriginalResource(uri) {
+        return vscode.Uri.parse(`scm:${uri.fsPath}`);
+      }
+    };
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle Edge Cases">
+    Handle missing files, conflicts, and errors:
+    
+    ```typescript
+    try {
+      await stageFile(path);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to stage: ${error}`);
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands" icon="terminal" href="/api/commands">
+    Register and execute commands
+  </Card>
+  <Card title="Workspace" icon="folder" href="/api/workspace">
+    Access workspace files and folders
+  </Card>
+  <Card title="Languages" icon="code" href="/api/languages">
+    Provide language-specific features
+  </Card>
+  <Card title="Debug" icon="bug" href="/api/debug">
+    Integrate debugging functionality
+  </Card>
+</CardGroup>

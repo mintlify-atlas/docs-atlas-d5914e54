@@ -1,0 +1,357 @@
+---
+title: 'Workbench'
+description: 'Understanding the VS Code workbench architecture, parts, layout, and views'
+---
+
+## Overview
+
+The **workbench** is the main container and orchestrator of the VS Code user interface. It manages the overall layout, coordinates the different UI parts, and provides the structure for the entire application.
+
+<Info>
+The workbench is built on top of the Monaco editor and provides the full IDE experience around it. It's located in `src/vs/workbench/` and is a core component that brings together the editor, sidebar, panels, and other UI elements.
+</Info>
+
+## Workbench Architecture
+
+The workbench follows a layered architecture:
+
+```
+┌─────────────────────────────────────────┐
+│           Workbench Layer               │
+│  (Views, Contributions, Services)       │
+├─────────────────────────────────────────┤
+│         Platform Layer                  │
+│  (Dependency Injection, Configuration)  │
+├─────────────────────────────────────────┤
+│           Editor Layer                  │
+│       (Monaco Editor Core)              │
+├─────────────────────────────────────────┤
+│            Base Layer                   │
+│    (DOM, Events, Async Utils)           │
+└─────────────────────────────────────────┘
+```
+
+## Workbench Parts
+
+The workbench is composed of several distinct **parts**, each with specific responsibilities:
+
+<CardGroup cols={2}>
+  <Card title="Title Bar" icon="window-maximize">
+    Top bar containing window controls, menu bar, and window title
+  </Card>
+  <Card title="Activity Bar" icon="bars">
+    Vertical bar on the left with icons to switch between views
+  </Card>
+  <Card title="Sidebar" icon="sidebar">
+    Primary side panel showing views like Explorer, Search, SCM
+  </Card>
+  <Card title="Editor Area" icon="file-code">
+    Central area where files are opened and edited
+  </Card>
+  <Card title="Panel" icon="rectangle-terminal">
+    Bottom panel for Terminal, Output, Problems, Debug Console
+  </Card>
+  <Card title="Status Bar" icon="signal">
+    Bottom bar showing status information and quick actions
+  </Card>
+  <Card title="Auxiliary Bar" icon="sidebar-flip">
+    Optional secondary sidebar on the right
+  </Card>
+  <Card title="Banner" icon="bell">
+    Top notification banner for important messages
+  </Card>
+</CardGroup>
+
+### Parts Implementation
+
+Each part extends the `Part` base class and implements its own lifecycle:
+
+```typescript
+// Location: src/vs/workbench/browser/part.ts
+export abstract class Part extends Disposable {
+  private container: HTMLElement;
+  
+  abstract createContentArea(parent: HTMLElement): HTMLElement;
+  abstract layout(width: number, height: number): void;
+}
+```
+
+Parts are located in `src/vs/workbench/browser/parts/`:
+
+- `activitybar/` - Activity bar implementation
+- `sidebar/` - Sidebar container
+- `editor/` - Editor groups and tabs
+- `panel/` - Bottom panel
+- `statusbar/` - Status bar indicators
+- `titlebar/` - Window title bar
+- `auxiliarybar/` - Auxiliary sidebar
+- `banner/` - Banner notifications
+
+## Layout Service
+
+The `IWorkbenchLayoutService` orchestrates the positioning and sizing of all workbench parts:
+
+```typescript
+// Location: src/vs/workbench/services/layout/browser/layoutService.ts
+export interface IWorkbenchLayoutService {
+  // Layout state
+  readonly dimension: IDimension;
+  readonly container: HTMLElement;
+  
+  // Part visibility
+  isVisible(part: Parts): boolean;
+  setPartHidden(hidden: boolean, part: Parts): void;
+  
+  // Editor layout
+  get mainEditorCenteredLayout(): boolean;
+  centerMainEditorLayout(active: boolean): void;
+  
+  // Zen mode
+  get zenMode(): boolean;
+  toggleZenMode(): void;
+}
+```
+
+### Layout Calculation
+
+The workbench uses a **grid-based layout** system for flexible resizing:
+
+```typescript
+// Location: src/vs/workbench/browser/layout.ts
+export abstract class Layout extends Disposable implements IWorkbenchLayoutService {
+  private workbenchGrid: SerializableGrid<ISerializableView>;
+  
+  private createWorkbenchLayout(): void {
+    // Create grid with parts:
+    // [titlebar]
+    // [activitybar][sidebar][editor][panel][auxiliarybar]
+    // [statusbar]
+    this.workbenchGrid = new SerializableGrid(/* ... */);
+  }
+}
+```
+
+<Steps>
+  <Step title="Initialize Grid">
+    Create a `SerializableGrid` with the main workbench structure
+  </Step>
+  <Step title="Register Parts">
+    Each part is added as a serializable view node in the grid
+  </Step>
+  <Step title="Layout Calculation">
+    Grid distributes space based on constraints and user preferences
+  </Step>
+  <Step title="Persist State">
+    Layout state is saved to restore on next startup
+  </Step>
+</Steps>
+
+## Views and View Containers
+
+Views are the content within parts (especially sidebar and panel). They're organized into **view containers**:
+
+### View Container Locations
+
+```typescript
+export enum ViewContainerLocation {
+  Sidebar,      // Left sidebar (Explorer, Search, SCM, etc.)
+  Panel,        // Bottom panel (Terminal, Output, etc.)
+  AuxiliaryBar  // Right sidebar
+}
+```
+
+### Defining a View
+
+Extensions and contributions can register views:
+
+```typescript
+// Location: package.json contribution
+"contributes": {
+  "views": {
+    "explorer": [
+      {
+        "id": "myCustomView",
+        "name": "My Custom View",
+        "when": "myContext"
+      }
+    ]
+  },
+  "viewsContainers": {
+    "activitybar": [
+      {
+        "id": "myContainer",
+        "title": "My Container",
+        "icon": "resources/icon.svg"
+      }
+    ]
+  }
+}
+```
+
+### View Descriptor Service
+
+```typescript
+// Location: src/vs/workbench/services/views/browser/viewDescriptorService.ts
+export interface IViewDescriptorService {
+  // Get all views in a container
+  getViewContainerModel(viewContainer: ViewContainer): IViewContainerModel;
+  
+  // Get view location
+  getViewLocationById(id: string): ViewContainerLocation | null;
+  
+  // Move views between containers
+  moveViewToLocation(view: IViewDescriptor, location: ViewContainerLocation): void;
+}
+```
+
+## Workbench Initialization
+
+The workbench startup follows a specific sequence:
+
+<Steps>
+  <Step title="Bootstrap">
+    Load workbench common and platform services
+    ```typescript
+    // Location: src/vs/workbench/workbench.common.main.ts
+    import '../editor/editor.all.js';
+    import './browser/workbench.contribution.js';
+    ```
+  </Step>
+  
+  <Step title="Service Registration">
+    Register all singleton services with dependency injection
+    ```typescript
+    registerSingleton(IContextViewService, ContextViewService);
+    registerSingleton(IMarkerService, MarkerService);
+    registerSingleton(IContextKeyService, ContextKeyService);
+    ```
+  </Step>
+  
+  <Step title="Create Workbench">
+    Instantiate the main Workbench class
+    ```typescript
+    // Location: src/vs/workbench/browser/workbench.ts
+    export class Workbench extends Layout {
+      startup(): IInstantiationService {
+        const instantiationService = this.initServices();
+        this.initLayout();
+        this.registerListeners();
+        return instantiationService;
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Load Contributions">
+    Load workbench contributions (features, views, commands)
+    ```typescript
+    // Contributions auto-load from:
+    import './contrib/files/browser/files.contribution.js';
+    import './contrib/search/browser/search.contribution.js';
+    import './contrib/debug/browser/debug.contribution.js';
+    ```
+  </Step>
+  
+  <Step title="Restore State">
+    Restore previous editor state, layout, and opened files
+  </Step>
+</Steps>
+
+## Workbench Context Keys
+
+The workbench provides context keys that control UI visibility and command enablement:
+
+```typescript
+// Location: src/vs/workbench/browser/contextkeys.ts
+export class WorkbenchContextKeysHandler {
+  private registerContextKeys() {
+    this.sideBarVisible = SideBarVisibleContext.bindTo(contextKeyService);
+    this.editorAreaVisible = EditorAreaVisibleContext.bindTo(contextKeyService);
+    this.panelVisible = PanelVisibleContext.bindTo(contextKeyService);
+    // ... more context keys
+  }
+}
+```
+
+Common context keys:
+
+- `sideBarVisible` - Sidebar is visible
+- `editorIsOpen` - At least one editor is open
+- `panelFocus` - Panel has focus
+- `inZenMode` - Zen mode is active
+- `workbenchState` - Current workspace state (empty, folder, workspace)
+
+## Workbench Configuration
+
+Users can configure workbench behavior through settings:
+
+```json
+{
+  // Layout
+  "workbench.activityBar.location": "default",
+  "workbench.sideBar.location": "left",
+  "workbench.panel.defaultLocation": "bottom",
+  
+  // Editor
+  "workbench.editor.enablePreview": true,
+  "workbench.editor.showTabs": "multiple",
+  "workbench.editor.tabActionLocation": "right",
+  
+  // Appearance
+  "workbench.colorTheme": "Default Dark+",
+  "workbench.iconTheme": "vs-seti",
+  "workbench.tree.indent": 8
+}
+```
+
+## Multi-Window Support
+
+VS Code supports opening editors in auxiliary windows:
+
+```typescript
+// Some parts support multiple windows
+export const MULTI_WINDOW_PARTS = [
+  Parts.EDITOR_PART,
+  Parts.STATUSBAR_PART
+];
+
+// Other parts are single-window only
+export const SINGLE_WINDOW_PARTS = [
+  Parts.ACTIVITYBAR_PART,
+  Parts.SIDEBAR_PART,
+  Parts.PANEL_PART
+];
+```
+
+<Tip>
+Auxiliary windows share the same workbench services but have their own editor groups and status bars. This allows developers to spread their editors across multiple monitors while maintaining a unified workspace.
+</Tip>
+
+## Key Implementation Files
+
+| File | Description |
+|------|-------------|
+| `workbench/browser/workbench.ts` | Main Workbench class |
+| `workbench/browser/layout.ts` | Layout orchestration |
+| `workbench/browser/part.ts` | Base class for parts |
+| `workbench/browser/parts/` | Individual part implementations |
+| `workbench/workbench.common.main.ts` | Workbench bootstrap |
+| `workbench/services/layout/` | Layout service |
+| `workbench/services/views/` | View and view container services |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Editor" href="/concepts/editor" icon="file-code">
+    Learn about the Monaco editor core
+  </Card>
+  <Card title="Extensions" href="/concepts/extensions" icon="puzzle-piece">
+    Understand the extension system
+  </Card>
+  <Card title="Services" href="/concepts/services" icon="gears">
+    Explore the service architecture
+  </Card>
+  <Card title="Components" href="/components/workbench" icon="cubes">
+    Dive into workbench components
+  </Card>
+</CardGroup>

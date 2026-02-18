@@ -1,0 +1,685 @@
+---
+title: 'Debug'
+description: 'Debugging infrastructure - breakpoints, debug adapters, and debug UI'
+---
+
+## Overview
+
+The Debug component (`src/vs/workbench/contrib/debug/`) provides VS Code's debugging infrastructure, including breakpoint management, debug sessions, debug adapters, and the debug UI.
+
+**Location:** `src/vs/workbench/contrib/debug/`
+
+## Architecture
+
+### Debug System Components
+
+```
+┌───────────────────────────────────┐
+│         Debug UI (Views)             │
+├───────────────────────────────────┤
+│         Debug Service                │
+├───────────────────────────────────┤
+│       Debug Sessions                 │
+├───────────────────────────────────┤
+│    Debug Adapter Protocol            │
+├───────────────────────────────────┤
+│      Debug Adapter (Extension)       │
+└───────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="Debug Service" icon="bug" href="#debug-service">
+    Central debugging orchestration
+  </Card>
+  <Card title="Debug Sessions" icon="play" href="#debug-sessions">
+    Active debugging sessions
+  </Card>
+  <Card title="Breakpoints" icon="circle-dot" href="#breakpoints">
+    Breakpoint management
+  </Card>
+  <Card title="Debug UI" icon="sidebar" href="#debug-ui">
+    Debug viewlet and views
+  </Card>
+</CardGroup>
+
+## Debug Service {#debug-service}
+
+**Location:** `src/vs/workbench/contrib/debug/browser/debugService.ts:63`
+
+### IDebugService Interface
+
+```typescript
+export interface IDebugService {
+    readonly _serviceBrand: undefined;
+    
+    // State
+    readonly state: State;
+    readonly onDidChangeState: Event<State>;
+    
+    // Sessions
+    readonly onDidNewSession: Event<IDebugSession>;
+    readonly onWillNewSession: Event<IDebugSession>;
+    readonly onDidEndSession: Event<{ session: IDebugSession; restart: boolean }>;
+    
+    getModel(): IDebugModel;
+    getViewModel(): IViewModel;
+    getConfigurationManager(): IConfigurationManager;
+    
+    // Session control
+    startDebugging(
+        launch: ILaunch | undefined,
+        configOrName?: IConfig | string,
+        options?: IDebugSessionOptions
+    ): Promise<boolean>;
+    
+    restartSession(session: IDebugSession): Promise<void>;
+    stopSession(session: IDebugSession): Promise<void>;
+    
+    // Breakpoints
+    addBreakpoints(uri: URI, breakpoints: IBreakpointData[]): Promise<IBreakpoint[]>;
+    removeBreakpoints(id?: string): Promise<void>;
+    enableOrDisableBreakpoints(enable: boolean, breakpoint?: IEnablement): Promise<void>;
+}
+```
+
+### Using Debug Service
+
+```typescript
+import { IDebugService, State } from 'vs/workbench/contrib/debug/common/debug';
+
+export class DebugManager {
+    constructor(
+        @IDebugService private readonly debugService: IDebugService
+    ) {
+        // Monitor debug state
+        this.debugService.onDidChangeState(state => {
+            switch (state) {
+                case State.Inactive:
+                    console.log('No debugging');
+                    break;
+                case State.Initializing:
+                    console.log('Starting debug session');
+                    break;
+                case State.Running:
+                    console.log('Debugger running');
+                    break;
+                case State.Stopped:
+                    console.log('Debugger stopped at breakpoint');
+                    break;
+            }
+        });
+        
+        // Monitor sessions
+        this.debugService.onDidNewSession(session => {
+            console.log('New session:', session.name);
+        });
+    }
+    
+    async startDebugging(): Promise<void> {
+        const success = await this.debugService.startDebugging(
+            undefined,
+            'Launch Program'
+        );
+        
+        if (!success) {
+            console.error('Failed to start debugging');
+        }
+    }
+}
+```
+
+### Debug States
+
+```typescript
+export enum State {
+    Inactive,      // No debug session
+    Initializing,  // Session starting
+    Stopped,       // Paused at breakpoint
+    Running        // Running
+}
+```
+
+## Debug Sessions {#debug-sessions}
+
+**Location:** `src/vs/workbench/contrib/debug/browser/debugSession.ts`
+
+### IDebugSession Interface
+
+```typescript
+export interface IDebugSession {
+    readonly id: string;
+    readonly name: string;
+    readonly state: State;
+    readonly configuration: IConfig;
+    
+    // Lifecycle
+    initialize(dbgr: IDebugger): Promise<void>;
+    launchOrAttach(config: IConfig): Promise<void>;
+    restart(): Promise<void>;
+    terminate(restart?: boolean): Promise<void>;
+    disconnect(restart?: boolean): Promise<void>;
+    
+    // Execution control
+    continue(threadId: number): Promise<void>;
+    pause(threadId: number): Promise<void>;
+    stepOver(threadId: number): Promise<void>;
+    stepInto(threadId: number): Promise<void>;
+    stepOut(threadId: number): Promise<void>;
+    
+    // Stack and variables
+    stackTrace(threadId: number): Promise<IStackFrame[]>;
+    scopes(frameId: number): Promise<IScope[]>;
+    variables(variablesReference: number): Promise<IVariable[]>;
+    
+    // Evaluation
+    evaluate(expression: string, frameId?: number): Promise<IExpression>;
+}
+```
+
+### Working with Debug Sessions
+
+```typescript
+import { IDebugService } from 'vs/workbench/contrib/debug/common/debug';
+
+export class DebugController {
+    constructor(
+        @IDebugService private readonly debugService: IDebugService
+    ) {}
+    
+    async pauseExecution(): Promise<void> {
+        const session = this.debugService.getViewModel().focusedSession;
+        if (session) {
+            const thread = this.debugService.getViewModel().focusedThread;
+            if (thread) {
+                await session.pause(thread.threadId);
+            }
+        }
+    }
+    
+    async stepOver(): Promise<void> {
+        const session = this.debugService.getViewModel().focusedSession;
+        const thread = this.debugService.getViewModel().focusedThread;
+        
+        if (session && thread) {
+            await session.stepOver(thread.threadId);
+        }
+    }
+    
+    async evaluateExpression(expression: string): Promise<string> {
+        const session = this.debugService.getViewModel().focusedSession;
+        const frame = this.debugService.getViewModel().focusedStackFrame;
+        
+        if (session && frame) {
+            const result = await session.evaluate(expression, frame.frameId);
+            return result.value;
+        }
+        
+        return '';
+    }
+}
+```
+
+## Breakpoints {#breakpoints}
+
+**Location:** `src/vs/workbench/contrib/debug/common/debugModel.ts`
+
+### Breakpoint Types
+
+```typescript
+// Line breakpoints
+export interface IBreakpoint extends IEnablement {
+    readonly uri: URI;
+    readonly lineNumber: number;
+    readonly column?: number;
+    readonly condition?: string;
+    readonly hitCondition?: string;
+    readonly logMessage?: string;
+}
+
+// Function breakpoints
+export interface IFunctionBreakpoint extends IEnablement {
+    readonly name: string;
+    readonly condition?: string;
+    readonly hitCondition?: string;
+}
+
+// Data breakpoints
+export interface IDataBreakpoint extends IEnablement {
+    readonly dataId: string;
+    readonly canPersist: boolean;
+    readonly accessType: DebugProtocol.DataBreakpointAccessType;
+}
+
+// Exception breakpoints
+export interface IExceptionBreakpoint extends IEnablement {
+    readonly filter: string;
+    readonly label: string;
+}
+```
+
+### Managing Breakpoints
+
+```typescript
+import { IDebugService } from 'vs/workbench/contrib/debug/common/debug';
+import { URI } from 'vs/base/common/uri';
+
+export class BreakpointManager {
+    constructor(
+        @IDebugService private readonly debugService: IDebugService
+    ) {}
+    
+    async addBreakpoint(uri: URI, lineNumber: number): Promise<void> {
+        await this.debugService.addBreakpoints(uri, [
+            {
+                lineNumber,
+                enabled: true
+            }
+        ]);
+    }
+    
+    async addConditionalBreakpoint(
+        uri: URI,
+        lineNumber: number,
+        condition: string
+    ): Promise<void> {
+        await this.debugService.addBreakpoints(uri, [
+            {
+                lineNumber,
+                enabled: true,
+                condition
+            }
+        ]);
+    }
+    
+    async addLogpoint(
+        uri: URI,
+        lineNumber: number,
+        message: string
+    ): Promise<void> {
+        await this.debugService.addBreakpoints(uri, [
+            {
+                lineNumber,
+                enabled: true,
+                logMessage: message
+            }
+        ]);
+    }
+    
+    async removeAllBreakpoints(): Promise<void> {
+        await this.debugService.removeBreakpoints();
+    }
+    
+    async toggleBreakpoint(uri: URI, lineNumber: number): Promise<void> {
+        const model = this.debugService.getModel();
+        const existing = model.getBreakpoints({ uri, lineNumber });
+        
+        if (existing.length > 0) {
+            await this.debugService.removeBreakpoints(existing[0].getId());
+        } else {
+            await this.addBreakpoint(uri, lineNumber);
+        }
+    }
+}
+```
+
+## Debug Configuration {#configuration}
+
+**Location:** `src/vs/workbench/contrib/debug/common/debugConfiguration.ts`
+
+### Launch Configuration
+
+```json
+// .vscode/launch.json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch Program",
+            "program": "${workspaceFolder}/app.js",
+            "args": ["--verbose"],
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "preLaunchTask": "build",
+            "internalConsoleOptions": "openOnSessionStart"
+        },
+        {
+            "type": "node",
+            "request": "attach",
+            "name": "Attach to Process",
+            "processId": "${command:PickProcess}",
+            "skipFiles": ["<node_internals>/**"]
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack",
+            "configurations": ["Launch Program", "Launch Browser"]
+        }
+    ]
+}
+```
+
+### Configuration Manager
+
+```typescript
+import { IConfigurationManager } from 'vs/workbench/contrib/debug/common/debug';
+
+const configManager: IConfigurationManager = debugService.getConfigurationManager();
+
+// Get configurations
+const configs = configManager.getLaunches();
+
+// Select configuration
+const selected = await configManager.selectConfiguration(launch, 'launch');
+
+// Resolve variables in configuration
+const resolved = await configManager.resolveConfigurationByName(
+    launch.workspace.name,
+    'Launch Program'
+);
+```
+
+## Debug UI {#debug-ui}
+
+### Debug Viewlet
+
+**Location:** `src/vs/workbench/contrib/debug/browser/debugViewlet.ts`
+
+The debug viewlet contains multiple views:
+
+<CardGroup cols={2}>
+  <Card title="Variables View" icon="brackets-curly">
+    Shows variables in current scope
+  </Card>
+  
+  <Card title="Watch View" icon="eye">
+    User-defined watch expressions
+  </Card>
+  
+  <Card title="Call Stack View" icon="list">
+    Current call stack
+  </Card>
+  
+  <Card title="Breakpoints View" icon="circle-dot">
+    All breakpoints
+  </Card>
+</CardGroup>
+
+### Variables View
+
+**Location:** `src/vs/workbench/contrib/debug/browser/variablesView.ts`
+
+```typescript
+// Variables are displayed in a tree structure:
+// - Scopes (Local, Global, etc.)
+//   - Variables
+//     - Properties (expandable)
+```
+
+### Call Stack View
+
+**Location:** `src/vs/workbench/contrib/debug/browser/callStackView.ts`
+
+```typescript
+import { IDebugService } from 'vs/workbench/contrib/debug/common/debug';
+
+// Get call stack
+const session = debugService.getViewModel().focusedSession;
+const thread = debugService.getViewModel().focusedThread;
+
+if (session && thread) {
+    const stackFrames = await session.stackTrace(thread.threadId);
+    
+    for (const frame of stackFrames) {
+        console.log(`${frame.name} at ${frame.source?.uri}:${frame.range.startLineNumber}`);
+    }
+}
+```
+
+### Debug Console
+
+**Location:** `src/vs/workbench/contrib/debug/browser/repl.ts`
+
+```typescript
+import { IDebugService } from 'vs/workbench/contrib/debug/common/debug';
+
+// Evaluate in debug console
+const session = debugService.getViewModel().focusedSession;
+if (session) {
+    const result = await session.evaluate('myVariable', frameId);
+    console.log('Result:', result.value);
+}
+```
+
+## Debug Adapter Protocol
+
+**Location:** `src/vs/workbench/contrib/debug/common/debugProtocol.ts`
+
+### DAP Communication
+
+```typescript
+// Debug Adapter Protocol messages:
+
+// Initialize
+{
+    "type": "request",
+    "command": "initialize",
+    "arguments": {
+        "clientID": "vscode",
+        "adapterID": "node",
+        "linesStartAt1": true,
+        "columnsStartAt1": true
+    }
+}
+
+// Set breakpoints
+{
+    "type": "request",
+    "command": "setBreakpoints",
+    "arguments": {
+        "source": { "path": "/path/to/file.js" },
+        "breakpoints": [
+            { "line": 10, "condition": "x > 5" }
+        ]
+    }
+}
+
+// Continue execution
+{
+    "type": "request",
+    "command": "continue",
+    "arguments": { "threadId": 1 }
+}
+```
+
+### Creating a Debug Adapter
+
+```typescript
+import { DebugSession } from '@vscode/debugadapter';
+import { DebugProtocol } from '@vscode/debugprotocol';
+
+export class MyDebugSession extends DebugSession {
+    protected initializeRequest(
+        response: DebugProtocol.InitializeResponse,
+        args: DebugProtocol.InitializeRequestArguments
+    ): void {
+        response.body = {
+            supportsConfigurationDoneRequest: true,
+            supportsEvaluateForHovers: true,
+            supportsStepBack: false,
+            supportsConditionalBreakpoints: true,
+            supportsLogPoints: true
+        };
+        this.sendResponse(response);
+    }
+    
+    protected launchRequest(
+        response: DebugProtocol.LaunchResponse,
+        args: DebugProtocol.LaunchRequestArguments
+    ): void {
+        // Start the debuggee
+        this.sendResponse(response);
+    }
+    
+    protected setBreakPointsRequest(
+        response: DebugProtocol.SetBreakpointsResponse,
+        args: DebugProtocol.SetBreakpointsArguments
+    ): void {
+        const breakpoints = args.breakpoints || [];
+        // Set breakpoints in debuggee
+        
+        response.body = {
+            breakpoints: breakpoints.map(bp => ({
+                verified: true,
+                line: bp.line
+            }))
+        };
+        this.sendResponse(response);
+    }
+}
+```
+
+## Debug Actions and Commands
+
+**Location:** `src/vs/workbench/contrib/debug/browser/debugCommands.ts`
+
+### Common Debug Commands
+
+```typescript
+// Built-in debug commands
+const DEBUG_COMMANDS = {
+    START: 'workbench.action.debug.start',
+    STOP: 'workbench.action.debug.stop',
+    RESTART: 'workbench.action.debug.restart',
+    CONTINUE: 'workbench.action.debug.continue',
+    PAUSE: 'workbench.action.debug.pause',
+    STEP_OVER: 'workbench.action.debug.stepOver',
+    STEP_INTO: 'workbench.action.debug.stepInto',
+    STEP_OUT: 'workbench.action.debug.stepOut',
+    TOGGLE_BREAKPOINT: 'editor.debug.action.toggleBreakpoint'
+};
+
+// Execute debug command
+import { ICommandService } from 'vs/platform/commands/common/commands';
+
+await commandService.executeCommand(DEBUG_COMMANDS.START);
+```
+
+### Registering Debug Actions
+
+```typescript
+import { registerAction2, Action2 } from 'vs/platform/actions/common/actions';
+import { IDebugService } from 'vs/workbench/contrib/debug/common/debug';
+
+class MyDebugAction extends Action2 {
+    constructor() {
+        super({
+            id: 'myExtension.debugAction',
+            title: { value: 'My Debug Action', original: 'My Debug Action' },
+            category: { value: 'Debug', original: 'Debug' },
+            f1: true
+        });
+    }
+    
+    async run(accessor: ServicesAccessor): Promise<void> {
+        const debugService = accessor.get(IDebugService);
+        const session = debugService.getViewModel().focusedSession;
+        
+        if (session) {
+            // Perform debug action
+        }
+    }
+}
+
+registerAction2(MyDebugAction);
+```
+
+## Debug Task Runner
+
+**Location:** `src/vs/workbench/contrib/debug/browser/debugTaskRunner.ts`
+
+```typescript
+// Tasks can run before/after debug sessions
+{
+    "type": "node",
+    "request": "launch",
+    "name": "Launch Program",
+    "preLaunchTask": "build",       // Run before debugging
+    "postDebugTask": "cleanup",     // Run after debugging
+    "program": "${workspaceFolder}/app.js"
+}
+```
+
+## Debug Telemetry
+
+**Location:** `src/vs/workbench/contrib/debug/common/debugTelemetry.ts`
+
+Debug sessions send telemetry for:
+- Debug adapter usage
+- Session duration
+- Breakpoint usage
+- Feature usage (stepping, evaluation, etc.)
+
+## Best Practices
+
+<Warning>
+**Session Lifecycle:** Always properly terminate debug sessions. Lingering sessions can hold onto resources.
+</Warning>
+
+<Tip>
+**Conditional Breakpoints:** Use expressions that can be quickly evaluated. Complex conditions slow down debugging.
+</Tip>
+
+<Note>
+**Debug Adapters:** Test your debug adapter with various configurations. Handle protocol errors gracefully.
+</Note>
+
+## Extension Integration
+
+### Contributing Debug Adapters
+
+```json
+// package.json
+{
+    "contributes": {
+        "debuggers": [
+            {
+                "type": "myDebugger",
+                "label": "My Debugger",
+                "program": "./out/debugAdapter.js",
+                "runtime": "node",
+                "configurationAttributes": {
+                    "launch": {
+                        "required": ["program"],
+                        "properties": {
+                            "program": {
+                                "type": "string",
+                                "description": "Program to debug"
+                            }
+                        }
+                    }
+                },
+                "initialConfigurations": [],
+                "configurationSnippets": []
+            }
+        ]
+    }
+}
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Workbench" href="/components/workbench">
+    Debug viewlet and UI integration
+  </Card>
+  <Card title="Editor" href="/components/editor">
+    Breakpoint decorations
+  </Card>
+  <Card title="Tasks" href="/components/tasks">
+    Pre/post debug tasks
+  </Card>
+</CardGroup>

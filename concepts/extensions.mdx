@@ -1,0 +1,620 @@
+---
+title: 'Extension System'
+description: 'Understanding how VS Code extensions work, the extension host, and the extension API'
+---
+
+## Overview
+
+VS Code's extension system allows developers to add new features, languages, debuggers, and tools without modifying the core application. Extensions run in a **separate process** (the extension host) to ensure that they cannot crash or slow down the main workbench.
+
+<Info>
+The extension architecture is one of VS Code's most powerful features. It provides a stable API while keeping the core lightweight. Extensions can contribute virtually anything: commands, views, language support, debuggers, themes, and more.
+</Info>
+
+## Extension Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│         Main Process (Workbench)            │
+│  - UI Rendering                             │
+│  - Editor                                   │
+│  - Core Services                            │
+└──────────────────┬──────────────────────────┘
+                   │ IPC (JSON-RPC)
+                   │
+┌──────────────────▼──────────────────────────┐
+│      Extension Host Process                 │
+│  - Extension Code Execution                 │
+│  - Language Services                        │
+│  - API Implementation                       │
+│  - Extension Isolation                      │
+└─────────────────────────────────────────────┘
+```
+
+### Why a Separate Process?
+
+<CardGroup cols={2}>
+  <Card title="Stability" icon="shield">
+    Extension crashes don't affect the main UI
+  </Card>
+  <Card title="Performance" icon="gauge-high">
+    Long-running operations won't freeze the editor
+  </Card>
+  <Card title="Security" icon="lock">
+    Extensions have limited access to system resources
+  </Card>
+  <Card title="Flexibility" icon="puzzle-piece">
+    Multiple extension hosts can run simultaneously
+  </Card>
+</CardGroup>
+
+## Extension Structure
+
+Every extension has a `package.json` manifest that defines its capabilities:
+
+```json
+// Location: extensions/typescript-language-features/package.json (example)
+{
+  "name": "typescript-language-features",
+  "displayName": "TypeScript Language Features",
+  "version": "1.0.0",
+  "publisher": "vscode",
+  "engines": {
+    "vscode": "^1.30.0"
+  },
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:javascript",
+    "onCommand:typescript.reloadProjects"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "typescript",
+      "extensions": [".ts"],
+      "aliases": ["TypeScript"]
+    }],
+    "commands": [{
+      "command": "typescript.reloadProjects",
+      "title": "Reload Projects"
+    }],
+    "configuration": {
+      "properties": {
+        "typescript.suggest.enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}
+```
+
+### Key Manifest Fields
+
+<Steps>
+  <Step title="Activation Events">
+    Define when the extension should be activated:
+    - `onLanguage:typescript` - When a TypeScript file is opened
+    - `onCommand:myCommand` - When a command is invoked
+    - `onView:myView` - When a view is opened
+    - `*` - On startup (avoid if possible)
+  </Step>
+  
+  <Step title="Main Entry Point">
+    The JavaScript file that exports `activate()` and `deactivate()` functions
+  </Step>
+  
+  <Step title="Contribution Points">
+    Declarative ways to extend VS Code (commands, views, languages, themes, etc.)
+  </Step>
+  
+  <Step title="Dependencies">
+    Extension dependencies and API version requirements
+  </Step>
+</Steps>
+
+## Extension Host
+
+The extension host is where extension code actually runs:
+
+```typescript
+// Location: src/vs/workbench/api/common/extensionHostMain.ts
+export class ExtensionHostMain {
+  private readonly extensionService: IExtHostExtensionService;
+  private readonly rpcProtocol: RPCProtocol;
+  
+  async start(): Promise<void> {
+    // Initialize extension services
+    await this.initializeExtensionServices();
+    
+    // Load and activate extensions
+    await this.extensionService.initialize();
+    
+    // Start listening for RPC calls
+    this.rpcProtocol.listen();
+  }
+}
+```
+
+### Extension Host Types
+
+VS Code supports multiple extension host types:
+
+```typescript
+// Node.js Extension Host (most common)
+// Location: src/vs/workbench/api/node/extensionHostProcess.ts
+// - Full Node.js API access
+// - File system access
+// - Can spawn processes
+
+// Web Worker Extension Host
+// Location: src/vs/workbench/api/worker/extensionHostWorker.ts
+// - Runs in web worker
+// - Limited API surface
+// - For browser-based VS Code
+```
+
+## Extension Activation
+
+When an activation event is triggered:
+
+<Steps>
+  <Step title="Load Extension Module">
+    The extension host loads the extension's main file
+    ```typescript
+    const extensionModule = require(extensionPath);
+    ```
+  </Step>
+  
+  <Step title="Call activate()">
+    The `activate()` function is called with the extension context
+    ```typescript
+    export function activate(context: vscode.ExtensionContext) {
+      // Register commands, providers, etc.
+      context.subscriptions.push(
+        vscode.commands.registerCommand('myCommand', () => {
+          vscode.window.showInformationMessage('Hello!');
+        })
+      );
+    }
+    ```
+  </Step>
+  
+  <Step title="Extension Runs">
+    The extension is now active and can respond to events
+  </Step>
+  
+  <Step title="Deactivation">
+    When VS Code closes, `deactivate()` is called for cleanup
+    ```typescript
+    export function deactivate() {
+      // Clean up resources
+    }
+    ```
+  </Step>
+</Steps>
+
+## Extension API
+
+The VS Code API is provided to extensions through the `vscode` namespace:
+
+```typescript
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext) {
+  // Commands
+  vscode.commands.registerCommand('extension.sayHello', () => {
+    vscode.window.showInformationMessage('Hello from extension!');
+  });
+  
+  // Editor interaction
+  const editor = vscode.window.activeTextEditor;
+  if (editor) {
+    const document = editor.document;
+    const selection = editor.selection;
+    const text = document.getText(selection);
+  }
+  
+  // Workspace
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  vscode.workspace.onDidChangeTextDocument(event => {
+    console.log('Document changed:', event.document.uri);
+  });
+  
+  // Language features
+  vscode.languages.registerCompletionItemProvider('javascript', {
+    provideCompletionItems(document, position) {
+      return [
+        new vscode.CompletionItem('myCompletion')
+      ];
+    }
+  });
+}
+```
+
+### API Namespaces
+
+<CardGroup cols={2}>
+  <Card title="vscode.commands" icon="terminal">
+    Register and execute commands
+  </Card>
+  <Card title="vscode.window" icon="window">
+    Show messages, input boxes, quick picks
+  </Card>
+  <Card title="vscode.workspace" icon="folder">
+    Access workspace files and configuration
+  </Card>
+  <Card title="vscode.languages" icon="code">
+    Register language features (completion, hover, etc.)
+  </Card>
+  <Card title="vscode.debug" icon="bug">
+    Debug adapter integration
+  </Card>
+  <Card title="vscode.extensions" icon="puzzle-piece">
+    Access other extensions
+  </Card>
+  <Card title="vscode.env" icon="gear">
+    Environment information
+  </Card>
+  <Card title="vscode.tasks" icon="list-check">
+    Task provider integration
+  </Card>
+</CardGroup>
+
+## RPC Protocol
+
+Communication between the workbench and extension host uses a **JSON-RPC** protocol:
+
+```typescript
+// Location: src/vs/workbench/services/extensions/common/rpcProtocol.ts
+export class RPCProtocol {
+  // Call from workbench to extension host
+  getProxy<T>(identifier: ProxyIdentifier<T>): T;
+  
+  // Register handler in extension host
+  set<T>(identifier: ProxyIdentifier<T>, value: T): void;
+}
+```
+
+### Example: Command Execution
+
+```typescript
+// 1. Extension registers command (Extension Host)
+commands.registerCommand('myCommand', () => {
+  console.log('Command executed!');
+});
+
+// 2. User invokes command (Workbench)
+// -> RPC call to extension host
+
+// 3. Extension host executes handler
+// -> Returns result via RPC
+
+// 4. Workbench receives result
+```
+
+<Info>
+The RPC protocol is **bidirectional**. The workbench can call into extensions, and extensions can call back into workbench services. This allows extensions to integrate deeply with the editor while maintaining process isolation.
+</Info>
+
+## Contribution Points
+
+Extensions declare contributions in `package.json`:
+
+### Commands
+
+```json
+"contributes": {
+  "commands": [{
+    "command": "extension.helloWorld",
+    "title": "Hello World",
+    "category": "Sample",
+    "icon": "$(beaker)"
+  }]
+}
+```
+
+### Views
+
+```json
+"contributes": {
+  "views": {
+    "explorer": [{
+      "id": "myCustomView",
+      "name": "My View",
+      "when": "myContext"
+    }]
+  },
+  "viewsContainers": {
+    "activitybar": [{
+      "id": "myContainer",
+      "title": "My Container",
+      "icon": "resources/icon.svg"
+    }]
+  }
+}
+```
+
+### Languages
+
+```json
+"contributes": {
+  "languages": [{
+    "id": "mylang",
+    "extensions": [".ml"],
+    "aliases": ["MyLang"],
+    "configuration": "./language-configuration.json"
+  }],
+  "grammars": [{
+    "language": "mylang",
+    "scopeName": "source.mylang",
+    "path": "./syntaxes/mylang.tmLanguage.json"
+  }]
+}
+```
+
+### Keybindings
+
+```json
+"contributes": {
+  "keybindings": [{
+    "command": "extension.helloWorld",
+    "key": "ctrl+shift+h",
+    "mac": "cmd+shift+h",
+    "when": "editorTextFocus"
+  }]
+}
+```
+
+### Configuration
+
+```json
+"contributes": {
+  "configuration": {
+    "title": "My Extension",
+    "properties": {
+      "myExtension.enable": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable My Extension"
+      },
+      "myExtension.timeout": {
+        "type": "number",
+        "default": 5000,
+        "description": "Timeout in milliseconds"
+      }
+    }
+  }
+}
+```
+
+## Extension Context
+
+The extension context provides utilities and information:
+
+```typescript
+export interface ExtensionContext {
+  // Paths
+  extensionPath: string;
+  extensionUri: Uri;
+  storagePath: string | undefined;
+  globalStoragePath: string;
+  logPath: string;
+  
+  // State
+  globalState: Memento;
+  workspaceState: Memento;
+  secrets: SecretStorage;
+  
+  // Lifetime
+  subscriptions: { dispose(): any }[];
+  
+  // Utilities
+  asAbsolutePath(relativePath: string): string;
+  environmentVariableCollection: EnvironmentVariableCollection;
+}
+```
+
+### Storing State
+
+```typescript
+// Global state (across workspaces)
+await context.globalState.update('myKey', 'myValue');
+const value = context.globalState.get('myKey');
+
+// Workspace state (per workspace)
+await context.workspaceState.update('myKey', 'myValue');
+
+// Secrets (encrypted storage)
+await context.secrets.store('apiKey', 'secret123');
+const apiKey = await context.secrets.get('apiKey');
+```
+
+## Tree Views
+
+Extensions can create custom tree views:
+
+```typescript
+// Define tree data provider
+class MyTreeDataProvider implements vscode.TreeDataProvider<MyTreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<MyTreeItem | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
+  }
+  
+  getTreeItem(element: MyTreeItem): vscode.TreeItem {
+    return element;
+  }
+  
+  getChildren(element?: MyTreeItem): MyTreeItem[] {
+    if (!element) {
+      return this.getRootElements();
+    }
+    return element.children;
+  }
+}
+
+// Register tree view
+const treeDataProvider = new MyTreeDataProvider();
+vscode.window.registerTreeDataProvider('myView', treeDataProvider);
+
+// Or with createTreeView for more control
+const treeView = vscode.window.createTreeView('myView', {
+  treeDataProvider,
+  showCollapseAll: true
+});
+```
+
+## Webviews
+
+Extensions can create custom webview panels:
+
+```typescript
+const panel = vscode.window.createWebviewPanel(
+  'myWebview',
+  'My Webview',
+  vscode.ViewColumn.One,
+  {
+    enableScripts: true,
+    retainContextWhenHidden: true
+  }
+);
+
+panel.webview.html = `
+  <!DOCTYPE html>
+  <html>
+  <body>
+    <h1>Hello from Webview!</h1>
+    <button onclick="sendMessage()">Click me</button>
+    <script>
+      const vscode = acquireVsCodeApi();
+      function sendMessage() {
+        vscode.postMessage({ command: 'alert', text: 'Hello!' });
+      }
+    </script>
+  </body>
+  </html>
+`;
+
+// Receive messages from webview
+panel.webview.onDidReceiveMessage(
+  message => {
+    if (message.command === 'alert') {
+      vscode.window.showInformationMessage(message.text);
+    }
+  }
+);
+```
+
+## Language Server Protocol
+
+For advanced language features, extensions often use the Language Server Protocol:
+
+```typescript
+import { LanguageClient, TransportKind } from 'vscode-languageclient/node';
+
+const serverModule = context.asAbsolutePath('out/server.js');
+
+const client = new LanguageClient(
+  'myLanguageServer',
+  'My Language Server',
+  {
+    run: { module: serverModule, transport: TransportKind.ipc },
+    debug: { module: serverModule, transport: TransportKind.ipc }
+  },
+  {
+    documentSelector: [{ scheme: 'file', language: 'mylang' }]
+  }
+);
+
+client.start();
+```
+
+<Tip>
+The Language Server Protocol (LSP) separates language features from the editor. This allows the same language server to be used in multiple editors, and language servers can be written in any language.
+</Tip>
+
+## Extension Development
+
+### Setting Up
+
+```bash
+# Install Yeoman and VS Code Extension generator
+npm install -g yo generator-code
+
+# Generate extension
+yo code
+
+# Options:
+# - New Extension (TypeScript)
+# - New Extension (JavaScript)
+# - New Color Theme
+# - New Language Support
+# - New Code Snippets
+```
+
+### Debugging Extensions
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"]
+    }
+  ]
+}
+```
+
+### Testing Extensions
+
+```typescript
+import * as assert from 'assert';
+import * as vscode from 'vscode';
+
+suite('Extension Test Suite', () => {
+  test('Sample test', async () => {
+    const ext = vscode.extensions.getExtension('publisher.extensionId');
+    assert.ok(ext);
+    await ext?.activate();
+    
+    // Test extension functionality
+  });
+});
+```
+
+## Key Implementation Files
+
+| File | Description |
+|------|-------------|
+| `workbench/api/common/extensionHostMain.ts` | Extension host entry point |
+| `workbench/services/extensions/` | Extension management services |
+| `workbench/api/common/extHost.protocol.ts` | API protocol definitions |
+| `workbench/services/extensions/common/rpcProtocol.ts` | RPC communication |
+| `workbench/api/node/extensionHostProcess.ts` | Node.js extension host |
+| `workbench/api/browser/extensionHost.contribution.ts` | Extension host setup |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Extension API" href="/api/overview" icon="book">
+    Full API reference documentation
+  </Card>
+  <Card title="Extension Guides" href="/api/guides/command-palette" icon="graduation-cap">
+    Step-by-step extension tutorials
+  </Card>
+  <Card title="Services" href="/concepts/services" icon="gears">
+    Learn about the service architecture
+  </Card>
+  <Card title="Publishing" href="/api/publishing/overview" icon="upload">
+    Publish extensions to the marketplace
+  </Card>
+</CardGroup>

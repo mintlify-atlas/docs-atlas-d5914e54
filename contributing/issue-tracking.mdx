@@ -1,0 +1,479 @@
+---
+title: Issue Tracking & Bug Reporting
+description: Learn how to effectively report bugs, request features, and track issues in Visual Studio Code
+icon: bug
+---
+
+This guide explains how to report issues effectively, ensuring your reports are actionable and help improve VS Code.
+
+## Before Reporting an Issue
+
+<Steps>
+  <Step title="Identify the Right Repository">
+    The VS Code project is distributed across multiple repositories. File your issue in the correct location:
+    
+    - **[microsoft/vscode](https://github.com/microsoft/vscode)**: Core VS Code product issues
+    - **Extension repos**: Issues specific to built-in extensions
+    - **Extension marketplace**: Third-party extension issues
+    
+    <Tip>
+    Check the [Related Projects wiki](https://github.com/microsoft/vscode/wiki/Related-Projects) if you're unsure which repository is correct.
+    </Tip>
+  </Step>
+  
+  <Step title="Test with Extensions Disabled">
+    Many issues are caused by extensions. Test if the issue persists with all extensions disabled:
+    
+    ```bash
+    code --disable-extensions
+    ```
+    
+    If the issue disappears, it's likely caused by an extension. Find which extension and report the issue to that extension's repository.
+  </Step>
+  
+  <Step title="Search for Existing Issues">
+    Before creating a new issue, search [open issues](https://github.com/microsoft/vscode/issues) to see if it's already been reported:
+    
+    - Search using relevant keywords
+    - Check [most popular feature requests](https://github.com/microsoft/vscode/issues?q=is%3Aopen+is%3Aissue+label%3Afeature-request+sort%3Areactions-%2B1-desc)
+    - Look at recently closed issues too
+    
+    If you find an existing issue:
+    - Add a 👍 reaction to show support
+    - Add relevant comments with new information
+    - Don't just comment "+1"
+  </Step>
+</Steps>
+
+<Warning>
+Do NOT add your issue as a comment to an existing issue unless it's for the identical input. Many issues look similar but have different causes.
+</Warning>
+
+## Using the Built-in Issue Reporter
+
+VS Code includes a built-in tool for reporting issues that automatically includes helpful information:
+
+<Steps>
+  <Step title="Open the Issue Reporter">
+    From VS Code:
+    - Go to **Help** > **Report Issue**
+    - Or use the Command Palette: `Help: Report Issue`
+  </Step>
+  
+  <Step title="Choose Issue Type">
+    Select the type of issue:
+    - **Bug Report**: Something isn't working correctly
+    - **Feature Request**: Suggest a new feature or enhancement
+    - **Performance Issue**: VS Code is slow or unresponsive
+  </Step>
+  
+  <Step title="Fill in Details">
+    The tool will prompt you for:
+    - A clear title
+    - Detailed description
+    - Steps to reproduce
+    - Expected vs actual behavior
+    
+    It automatically includes:
+    - VS Code version
+    - Operating system
+    - Installed extensions
+    - System information
+  </Step>
+</Steps>
+
+<Tip>
+The built-in reporter searches for similar issues before submission, helping you avoid duplicates.
+</Tip>
+
+## Writing Effective Bug Reports
+
+### Required Information
+
+A good bug report includes:
+
+<CardGroup cols={2}>
+  <Card title="Version Info" icon="tag">
+    - VS Code version
+    - Operating system and version
+    - Relevant extension versions
+  </Card>
+  
+  <Card title="Reproducible Steps" icon="list-ol">
+    - Clear steps to reproduce (1... 2... 3...)
+    - Minimal reproduction case
+    - Sample code or files
+  </Card>
+  
+  <Card title="Expected vs Actual" icon="code-compare">
+    - What you expected to happen
+    - What actually happened
+    - Error messages or logs
+  </Card>
+  
+  <Card title="Visual Evidence" icon="image">
+    - Screenshots or GIFs
+    - Video recordings
+    - Developer Tools Console logs
+  </Card>
+</CardGroup>
+
+### Bug Report Template
+
+Here's an example of a well-structured bug report:
+
+```markdown
+**VS Code Version**: 1.75.0
+**OS Version**: Windows 11 22H2
+**Extensions**: None (reproduced with --disable-extensions)
+
+**Steps to Reproduce**:
+1. Open a new TypeScript file
+2. Type: `const x = 10;`
+3. Press Ctrl+Space for autocomplete
+4. Notice that autocomplete doesn't appear
+
+**Expected Behavior**:
+Autocomplete suggestions should appear
+
+**Actual Behavior**:
+No autocomplete suggestions appear. Console shows error:
+`[Extension Host] TypeError: Cannot read property 'length' of undefined`
+
+**Screenshots**:
+[Attach screenshot showing the issue]
+
+**Developer Tools Console**:
+```
+[Extension Host] TypeError: Cannot read property 'length' of undefined
+    at CompletionProvider.provideCompletionItems (extensions.js:123)
+```
+
+**Additional Context**:
+- Issue started after updating to version 1.75.0
+- Doesn't happen in version 1.74.3
+```
+
+### Single Issue Per Report
+
+<Warning>
+File a single issue per problem. Do not enumerate multiple bugs or feature requests in the same issue.
+</Warning>
+
+```markdown
+# Bad - Multiple issues
+"Editor is slow AND terminal doesn't work AND sidebar is glitchy"
+
+# Good - Single focused issue
+"Editor is slow when editing large TypeScript files"
+```
+
+## Writing Feature Requests
+
+### Feature Request Template
+
+A good feature request includes:
+
+```markdown
+**Summary**:
+Brief one-line description of the feature
+
+**Motivation**:
+Why is this feature needed? What problem does it solve?
+
+**Proposed Solution**:
+How should this feature work? What should the UI look like?
+
+**Alternatives Considered**:
+What other solutions did you consider?
+
+**Additional Context**:
+- Examples from other tools
+- Use cases
+- Related issues
+```
+
+### Example Feature Request
+
+```markdown
+## Summary
+Add support for custom editor rulers at multiple column positions
+
+## Motivation
+Different coding standards require rulers at different positions
+(e.g., 80 and 120 characters). Currently only one ruler position
+is supported.
+
+## Proposed Solution
+Extend the `editor.rulers` setting to accept an array of numbers:
+
+```json
+{
+  "editor.rulers": [80, 120]
+}
+```
+
+Each ruler would be displayed in the editor with a subtle vertical line.
+
+## Alternatives Considered
+- Using extensions: No extensions currently support this fully
+- Multiple editor windows: Not practical for single-file editing
+
+## Additional Context
+- Similar feature in Sublime Text
+- Related to issue #12345
+```
+
+<Tip>
+Feature requests with clear use cases and well-thought-out proposals are more likely to be implemented.
+</Tip>
+
+## Providing Additional Information
+
+### Code Snippets
+
+When including code, use proper formatting:
+
+```markdown
+```typescript
+interface MyInterface {
+  property: string;
+}
+```
+```
+
+<Warning>
+Do NOT include code snippets as images or GIFs. Developers need to copy and paste the code.
+</Warning>
+
+### Sample Projects
+
+For complex issues, provide a minimal reproduction:
+
+```markdown
+**Reproduction Repository**:
+https://github.com/username/vscode-issue-12345-repro
+
+**Steps to use**:
+1. Clone the repository
+2. Run `npm install`
+3. Open in VS Code
+4. Open `src/index.ts`
+5. See the error
+```
+
+### Developer Tools Console
+
+Include errors from the Developer Tools Console:
+
+<Steps>
+  <Step title="Open Developer Tools">
+    From VS Code:
+    - Go to **Help** > **Toggle Developer Tools**
+    - Or press `Ctrl+Shift+I` (Windows/Linux) or `Cmd+Alt+I` (macOS)
+  </Step>
+  
+  <Step title="Check for Errors">
+    Look in the **Console** tab for:
+    - Red error messages
+    - Warning messages
+    - Stack traces
+  </Step>
+  
+  <Step title="Copy Error Details">
+    Copy the complete error message including:
+    - Error type
+    - Error message
+    - Stack trace
+    - File paths
+  </Step>
+</Steps>
+
+### System Information
+
+Provide relevant system information:
+
+```markdown
+**System Info**:
+- OS: Windows 11 22H2 (Build 22621.1105)
+- VS Code: 1.75.0 (user setup)
+- Electron: 19.1.8
+- Chrome: 108.0.5359.215
+- Node.js: 16.14.2
+- Architecture: x64
+```
+
+The built-in issue reporter includes this automatically.
+
+## Issue Lifecycle
+
+### Issue Workflow
+
+Once submitted, your issue goes through this workflow:
+
+<Steps>
+  <Step title="Initial Triage">
+    A maintainer will:
+    - Verify the issue is in the right repository
+    - Check if it's a duplicate
+    - Assign appropriate labels
+    - Request more information if needed
+  </Step>
+  
+  <Step title="Investigation">
+    The team will:
+    - Attempt to reproduce the issue
+    - Investigate the root cause
+    - Determine priority and severity
+    - Assign to a milestone (if accepted)
+  </Step>
+  
+  <Step title="Resolution">
+    The issue is either:
+    - **Fixed**: A pull request resolves the issue
+    - **Declined**: Issue is out of scope or won't be fixed
+    - **Needs More Info**: Waiting for additional details
+    - **Duplicate**: Already reported elsewhere
+  </Step>
+</Steps>
+
+### Common Labels
+
+Issues are labeled to help organize and prioritize:
+
+| Label | Meaning |
+|-------|--------|
+| `bug` | Something isn't working |
+| `feature-request` | New feature or enhancement |
+| `info-needed` | More information required |
+| `duplicate` | Already reported |
+| `upstream` | Issue in a dependency |
+| `verification-needed` | Needs testing in release |
+| `help wanted` | Good for community contributions |
+
+## Automated Issue Management
+
+VS Code uses GitHub Actions for automatic issue management:
+
+### Auto-Close Rules
+
+<Warning>
+Issues marked `info-needed` will be automatically closed after 7 days if there's no response.
+</Warning>
+
+### Auto-Lock Rules
+
+Issues are automatically locked 45 days after being closed to keep discussions focused on active issues.
+
+### Feature Request Pipeline
+
+Feature requests follow a specific pipeline:
+
+1. **New**: Recently submitted
+2. **Triaged**: Reviewed by team
+3. **Backlog**: Accepted but not scheduled
+4. **Candidate**: Under consideration for next release
+5. **Planned**: Scheduled for implementation
+
+See the [feature request pipeline](https://github.com/microsoft/vscode/wiki/Issues-Triaging#managing-feature-requests) for details.
+
+## Following Your Issue
+
+### Stay Engaged
+
+<Tip>
+Subscribe to email notifications for your issue to stay updated on progress and respond to questions promptly.
+</Tip>
+
+### Respond to Questions
+
+Maintainers may ask for:
+- Additional information
+- Clarification on steps to reproduce
+- Testing with new versions
+- Feedback on proposed solutions
+
+Respond promptly to keep the issue moving forward.
+
+### Test Fixes
+
+When a fix is proposed:
+1. Test the fix in the [VS Code Insiders](https://code.visualstudio.com/insiders/) build
+2. Verify the issue is resolved
+3. Report any remaining problems
+4. Thank the contributors!
+
+## Final Checklist
+
+Before submitting your issue:
+
+- [ ] Searched for existing issues
+- [ ] Tested with extensions disabled
+- [ ] Using the latest VS Code version
+- [ ] Simplified the reproduction case
+- [ ] Included all required information:
+  - [ ] Version information
+  - [ ] Reproducible steps
+  - [ ] Expected vs actual behavior
+  - [ ] Error messages or logs
+  - [ ] Screenshots or videos
+- [ ] Filed in the correct repository
+- [ ] One issue per report
+- [ ] Clear, descriptive title
+
+## Common Mistakes to Avoid
+
+<Warning>
+**Don't:**
+- Submit duplicate issues without searching first
+- Report extension issues in the core repository
+- Include multiple unrelated problems in one issue
+- Use vague titles like "Editor doesn't work"
+- Skip reproduction steps
+- Post sensitive information (passwords, tokens, etc.)
+- Expect immediate responses or fixes
+</Warning>
+
+<Tip>
+**Do:**
+- Search thoroughly before reporting
+- Test with extensions disabled
+- Provide clear reproduction steps
+- Include all relevant information
+- Be responsive to questions
+- Be patient and respectful
+- React with 👍 to existing issues you care about
+</Tip>
+
+## Getting Help
+
+If you're unsure whether something is a bug or need help:
+
+<CardGroup cols={2}>
+  <Card title="Stack Overflow" icon="stack-overflow" href="https://stackoverflow.com/questions/tagged/visual-studio-code">
+    Ask questions and get help from the community
+  </Card>
+  
+  <Card title="GitHub Discussions" icon="comments" href="https://github.com/microsoft/vscode/discussions">
+    Discuss features and ask questions
+  </Card>
+  
+  <Card title="Feedback Channels" icon="bullhorn" href="https://github.com/microsoft/vscode/wiki/Feedback-Channels">
+    Learn about all available feedback channels
+  </Card>
+  
+  <Card title="Issue Tracking Wiki" icon="list-check" href="https://github.com/microsoft/vscode/wiki/Issue-Tracking">
+    Learn how the team tracks and manages issues
+  </Card>
+</CardGroup>
+
+## Thank You
+
+High-quality bug reports and feature requests are incredibly valuable to the project. Taking the time to report issues properly helps the team:
+
+- Identify and fix bugs faster
+- Understand user needs better
+- Prioritize features effectively
+- Build a better product for everyone
+
+Thank you for helping improve Visual Studio Code!

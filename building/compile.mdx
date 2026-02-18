@@ -1,0 +1,449 @@
+---
+title: "Compiling VS Code"
+description: "Learn how to compile Visual Studio Code from source and start development."
+---
+
+## Quick Start
+
+Once you've [set up your development environment](/building/setup), compile VS Code with a single command:
+
+<CodeGroup>
+  ```bash macOS/Linux
+  npm run watch
+  ```
+
+  ```cmd Windows
+  npm run watch
+  ```
+</CodeGroup>
+
+This starts incremental compilation in watch mode. Changes to TypeScript files are automatically recompiled.
+
+## Compilation Modes
+
+### Watch Mode (Development)
+
+The recommended way to develop VS Code is with continuous watch mode:
+
+```bash
+npm run watch
+```
+
+This runs three parallel watch tasks:
+- **watch-client-transpile**: Transpiles TypeScript files
+- **watch-client**: Compiles the main VS Code client
+- **watch-extensions**: Compiles built-in extensions
+
+<Tip>Watch mode is the fastest way to develop. It incrementally compiles only changed files.</Tip>
+
+### Individual Watch Tasks
+
+You can run individual watch processes separately:
+
+<Tabs>
+  <Tab title="Client Code">
+    Watch only the VS Code client:
+
+    ```bash
+    npm run watch-client
+    ```
+
+    Compiles changes in `src/vs/` directory.
+  </Tab>
+
+  <Tab title="Extensions">
+    Watch only built-in extensions:
+
+    ```bash
+    npm run watch-extensions
+    ```
+
+    Compiles changes in `extensions/` directory.
+  </Tab>
+
+  <Tab title="Web">
+    Watch for web version:
+
+    ```bash
+    npm run watch-web
+    ```
+
+    Compiles the browser-based version of VS Code.
+  </Tab>
+
+  <Tab title="CLI">
+    Watch the VS Code CLI:
+
+    ```bash
+    npm run watch-cli
+    ```
+
+    Compiles the command-line interface.
+  </Tab>
+</Tabs>
+
+### Full Compilation
+
+For a complete build without watch mode:
+
+```bash
+npm run compile
+```
+
+<Note>This runs the full gulp compilation pipeline. Use this for CI/CD or when you need a clean build.</Note>
+
+## Build Variants
+
+### Development Build
+
+The default development build is optimized for fast compilation:
+
+```bash
+# Standard development compile
+npm run compile
+
+# With watch mode
+npm run watch
+```
+
+Compiled output is placed in the `out/` directory.
+
+### Production Build
+
+For a production-ready build with optimizations:
+
+```bash
+# Full production build with minification
+npm run compile-build
+
+# Minify VS Code desktop
+npm run minify-vscode
+
+# Minify VS Code remote (server)
+npm run minify-vscode-reh
+
+# Minify VS Code web
+npm run minify-vscode-reh-web
+```
+
+<Warning>Production builds take significantly longer due to minification and optimization.</Warning>
+
+### Platform-Specific Builds
+
+<Tabs>
+  <Tab title="Desktop (Electron)">
+    Build for Electron desktop:
+
+    ```bash
+    npm run compile
+    ```
+
+    This is the default build target.
+  </Tab>
+
+  <Tab title="Web">
+    Build for browser:
+
+    ```bash
+    npm run compile-web
+    ```
+
+    Creates a web-optimized build for running in browsers.
+  </Tab>
+
+  <Tab title="CLI">
+    Build the command-line interface:
+
+    ```bash
+    npm run compile-cli
+    ```
+
+    Compiles the standalone CLI tool.
+  </Tab>
+</Tabs>
+
+## Running VS Code
+
+### Launch from Source
+
+After compilation, launch VS Code in development mode:
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/code.sh
+  ```
+
+  ```cmd Windows
+  .\scripts\code.bat
+  ```
+</CodeGroup>
+
+This launches VS Code with:
+- `NODE_ENV=development`
+- `VSCODE_DEV=1` (enables development features)
+- Source maps enabled
+- Electron logging enabled
+
+### Launch Web Version
+
+Run VS Code in the browser:
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/code-web.sh
+  ```
+
+  ```cmd Windows
+  .\scripts\code-web.bat
+  ```
+</CodeGroup>
+
+Opens VS Code at `http://localhost:8080`.
+
+### Launch with Server
+
+Run as a remote server:
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/code-server.sh
+  ```
+
+  ```cmd Windows
+  .\scripts\code-server.bat
+  ```
+</CodeGroup>
+
+## Managing Watch Processes
+
+### Using Deemon
+
+The `deemon` tool helps manage long-running watch processes:
+
+<Tabs>
+  <Tab title="Start">
+    Start watch as a daemon:
+
+    ```bash
+    npm run watchd
+    ```
+
+    Runs in the background, detached from terminal.
+  </Tab>
+
+  <Tab title="Stop">
+    Kill the watch daemon:
+
+    ```bash
+    npm run kill-watchd
+    ```
+  </Tab>
+
+  <Tab title="Restart">
+    Restart the watch daemon:
+
+    ```bash
+    npm run restart-watchd
+    ```
+  </Tab>
+</Tabs>
+
+<Info>Daemon mode is useful for keeping watch processes running across terminal sessions.</Info>
+
+## Compilation Output
+
+### Directory Structure
+
+Compilation generates these directories:
+
+```
+vscode/
+├── out/                    # Compiled JavaScript output
+│   ├── vs/                 # Core VS Code code
+│   ├── bootstrap.js        # Entry point
+│   └── cli.js             # CLI entry point
+├── .build/
+│   ├── electron/          # Electron binaries
+│   ├── extensions/        # Compiled extensions
+│   └── node_modules/      # Native dependencies
+└── extensions/            # Built-in extensions
+    └── */out/            # Each extension's output
+```
+
+### Source Maps
+
+Development builds include source maps for debugging:
+
+- TypeScript maps: `*.js.map`
+- Located alongside compiled `.js` files in `out/`
+- Automatically loaded by Electron and Chrome DevTools
+
+## Validation
+
+### Check Compilation Errors
+
+After making changes, validate your TypeScript:
+
+```bash
+# Check for type errors
+npm run compile-check-ts-native
+
+# Validate architecture layers
+npm run valid-layers-check
+
+# Check cyclic dependencies
+npm run check-cyclic-dependencies
+```
+
+<Warning>Always fix compilation errors before running tests. Never run tests with compilation errors present.</Warning>
+
+### Monaco Editor Type Check
+
+Validate Monaco editor types separately:
+
+```bash
+npm run monaco-compile-check
+```
+
+### Security Type Check
+
+Run security-focused type checking:
+
+```bash
+npm run tsec-compile-check
+```
+
+## Incremental Builds
+
+### How Watch Mode Works
+
+The watch system uses TypeScript's incremental compilation:
+
+1. Initial compilation builds all files
+2. File changes trigger partial recompilation
+3. Only affected files and dependencies are recompiled
+4. Changes are reflected in milliseconds
+
+### Optimizing Build Performance
+
+<AccordionGroup>
+  <Accordion title="Use Watch Mode">
+    Always use watch mode during active development. It's 10-100x faster than full rebuilds.
+
+    ```bash
+    npm run watch
+    ```
+  </Accordion>
+
+  <Accordion title="Increase Memory">
+    Allocate more memory for large compilation tasks:
+
+    ```bash
+    export NODE_OPTIONS="--max-old-space-size=8192"
+    npm run compile
+    ```
+  </Accordion>
+
+  <Accordion title="Close Unused Programs">
+    Free up system resources:
+    - Close other Electron apps
+    - Disable antivirus scanning of `node_modules/` and `out/`
+    - Use SSD storage for faster I/O
+  </Accordion>
+
+  <Accordion title="Target Specific Components">
+    Compile only what you're working on:
+
+    ```bash
+    # Only client code
+    npm run watch-client
+
+    # Only extensions
+    npm run watch-extensions
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Compilation Hangs">
+    **Symptom**: Watch mode starts but never completes
+
+    **Solutions**:
+    1. Kill the process and restart:
+       ```bash
+       npm run kill-watchd
+       npm run watchd
+       ```
+
+    2. Clear compiled output:
+       ```bash
+       rm -rf out/
+       npm run watch
+       ```
+
+    3. Reinstall dependencies:
+       ```bash
+       rm -rf node_modules/
+       npm install
+       ```
+  </Accordion>
+
+  <Accordion title="Type Errors After Git Pull">
+    **Symptom**: New type errors after pulling latest changes
+
+    **Solution**: Reinstall dependencies and rebuild:
+
+    ```bash
+    npm install
+    npm run compile
+    ```
+  </Accordion>
+
+  <Accordion title="Out of Memory">
+    **Error**: `JavaScript heap out of memory`
+
+    **Solution**: Increase Node.js heap size:
+
+    ```bash
+    export NODE_OPTIONS="--max-old-space-size=8192"
+    npm run compile
+    ```
+  </Accordion>
+
+  <Accordion title="Module Not Found">
+    **Error**: `Cannot find module 'xyz'`
+
+    **Solutions**:
+    1. Ensure dependencies are installed:
+       ```bash
+       npm install
+       ```
+
+    2. Download built-in extensions:
+       ```bash
+       npm run download-builtin-extensions
+       ```
+  </Accordion>
+
+  <Accordion title="Slow Compilation on Windows">
+    **Symptom**: Compilation is very slow on Windows
+
+    **Solutions**:
+    1. Exclude `node_modules/` and `out/` from Windows Defender
+    2. Use faster disk (SSD vs HDD)
+    3. Close Docker Desktop and other resource-intensive apps
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Debugging" icon="bug" href="/building/debugging">
+    Learn how to debug compiled VS Code
+  </Card>
+  <Card title="Running Tests" icon="vial" href="/building/tests">
+    Run the test suite to verify your changes
+  </Card>
+</CardGroup>

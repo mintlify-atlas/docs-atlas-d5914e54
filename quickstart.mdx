@@ -1,80 +1,467 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quickstart Guide"
+description: "Build and run Visual Studio Code from source in under 10 minutes"
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
+Before you begin, ensure you have the following installed:
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+  <Accordion icon="node-js" title="Node.js">
+    **Version Required:** Node.js 20.x or later
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+    Download from [nodejs.org](https://nodejs.org). Verify installation:
+    
+    ```bash
+    node --version  # Should output v20.x.x or higher
+    npm --version   # Should output 10.x.x or higher
+    ```
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+  
+  <Accordion icon="git-alt" title="Git">
+    **Version Required:** Git 2.x or later
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+    Download from [git-scm.com](https://git-scm.com). Verify installation:
+    
+    ```bash
+    git --version  # Should output 2.x.x or higher
+    ```
+  </Accordion>
+  
+  <Accordion icon="code" title="C/C++ Compiler Toolchain">
+    **Platform-specific requirements:**
+    
+    - **Windows:** Visual Studio 2022 with "Desktop development with C++" workload
+    - **macOS:** Xcode Command Line Tools (`xcode-select --install`)
+    - **Linux:** GCC/G++ 9.x or later, make, and Python 3
+    
+    ```bash
+    # Linux verification
+    gcc --version   # Should output 9.x.x or higher
+    g++ --version   # Should output 9.x.x or higher
+    python3 --version  # Should output 3.x.x
+    ```
+  </Accordion>
+  
+  <Accordion icon="memory" title="System Requirements">
+    **Recommended specifications:**
+    
+    - **RAM:** 8 GB minimum (16 GB recommended)
+    - **Disk Space:** 15 GB free space
+    - **CPU:** 4 cores minimum (8 cores recommended for faster builds)
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
+## Quick Setup (3 Steps)
+
+Get VS Code running from source in minutes:
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the VS Code repository and initialize submodules:
+    
+    ```bash
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode
+    git submodule update --init --recursive
+    ```
+    
+    <Tip>
+      The repository is approximately 500 MB. Use `--depth 1` for a shallow clone if you don't need the full history:
+      ```bash
+      git clone --depth 1 https://github.com/microsoft/vscode.git
+      ```
+    </Tip>
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Install all required npm packages:
+    
+    ```bash
+    npm install
+    ```
+    
+    This process takes 5-10 minutes and:
+    - Installs ~500 npm packages
+    - Downloads Electron binaries
+    - Compiles native Node.js modules
+    - Sets up built-in extensions
+    
+    <Note>
+      On Windows, you may need to run this command in a terminal with administrator privileges.
+    </Note>
+  </Step>
+  
+  <Step title="Build and Run">
+    Start VS Code from source:
+    
+    <Tabs>
+      <Tab title="macOS / Linux">
+        ```bash
+        ./scripts/code.sh
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```bash
+        .\scripts\code.bat
+        ```
+      </Tab>
+    </Tabs>
+    
+    <Success>
+      VS Code should launch within 30 seconds! You're now running a development build.
+    </Success>
+  </Step>
+</Steps>
+
+## Development Workflow
+
+### Watch Mode for Live Reloading
+
+Enable automatic compilation on file changes:
+
+```bash
+npm run watch
+```
+
+This starts multiple watch tasks:
+- **Core - Build:** Compiles TypeScript sources in `src/`
+- **Ext - Build:** Compiles built-in extensions in `extensions/`
+- **Watch Extensions:** Monitors extension changes
+
+<CodeGroup>
+
+```typescript src/vs/workbench/workbench.ts
+/**
+ * Example: Core workbench initialization
+ * Changes to this file are detected by watch mode
+ */
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+import { IWorkbenchContributionsRegistry, Extensions } from 'vs/workbench/common/contributions';
+import { Registry } from 'vs/platform/registry/common/platform';
+
+export class Workbench {
+  constructor(
+    @IInstantiationService private readonly instantiationService: IInstantiationService
+  ) {
+    this.registerContributions();
+  }
+
+  private registerContributions(): void {
+    const registry = Registry.as<IWorkbenchContributionsRegistry>(
+      Extensions.Workbench
+    );
+    // Register workbench contributions
+  }
+}
+```
+
+```json .vscode/tasks.json
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "watch",
+      "label": "VS Code - Build",
+      "group": "build",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "never"
+      },
+      "problemMatcher": "$tsc-watch"
+    }
+  ]
+}
+```
+
+</CodeGroup>
+
+### Running Tests
+
+VS Code has comprehensive test suites:
+
+<Tabs>
+  <Tab title="Unit Tests">
+    ```bash
+    # Run all unit tests
+    ./scripts/test.sh
+    
+    # Run specific test suite
+    ./scripts/test.sh --grep "workbench"
+    
+    # Run tests for a specific file
+    ./scripts/test.sh --grep "editor.test"
+    ```
+  </Tab>
+  
+  <Tab title="Integration Tests">
+    ```bash
+    # Run integration tests
+    ./scripts/test-integration.sh
+    
+    # Run specific integration test
+    ./scripts/test-integration.sh --grep "editor"
+    ```
+  </Tab>
+  
+  <Tab title="Extension Tests">
+    ```bash
+    # Test built-in extensions
+    npm run test-extension
+    
+    # Test specific extension
+    cd extensions/typescript-language-features
+    npm test
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Tests require a successful build. Run `npm run compile` first if you encounter errors.
+</Note>
+
+### Debugging VS Code
+
+Debug VS Code using VS Code itself:
+
+<Steps>
+  <Step title="Open in VS Code">
+    Open the cloned repository in VS Code:
+    ```bash
+    code .
+    ```
+  </Step>
+  
+  <Step title="Start Watch Mode">
+    Run the build task:
+    - Press `Ctrl/Cmd + Shift + B`
+    - Select **"VS Code - Build"**
+    
+    Or run from terminal:
+    ```bash
+    npm run watch
+    ```
+  </Step>
+  
+  <Step title="Launch Debugger">
+    Start debugging:
+    - Press `F5` or go to **Run and Debug**
+    - Select **"VS Code"** configuration
+    - A new VS Code window launches with debugger attached
+    
+    <Tip>
+      Set breakpoints in TypeScript files under `src/`. They work directly without source maps!
+    </Tip>
+  </Step>
+</Steps>
+
+<CodeGroup>
+
+```json .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "VS Code",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "presentation": {
+        "group": "1_vscode",
+        "order": 1
+      }
+    }
+  ]
+}
+```
+
+```typescript Example: Setting Breakpoints
+// src/vs/workbench/browser/parts/editor/editorPart.ts
+export class EditorPart extends Part {
+  
+  async openEditor(editor: EditorInput, options?: IEditorOptions): Promise<IEditor> {
+    // Set breakpoint here to debug editor opening
+    const group = this.getGroup(options?.group);
+    return group.openEditor(editor, options);
+  }
+}
+```
+
+</CodeGroup>
+
+## Development Container
+
+Use a pre-configured development environment with Docker:
+
+<Steps>
+  <Step title="Prerequisites">
+    Install:
+    - [Docker Desktop](https://www.docker.com/products/docker-desktop)
+    - [VS Code](https://code.visualstudio.com/)
+    - [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+  </Step>
+  
+  <Step title="Open in Container">
+    Press `Ctrl/Cmd + Shift + P` and select:
+    **"Dev Containers: Clone Repository in Container Volume..."**
+    
+    Enter: `https://github.com/microsoft/vscode`
+  </Step>
+  
+  <Step title="Build Inside Container">
+    Once the container starts:
+    ```bash
+    npm install
+    ./scripts/code.sh
+    ```
+    
+    Access the desktop environment at:
+    - **Web:** http://localhost:6080
+    - **VNC:** localhost:5901 (password: `vscode`)
+  </Step>
+</Steps>
+
+<Tip>
+  The development container includes all required tools and dependencies pre-installed. Recommended specs: 4 CPU cores and 8 GB RAM.
+</Tip>
+
+## Build Scripts Reference
 
 <AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
+  <Accordion icon="hammer" title="Compilation Scripts">
+    ```bash
+    npm run compile              # Compile all TypeScript sources
+    npm run compile-check-ts     # Type check without emitting
+    npm run compile-web          # Compile for web deployment
+    npm run compile-cli          # Compile CLI separately
+    ```
+  </Accordion>
+  
+  <Accordion icon="rotate" title="Watch Scripts">
+    ```bash
+    npm run watch                # Watch all (recommended)
+    npm run watch-client         # Watch client code only
+    npm run watch-extensions     # Watch extensions only
+    npm run watch-web            # Watch web build
+    ```
+  </Accordion>
+  
+  <Accordion icon="check" title="Validation Scripts">
+    ```bash
+    npm run eslint               # Run ESLint
+    npm run valid-layers-check   # Check architecture layers
+    npm run monaco-compile-check # Validate Monaco editor types
+    npm run hygiene              # Run all code quality checks
+    ```
+  </Accordion>
+  
+  <Accordion icon="vial" title="Test Scripts">
+    ```bash
+    npm run test-node            # Run Node.js unit tests
+    npm run test-browser         # Run browser unit tests
+    npm run test-extension       # Test extensions
+    npm run smoketest            # Run smoke tests
+    ```
   </Accordion>
 </AccordionGroup>
 
-### Step 3: Go live
+## Troubleshooting
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+<AccordionGroup>
+  <Accordion icon="circle-exclamation" title="Build Fails with Node/Python Errors">
+    **Problem:** Native module compilation fails
+    
+    **Solution:**
+    ```bash
+    # Clear node modules and rebuild
+    rm -rf node_modules
+    npm cache clean --force
+    npm install
+    ```
+    
+    Ensure you have the correct toolchain installed (see Prerequisites).
+  </Accordion>
+  
+  <Accordion icon="circle-exclamation" title="VS Code Won't Launch">
+    **Problem:** Application hangs or crashes on startup
+    
+    **Solution:**
+    ```bash
+    # Run with verbose logging
+    ./scripts/code.sh --verbose
+    
+    # Clear user data
+    ./scripts/code.sh --user-data-dir /tmp/vscode-dev
+    ```
+  </Accordion>
+  
+  <Accordion icon="circle-exclamation" title="Watch Mode Not Detecting Changes">
+    **Problem:** Changes don't trigger recompilation
+    
+    **Solution:**
+    ```bash
+    # Restart watch tasks
+    npm run kill-watchd
+    npm run watchd
+    
+    # Or use the daemon manager
+    npm run restart-watchd
+    ```
+  </Accordion>
+  
+  <Accordion icon="circle-exclamation" title="Out of Memory During Build">
+    **Problem:** Build process crashes with heap errors
+    
+    **Solution:**
+    ```bash
+    # Increase Node.js memory limit
+    export NODE_OPTIONS="--max-old-space-size=8192"
+    npm install
+    ```
+  </Accordion>
+</AccordionGroup>
 
-## Next steps
-
-Now that you have your docs running, explore these key features:
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card
+    title="Architecture Deep Dive"
+    icon="sitemap"
+    href="/architecture/overview"
+  >
+    Learn about VS Code's layered architecture and design patterns
+  </Card>
+  <Card
+    title="Contributing Guidelines"
+    icon="code-pull-request"
+    href="/contributing/guidelines"
+  >
+    Read the guidelines before submitting your first contribution
+  </Card>
+  <Card
+    title="Build Your Extension"
+    icon="puzzle-piece"
+    href="/api/your-first-extension"
+  >
+    Create your first VS Code extension with the Extension API
+  </Card>
+  <Card
+    title="Debugging Guide"
+    icon="bug"
+    href="/building/debugging"
+  >
+    Master debugging techniques for VS Code development
+  </Card>
 </CardGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  **Need help?** Ask questions on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode) with the `vscode` tag or join the [GitHub Discussions](https://github.com/microsoft/vscode/discussions).
 </Note>

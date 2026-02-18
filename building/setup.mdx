@@ -1,0 +1,251 @@
+---
+title: "Development Environment Setup"
+description: "Set up your development environment to build Visual Studio Code from source."
+---
+
+## Prerequisites
+
+Before building VS Code, ensure your system meets these requirements:
+
+### Required Software
+
+<AccordionGroup>
+  <Accordion title="Node.js">
+    VS Code requires **Node.js v22.22.0** or later for development.
+
+    ```bash
+    # Check your Node.js version
+    node --version
+    ```
+
+    <Tip>Use [nvm](https://github.com/nvm-sh/nvm) to manage Node.js versions. The repository includes a `.nvmrc` file for automatic version switching.</Tip>
+
+    ```bash
+    # Using nvm
+    nvm install
+    nvm use
+    ```
+  </Accordion>
+
+  <Accordion title="Git">
+    Git is required to clone the repository and manage source control.
+
+    ```bash
+    # Verify Git installation
+    git --version
+    ```
+  </Accordion>
+
+  <Accordion title="Python">
+    Python is required for building native Node.js modules.
+
+    - **Windows**: Python 3.x
+    - **macOS**: Comes pre-installed
+    - **Linux**: Python 3.x
+  </Accordion>
+
+  <Accordion title="C/C++ Compiler">
+    Native modules require platform-specific compilers:
+
+    **Windows**
+    - Visual Studio 2022 or 2019 (Community, Professional, or Enterprise)
+    - Windows 10 SDK
+
+    <Note>If Visual Studio is installed in a custom location, set the environment variable: `set vs2022_install=<path>`</Note>
+
+    **macOS**
+    - Xcode Command Line Tools
+
+    ```bash
+    xcode-select --install
+    ```
+
+    **Linux**
+    - GCC or Clang
+    - `build-essential` package (Debian/Ubuntu)
+
+    ```bash
+    sudo apt-get install build-essential
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### System Requirements
+
+- **RAM**: Minimum 8GB, recommended 16GB
+- **Disk Space**: At least 10GB free space
+- **Architecture**: x64 or arm64
+
+<Warning>Ensure your Node.js process architecture matches your OS architecture. Mismatches can significantly increase build times.</Warning>
+
+## Setup Steps
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the VS Code repository from GitHub:
+
+    ```bash
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode
+    ```
+  </Step>
+
+  <Step title="Install Dependencies">
+    Install all required npm packages:
+
+    ```bash
+    npm install
+    ```
+
+    <Note>This runs automatically during `npm install`:
+    - Node.js version validation
+    - Visual Studio detection (Windows)
+    - Native module header installation
+    - Architecture compatibility checks
+    </Note>
+
+    <Warning>Do not use `yarn` - it is not supported. VS Code uses npm exclusively.</Warning>
+  </Step>
+
+  <Step title="Download Electron">
+    Download the Electron binary required for running VS Code:
+
+    ```bash
+    npm run electron
+    ```
+
+    This downloads the appropriate Electron build for your platform.
+  </Step>
+
+  <Step title="Download Built-in Extensions">
+    Download the built-in extensions that ship with VS Code:
+
+    ```bash
+    npm run download-builtin-extensions
+    ```
+
+    This fetches all first-party extensions from the marketplace.
+  </Step>
+
+  <Step title="Verify Setup">
+    Verify your environment is ready by checking for common issues:
+
+    <CodeGroup>
+      ```bash macOS/Linux
+      # Check Node.js version
+      node --version
+
+      # Verify npm install completed
+      ls node_modules
+
+      # Check Electron download
+      ls .build/electron
+      ```
+
+      ```cmd Windows
+      # Check Node.js version
+      node --version
+
+      # Verify npm install completed
+      dir node_modules
+
+      # Check Electron download
+      dir .build\electron
+      ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Environment Variables
+
+### Optional Configuration
+
+Set these environment variables to customize the build process:
+
+<ParamField path="VSCODE_SKIP_NODE_VERSION_CHECK" type="boolean" default="false">
+  Skip the Node.js version check during installation.
+</ParamField>
+
+<ParamField path="VSCODE_SKIP_PRELAUNCH" type="boolean" default="false">
+  Skip automatic compilation and Electron download before running VS Code.
+</ParamField>
+
+<ParamField path="vs2022_install" type="string" platform="Windows">
+  Custom Visual Studio 2022 installation path.
+
+  ```cmd
+  set vs2022_install=C:\Program Files\Microsoft Visual Studio\2022\Community
+  ```
+</ParamField>
+
+<ParamField path="vs2019_install" type="string" platform="Windows">
+  Custom Visual Studio 2019 installation path.
+</ParamField>
+
+## Troubleshooting
+
+### Common Issues
+
+<AccordionGroup>
+  <Accordion title="Node.js Version Error">
+    **Error**: `Please use Node.js v22.22.0 or later for development`
+
+    **Solution**: Install the correct Node.js version:
+
+    ```bash
+    nvm install 22.22.0
+    nvm use 22.22.0
+    ```
+  </Accordion>
+
+  <Accordion title="Visual Studio Not Found (Windows)">
+    **Error**: `Invalid C/C++ Compiler Toolchain`
+
+    **Solution**: 
+    1. Install Visual Studio 2022 or 2019 with C++ development tools
+    2. Or specify a custom installation path:
+
+    ```cmd
+    set vs2022_install=C:\Path\To\Visual Studio\2022\Community
+    npm install
+    ```
+  </Accordion>
+
+  <Accordion title="Architecture Mismatch">
+    **Warning**: `ARCHITECTURE MISMATCH: The node.js process is x86, but your OS architecture is x64`
+
+    **Solution**: Install the correct architecture version of Node.js matching your OS.
+  </Accordion>
+
+  <Accordion title="Yarn Not Supported">
+    **Error**: `Seems like you are using yarn which is not supported`
+
+    **Solution**: Use npm instead:
+
+    ```bash
+    npm install
+    ```
+  </Accordion>
+
+  <Accordion title="Out of Memory">
+    **Error**: JavaScript heap out of memory during npm install
+
+    **Solution**: Increase Node.js memory:
+
+    ```bash
+    export NODE_OPTIONS="--max-old-space-size=8192"
+    npm install
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Compile the Source" icon="hammer" href="/building/compile">
+    Build VS Code and start the watch mode for development
+  </Card>
+  <Card title="Debugging" icon="bug" href="/building/debugging">
+    Learn how to debug VS Code during development
+  </Card>
+</CardGroup>

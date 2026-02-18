@@ -1,0 +1,682 @@
+---
+title: 'Workspace API'
+description: 'Access and manipulate workspace files, folders, and settings in VS Code extensions'
+---
+
+# Workspace API
+
+The Workspace API provides access to workspace folders, files, configuration, and file system operations in Visual Studio Code.
+
+## workspace Namespace
+
+The `vscode.workspace` namespace provides functions for working with the workspace:
+
+```typescript
+import * as vscode from 'vscode';
+
+// Get workspace folders
+const folders = vscode.workspace.workspaceFolders;
+if (folders) {
+  console.log('Workspace folders:', folders.length);
+}
+```
+
+## Workspace Folders
+
+### workspaceFolders
+
+Array of workspace folders or `undefined` if no workspace is open:
+
+```typescript
+const folders = vscode.workspace.workspaceFolders;
+if (folders && folders.length > 0) {
+  folders.forEach(folder => {
+    console.log('Name:', folder.name);
+    console.log('URI:', folder.uri.fsPath);
+    console.log('Index:', folder.index);
+  });
+}
+```
+
+<ResponseField name="uri" type="Uri" required>
+  The URI of the workspace folder
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  The name of the workspace folder
+</ResponseField>
+
+<ResponseField name="index" type="number" required>
+  The ordinal number (zero-based) of the folder
+</ResponseField>
+
+### name
+
+The name of the workspace or `undefined`:
+
+```typescript
+const workspaceName = vscode.workspace.name;
+console.log('Workspace name:', workspaceName);
+```
+
+### workspaceFile
+
+The URI of the workspace file:
+
+```typescript
+const workspaceFile = vscode.workspace.workspaceFile;
+if (workspaceFile) {
+  console.log('Workspace file:', workspaceFile.fsPath);
+}
+```
+
+### getWorkspaceFolder()
+
+Get the workspace folder for a given URI:
+
+```typescript
+const uri = vscode.Uri.file('/path/to/file.txt');
+const folder = vscode.workspace.getWorkspaceFolder(uri);
+if (folder) {
+  console.log('File is in folder:', folder.name);
+}
+```
+
+### Workspace Events
+
+<Tabs>
+  <Tab title="Folders Changed">
+    ```typescript
+    vscode.workspace.onDidChangeWorkspaceFolders(event => {
+      console.log('Added:', event.added.length);
+      console.log('Removed:', event.removed.length);
+      
+      event.added.forEach(folder => {
+        console.log('Added folder:', folder.name);
+      });
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Configuration Changed">
+    ```typescript
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration('myExtension.setting')) {
+        console.log('Extension setting changed');
+        reloadConfiguration();
+      }
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## File Operations
+
+### File System API
+
+The `workspace.fs` provides file system operations:
+
+```typescript
+const fs = vscode.workspace.fs;
+```
+
+#### readFile()
+
+Read a file as bytes:
+
+```typescript
+const uri = vscode.Uri.file('/path/to/file.txt');
+try {
+  const content = await vscode.workspace.fs.readFile(uri);
+  const text = Buffer.from(content).toString('utf8');
+  console.log('File content:', text);
+} catch (error) {
+  vscode.window.showErrorMessage('Failed to read file');
+}
+```
+
+#### writeFile()
+
+Write bytes to a file:
+
+```typescript
+const uri = vscode.Uri.file('/path/to/file.txt');
+const content = Buffer.from('Hello, World!', 'utf8');
+await vscode.workspace.fs.writeFile(uri, content);
+```
+
+#### readDirectory()
+
+List directory contents:
+
+```typescript
+const uri = vscode.Uri.file('/path/to/directory');
+const entries = await vscode.workspace.fs.readDirectory(uri);
+
+entries.forEach(([name, type]) => {
+  const typeStr = type === vscode.FileType.File ? 'File' : 'Directory';
+  console.log(`${name} (${typeStr})`);
+});
+```
+
+#### createDirectory()
+
+Create a directory:
+
+```typescript
+const uri = vscode.Uri.file('/path/to/new/directory');
+await vscode.workspace.fs.createDirectory(uri);
+```
+
+#### delete()
+
+Delete a file or directory:
+
+```typescript
+const uri = vscode.Uri.file('/path/to/file.txt');
+
+// Delete file
+await vscode.workspace.fs.delete(uri);
+
+// Delete directory recursively
+await vscode.workspace.fs.delete(uri, { recursive: true });
+```
+
+#### rename()
+
+Rename or move a file:
+
+```typescript
+const source = vscode.Uri.file('/path/to/old.txt');
+const target = vscode.Uri.file('/path/to/new.txt');
+await vscode.workspace.fs.rename(source, target);
+```
+
+#### copy()
+
+Copy a file:
+
+```typescript
+const source = vscode.Uri.file('/path/to/source.txt');
+const target = vscode.Uri.file('/path/to/target.txt');
+await vscode.workspace.fs.copy(source, target, { overwrite: true });
+```
+
+#### stat()
+
+Get file metadata:
+
+```typescript
+const uri = vscode.Uri.file('/path/to/file.txt');
+const stat = await vscode.workspace.fs.stat(uri);
+
+console.log('Type:', stat.type === vscode.FileType.File ? 'File' : 'Directory');
+console.log('Size:', stat.size, 'bytes');
+console.log('Created:', new Date(stat.ctime));
+console.log('Modified:', new Date(stat.mtime));
+```
+
+### findFiles()
+
+Find files across workspace folders:
+
+```typescript
+// Find all JavaScript files
+const files = await vscode.workspace.findFiles(
+  '**/*.js',           // Include pattern
+  '**/node_modules/**', // Exclude pattern
+  100                   // Max results
+);
+
+files.forEach(uri => {
+  console.log('Found:', uri.fsPath);
+});
+```
+
+<ParamField path="include" type="GlobPattern" required>
+  Glob pattern for files to include
+</ParamField>
+
+<ParamField path="exclude" type="GlobPattern | null">
+  Glob pattern for files to exclude
+</ParamField>
+
+<ParamField path="maxResults" type="number">
+  Maximum number of results to return
+</ParamField>
+
+<ParamField path="token" type="CancellationToken">
+  Cancellation token
+</ParamField>
+
+## File Watching
+
+### createFileSystemWatcher()
+
+Watch for file system changes:
+
+```typescript
+const watcher = vscode.workspace.createFileSystemWatcher(
+  '**/*.{js,ts}'
+);
+
+watcher.onDidCreate(uri => {
+  console.log('File created:', uri.fsPath);
+});
+
+watcher.onDidChange(uri => {
+  console.log('File changed:', uri.fsPath);
+});
+
+watcher.onDidDelete(uri => {
+  console.log('File deleted:', uri.fsPath);
+});
+
+context.subscriptions.push(watcher);
+```
+
+#### Watch Specific Folder
+
+```typescript
+const folder = vscode.workspace.workspaceFolders?.[0];
+if (folder) {
+  const pattern = new vscode.RelativePattern(folder, '**/*.json');
+  const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+  
+  watcher.onDidChange(uri => {
+    console.log('JSON file changed:', uri.fsPath);
+  });
+}
+```
+
+## Text Documents
+
+### openTextDocument()
+
+Open a text document:
+
+```typescript
+// Open existing file
+const uri = vscode.Uri.file('/path/to/file.txt');
+const document = await vscode.workspace.openTextDocument(uri);
+
+// Create new untitled document
+const newDoc = await vscode.workspace.openTextDocument({
+  language: 'javascript',
+  content: 'console.log("Hello");'
+});
+
+// Open by language
+const doc = await vscode.workspace.openTextDocument({
+  language: 'markdown'
+});
+```
+
+### textDocuments
+
+Array of all open text documents:
+
+```typescript
+const documents = vscode.workspace.textDocuments;
+console.log('Open documents:', documents.length);
+
+documents.forEach(doc => {
+  console.log('File:', doc.fileName);
+  console.log('Language:', doc.languageId);
+  console.log('Dirty:', doc.isDirty);
+});
+```
+
+### Document Events
+
+<Tabs>
+  <Tab title="Opened">
+    ```typescript
+    vscode.workspace.onDidOpenTextDocument(document => {
+      console.log('Opened:', document.fileName);
+      console.log('Language:', document.languageId);
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Closed">
+    ```typescript
+    vscode.workspace.onDidCloseTextDocument(document => {
+      console.log('Closed:', document.fileName);
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Changed">
+    ```typescript
+    vscode.workspace.onDidChangeTextDocument(event => {
+      const { document, contentChanges } = event;
+      console.log('Document changed:', document.fileName);
+      console.log('Changes:', contentChanges.length);
+      
+      contentChanges.forEach(change => {
+        console.log('Range:', change.range);
+        console.log('Text:', change.text);
+      });
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Saved">
+    ```typescript
+    vscode.workspace.onDidSaveTextDocument(document => {
+      console.log('Saved:', document.fileName);
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Will Save">
+    ```typescript
+    vscode.workspace.onWillSaveTextDocument(event => {
+      const { document, reason } = event;
+      
+      // Can provide edits to apply before save
+      event.waitUntil(
+        Promise.resolve([
+          vscode.TextEdit.insert(
+            new vscode.Position(0, 0),
+            '// Auto-added header\n'
+          )
+        ])
+      );
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+### getConfiguration()
+
+Access workspace or extension settings:
+
+```typescript
+// Get all settings
+const config = vscode.workspace.getConfiguration();
+
+// Get extension-specific settings
+const myConfig = vscode.workspace.getConfiguration('myExtension');
+
+// Get a specific setting
+const enabled = myConfig.get<boolean>('enabled', true);
+const maxItems = myConfig.get<number>('maxItems', 10);
+```
+
+<ParamField path="section" type="string">
+  Configuration section (e.g., 'myExtension')
+</ParamField>
+
+<ParamField path="scope" type="Uri | WorkspaceFolder">
+  Configuration scope
+</ParamField>
+
+### Update Configuration
+
+```typescript
+const config = vscode.workspace.getConfiguration('myExtension');
+
+// Update global (user) setting
+await config.update('enabled', true, vscode.ConfigurationTarget.Global);
+
+// Update workspace setting
+await config.update('maxItems', 50, vscode.ConfigurationTarget.Workspace);
+
+// Update workspace folder setting
+await config.update('theme', 'dark', vscode.ConfigurationTarget.WorkspaceFolder);
+```
+
+### Configuration Inspection
+
+Get detailed configuration info:
+
+```typescript
+const config = vscode.workspace.getConfiguration('myExtension');
+const inspection = config.inspect<boolean>('enabled');
+
+console.log('Default value:', inspection?.defaultValue);
+console.log('Global value:', inspection?.globalValue);
+console.log('Workspace value:', inspection?.workspaceValue);
+console.log('Folder value:', inspection?.workspaceFolderValue);
+```
+
+## WorkspaceEdit
+
+Make changes across multiple files:
+
+```typescript
+const edit = new vscode.WorkspaceEdit();
+
+// Insert text
+const uri = vscode.Uri.file('/path/to/file.txt');
+edit.insert(uri, new vscode.Position(0, 0), 'New text\n');
+
+// Replace text
+const range = new vscode.Range(1, 0, 1, 10);
+edit.replace(uri, range, 'Replacement');
+
+// Delete text
+edit.delete(uri, range);
+
+// Create file
+const newFile = vscode.Uri.file('/path/to/new.txt');
+edit.createFile(newFile, { overwrite: false });
+
+// Delete file
+edit.deleteFile(uri, { recursive: true });
+
+// Rename file
+const newUri = vscode.Uri.file('/path/to/renamed.txt');
+edit.renameFile(uri, newUri);
+
+// Apply all edits
+const success = await vscode.workspace.applyEdit(edit);
+if (success) {
+  vscode.window.showInformationMessage('Changes applied');
+}
+```
+
+## Real-World Examples
+
+### Example: Find and Replace in Files
+
+```typescript
+vscode.commands.registerCommand('extension.findReplace', async () => {
+  const find = await vscode.window.showInputBox({
+    prompt: 'Find text'
+  });
+  
+  if (!find) return;
+  
+  const replace = await vscode.window.showInputBox({
+    prompt: 'Replace with'
+  });
+  
+  if (replace === undefined) return;
+  
+  const files = await vscode.workspace.findFiles('**/*.txt');
+  const edit = new vscode.WorkspaceEdit();
+  
+  for (const uri of files) {
+    const document = await vscode.workspace.openTextDocument(uri);
+    const text = document.getText();
+    const regex = new RegExp(find, 'g');
+    
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const start = document.positionAt(match.index);
+      const end = document.positionAt(match.index + match[0].length);
+      edit.replace(uri, new vscode.Range(start, end), replace);
+    }
+  }
+  
+  await vscode.workspace.applyEdit(edit);
+  vscode.window.showInformationMessage('Replace complete');
+});
+```
+
+### Example: Create Project Structure
+
+```typescript
+vscode.commands.registerCommand('extension.createProject', async () => {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) return;
+  
+  const name = await vscode.window.showInputBox({
+    prompt: 'Project name'
+  });
+  
+  if (!name) return;
+  
+  const edit = new vscode.WorkspaceEdit();
+  const base = vscode.Uri.joinPath(folder.uri, name);
+  
+  // Create directories
+  const dirs = ['src', 'tests', 'docs'];
+  for (const dir of dirs) {
+    const uri = vscode.Uri.joinPath(base, dir);
+    await vscode.workspace.fs.createDirectory(uri);
+  }
+  
+  // Create files
+  const readme = vscode.Uri.joinPath(base, 'README.md');
+  edit.createFile(readme);
+  edit.insert(readme, new vscode.Position(0, 0), `# ${name}\n\nProject description`);
+  
+  const packageJson = vscode.Uri.joinPath(base, 'package.json');
+  edit.createFile(packageJson);
+  edit.insert(packageJson, new vscode.Position(0, 0), JSON.stringify({
+    name,
+    version: '1.0.0',
+    description: ''
+  }, null, 2));
+  
+  await vscode.workspace.applyEdit(edit);
+  vscode.window.showInformationMessage(`Project ${name} created`);
+});
+```
+
+### Example: Backup Modified Files
+
+```typescript
+vscode.workspace.onDidSaveTextDocument(async document => {
+  if (!document.uri.fsPath.endsWith('.txt')) return;
+  
+  const backupUri = vscode.Uri.file(document.uri.fsPath + '.bak');
+  await vscode.workspace.fs.copy(document.uri, backupUri, {
+    overwrite: true
+  });
+  
+  console.log('Backed up:', document.fileName);
+});
+```
+
+### Example: Watch for Package.json Changes
+
+```typescript
+const watcher = vscode.workspace.createFileSystemWatcher(
+  '**/package.json'
+);
+
+watcher.onDidChange(async uri => {
+  const document = await vscode.workspace.openTextDocument(uri);
+  const content = document.getText();
+  
+  try {
+    const pkg = JSON.parse(content);
+    console.log('Package name:', pkg.name);
+    console.log('Version:', pkg.version);
+    
+    // Could trigger dependency reinstall, etc.
+  } catch (error) {
+    console.error('Invalid package.json:', error);
+  }
+});
+
+context.subscriptions.push(watcher);
+```
+
+## Relative Paths
+
+### asRelativePath()
+
+Convert absolute path to workspace-relative:
+
+```typescript
+const uri = vscode.Uri.file('/workspace/src/app.ts');
+const relative = vscode.workspace.asRelativePath(uri);
+console.log('Relative:', relative); // "src/app.ts"
+
+// Include workspace folder name for multi-root
+const withFolder = vscode.workspace.asRelativePath(uri, true);
+console.log('With folder:', withFolder); // "my-workspace/src/app.ts"
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Check for Workspace">
+    Always verify a workspace is open:
+    
+    ```typescript
+    if (!vscode.workspace.workspaceFolders) {
+      vscode.window.showWarningMessage('No workspace open');
+      return;
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle File Errors">
+    Always catch file operation errors:
+    
+    ```typescript
+    try {
+      await vscode.workspace.fs.readFile(uri);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to read file: ${error}`);
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Glob Patterns Efficiently">
+    Be specific with glob patterns to avoid performance issues:
+    
+    ```typescript
+    // Good - specific pattern
+    await vscode.workspace.findFiles('src/**/*.ts');
+    
+    // Avoid - too broad
+    await vscode.workspace.findFiles('**/*');
+    ```
+  </Accordion>
+  
+  <Accordion title="Dispose Watchers">
+    Always dispose file watchers:
+    
+    ```typescript
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*.js');
+    context.subscriptions.push(watcher);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Languages" icon="code" href="/api/languages">
+    Provide language-specific features
+  </Card>
+  <Card title="Commands" icon="terminal" href="/api/commands">
+    Register and execute commands
+  </Card>
+  <Card title="Text Editor" icon="pen" href="/api/text-editor">
+    Work with text editors
+  </Card>
+  <Card title="Debug" icon="bug" href="/api/debug">
+    Integrate debugging features
+  </Card>
+</CardGroup>

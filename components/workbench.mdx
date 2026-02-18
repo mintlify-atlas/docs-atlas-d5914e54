@@ -1,0 +1,631 @@
+---
+title: 'Workbench'
+description: 'VS Code application shell - layout, parts, views, and UI framework'
+---
+
+## Overview
+
+The Workbench (`src/vs/workbench/`) is the application shell that brings together all VS Code components into a cohesive user interface. It manages the layout, views, editors, panels, and overall application lifecycle.
+
+**Location:** `src/vs/workbench/`
+
+## Architecture
+
+### Workbench Structure
+
+```
+┌────────────────────────────────────────┐
+│              Title Bar                    │
+├────────────────────────────────────────┤
+│           Activity Bar                   │
+├─────────┬──────────────────────────────┤
+│         │                                │
+│ Sidebar │       Editor Group           │
+│         │                                │
+├─────────┼──────────────────────────────┤
+│              Panel                       │
+├────────────────────────────────────────┤
+│            Status Bar                    │
+└────────────────────────────────────────┘
+```
+
+**Location:** `src/vs/workbench/browser/`
+
+<CardGroup cols={2}>
+  <Card title="Workbench Parts" icon="grid" href="#parts">
+    Title bar, sidebar, editor, panel, status bar
+  </Card>
+  <Card title="Views" icon="window-restore" href="#views">
+    Explorer, Search, SCM, Debug, Extensions
+  </Card>
+  <Card title="Editors" icon="file-code" href="#editors">
+    Text editors, diff editors, custom editors
+  </Card>
+  <Card title="Contributions" icon="puzzle-piece" href="#contributions">
+    Feature extensions and workbench plugins
+  </Card>
+</CardGroup>
+
+## Workbench Class
+
+**Location:** `src/vs/workbench/browser/workbench.ts:67`
+
+```typescript
+export class Workbench extends Layout {
+    private readonly _onWillShutdown: Emitter<WillShutdownEvent>;
+    readonly onWillShutdown: Event<WillShutdownEvent>;
+    
+    private readonly _onDidShutdown: Emitter<void>;
+    readonly onDidShutdown: Event<void>;
+    
+    constructor(
+        parent: HTMLElement,
+        private readonly options: IWorkbenchOptions | undefined,
+        private readonly serviceCollection: ServiceCollection,
+        logService: ILogService
+    ) {
+        super(parent, { resetLayout: Boolean(options?.resetLayout) });
+    }
+}
+```
+
+## Workbench Parts {#parts}
+
+**Location:** `src/vs/workbench/browser/parts/`
+
+### Part Locations
+
+```typescript
+import { Parts } from 'vs/workbench/services/layout/browser/layoutService';
+
+export enum Parts {
+    TITLEBAR_PART = 'workbench.parts.titlebar',
+    ACTIVITYBAR_PART = 'workbench.parts.activitybar',
+    SIDEBAR_PART = 'workbench.parts.sidebar',
+    PANEL_PART = 'workbench.parts.panel',
+    AUXILIARYBAR_PART = 'workbench.parts.auxiliarybar',
+    EDITOR_PART = 'workbench.parts.editor',
+    STATUSBAR_PART = 'workbench.parts.statusbar'
+}
+```
+
+### Layout Service
+
+**Location:** `src/vs/workbench/services/layout/browser/layoutService.ts:18`
+
+```typescript
+import { IWorkbenchLayoutService } from 'vs/workbench/services/layout/browser/layoutService';
+
+export class MyComponent {
+    constructor(
+        @IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService
+    ) {}
+    
+    togglePanel(): void {
+        const panelVisible = this.layoutService.isVisible(Parts.PANEL_PART);
+        this.layoutService.setPartHidden(!panelVisible, Parts.PANEL_PART);
+    }
+    
+    focusEditor(): void {
+        this.layoutService.focus(Parts.EDITOR_PART);
+    }
+    
+    getContainer(): HTMLElement {
+        return this.layoutService.getContainer(Parts.SIDEBAR_PART);
+    }
+}
+```
+
+### Title Bar
+
+**Location:** `src/vs/workbench/browser/parts/titlebar/`
+
+Contains window title, menus, and window controls:
+
+```typescript
+// Title bar shows:
+// - Application/window title
+// - Menu bar (File, Edit, Selection, View, etc.)
+// - Window controls (minimize, maximize, close)
+// - Custom title bar on some platforms
+```
+
+### Activity Bar
+
+**Location:** `src/vs/workbench/browser/parts/activitybar/`
+
+Vertical bar with view containers:
+
+```typescript
+import { IActivityService, NumberBadge } from 'vs/workbench/services/activity/common/activity';
+
+// Show badge on activity
+activityService.showActivity(
+    'workbench.view.explorer',
+    new NumberBadge(5, () => '5 files changed')
+);
+```
+
+### Sidebar
+
+**Location:** `src/vs/workbench/browser/parts/sidebar/`
+
+Container for view containers (Explorer, Search, etc.):
+
+```typescript
+import { IViewletService } from 'vs/workbench/services/viewlet/browser/viewlet';
+
+// Open viewlet
+await viewletService.openViewlet('workbench.view.explorer');
+
+// Get active viewlet
+const active = viewletService.getActiveViewlet();
+```
+
+### Panel
+
+**Location:** `src/vs/workbench/browser/parts/panel/`
+
+Bottom panel for terminal, output, problems, etc.:
+
+```typescript
+import { IPanelService } from 'vs/workbench/services/panel/common/panelService';
+
+// Open panel
+await panelService.openPanel('terminal');
+
+// Toggle panel visibility
+const visible = layoutService.isVisible(Parts.PANEL_PART);
+layoutService.setPartHidden(!visible, Parts.PANEL_PART);
+```
+
+### Status Bar
+
+**Location:** `src/vs/workbench/browser/parts/statusbar/`
+
+Bottom status bar with information and actions:
+
+```typescript
+import { IStatusbarService, StatusbarAlignment } from 'vs/workbench/services/statusbar/browser/statusbar';
+
+const entry = statusbarService.addEntry(
+    {
+        name: 'My Status',
+        text: '$(check) Ready',
+        tooltip: 'Everything is ready',
+        command: 'myExtension.showDetails'
+    },
+    'myStatus',
+    StatusbarAlignment.RIGHT,
+    100 // Priority
+);
+
+// Update entry
+entry.update({
+    text: '$(sync~spin) Working...',
+    tooltip: 'Please wait'
+});
+
+// Remove entry
+entry.dispose();
+```
+
+## Views and View Containers {#views}
+
+**Location:** `src/vs/workbench/common/views.ts`
+
+### View Container Architecture
+
+```
+Activity Bar Item
+    │
+    └──> View Container (e.g., Explorer)
+            │
+            ├──> View (Folder View)
+            ├──> View (Outline)
+            └──> View (Timeline)
+```
+
+### Registering a View Container
+
+```typescript
+import { Registry } from 'vs/platform/registry/common/platform';
+import { IViewContainersRegistry, Extensions, ViewContainerLocation } from 'vs/workbench/common/views';
+
+const viewContainersRegistry = Registry.as<IViewContainersRegistry>(Extensions.ViewContainersRegistry);
+
+const myViewContainer = viewContainersRegistry.registerViewContainer(
+    {
+        id: 'myViewContainer',
+        title: { value: 'My View Container', original: 'My View Container' },
+        icon: Codicon.database,
+        order: 1,
+        ctorDescriptor: new SyncDescriptor(MyViewPaneContainer)
+    },
+    ViewContainerLocation.Sidebar
+);
+```
+
+### Registering a View
+
+```typescript
+import { IViewsRegistry, IViewDescriptor } from 'vs/workbench/common/views';
+
+const viewsRegistry = Registry.as<IViewsRegistry>(Extensions.ViewsRegistry);
+
+viewsRegistry.registerViews(
+    [
+        {
+            id: 'myView',
+            name: { value: 'My View', original: 'My View' },
+            containerIcon: Codicon.fileCode,
+            canToggleVisibility: true,
+            canMoveView: true,
+            ctorDescriptor: new SyncDescriptor(MyView),
+            order: 1
+        }
+    ],
+    myViewContainer
+);
+```
+
+### Creating a View
+
+```typescript
+import { IViewPaneOptions, ViewPane } from 'vs/workbench/browser/parts/views/viewPane';
+import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
+import { IContextMenuService } from 'vs/platform/contextview/browser/contextView';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
+import { IViewDescriptorService } from 'vs/workbench/common/views';
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+import { IOpenerService } from 'vs/platform/opener/common/opener';
+import { IThemeService } from 'vs/platform/theme/common/themeService';
+import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+
+export class MyView extends ViewPane {
+    constructor(
+        options: IViewPaneOptions,
+        @IKeybindingService keybindingService: IKeybindingService,
+        @IContextMenuService contextMenuService: IContextMenuService,
+        @IConfigurationService configurationService: IConfigurationService,
+        @IContextKeyService contextKeyService: IContextKeyService,
+        @IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+        @IInstantiationService instantiationService: IInstantiationService,
+        @IOpenerService openerService: IOpenerService,
+        @IThemeService themeService: IThemeService,
+        @ITelemetryService telemetryService: ITelemetryService
+    ) {
+        super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService);
+    }
+    
+    protected renderBody(container: HTMLElement): void {
+        // Render view content
+        container.textContent = 'My view content';
+    }
+    
+    protected layoutBody(height: number, width: number): void {
+        // Layout view on resize
+    }
+}
+```
+
+### Tree Views
+
+**Location:** `src/vs/workbench/browser/parts/views/treeView.ts`
+
+```typescript
+import { TreeView } from 'vs/workbench/browser/parts/views/treeView';
+import { ITreeViewDataProvider } from 'vs/workbench/common/views';
+
+class MyDataProvider implements ITreeViewDataProvider {
+    async getChildren(element?: any): Promise<any[]> {
+        if (!element) {
+            return ['Item 1', 'Item 2', 'Item 3'];
+        }
+        return [];
+    }
+    
+    getTreeItem(element: any): ITreeItem {
+        return {
+            label: element,
+            collapsibleState: TreeItemCollapsibleState.None
+        };
+    }
+}
+
+// Tree view is created automatically from view descriptor
+```
+
+## Editor Management {#editors}
+
+**Location:** `src/vs/workbench/services/editor/`
+
+### IEditorService
+
+**Location:** `src/vs/workbench/services/editor/common/editorService.ts`
+
+```typescript
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { URI } from 'vs/base/common/uri';
+
+export class DocumentOpener {
+    constructor(
+        @IEditorService private readonly editorService: IEditorService
+    ) {}
+    
+    async openFile(uri: URI): Promise<void> {
+        await this.editorService.openEditor({
+            resource: uri,
+            options: {
+                pinned: true,
+                selection: { startLineNumber: 10, startColumn: 1 }
+            }
+        });
+    }
+    
+    async openToSide(uri: URI): Promise<void> {
+        await this.editorService.openEditor(
+            { resource: uri },
+            SIDE_GROUP
+        );
+    }
+    
+    getActiveEditor() {
+        return this.editorService.activeEditorPane;
+    }
+}
+```
+
+### Editor Groups
+
+**Location:** `src/vs/workbench/services/editor/common/editorGroupsService.ts`
+
+```typescript
+import { IEditorGroupsService, GroupDirection } from 'vs/workbench/services/editor/common/editorGroupsService';
+
+export class EditorLayoutManager {
+    constructor(
+        @IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService
+    ) {}
+    
+    splitEditor(): void {
+        const activeGroup = this.editorGroupsService.activeGroup;
+        this.editorGroupsService.addGroup(
+            activeGroup,
+            GroupDirection.RIGHT
+        );
+    }
+    
+    closeAllEditors(): void {
+        this.editorGroupsService.activeGroup.closeAllEditors();
+    }
+    
+    getEditorCount(): number {
+        return this.editorGroupsService.activeGroup.count;
+    }
+}
+```
+
+### Custom Editor Input
+
+```typescript
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
+import { URI } from 'vs/base/common/uri';
+
+export class MyEditorInput extends EditorInput {
+    static readonly ID = 'workbench.editors.myEditorInput';
+    
+    constructor(
+        readonly resource: URI,
+        private readonly data: any
+    ) {
+        super();
+    }
+    
+    get typeId(): string {
+        return MyEditorInput.ID;
+    }
+    
+    getName(): string {
+        return 'My Editor';
+    }
+    
+    async resolve(): Promise<IEditorModel> {
+        // Load editor model
+        return myModel;
+    }
+    
+    matches(other: EditorInput): boolean {
+        return other instanceof MyEditorInput && 
+               other.resource.toString() === this.resource.toString();
+    }
+}
+```
+
+## Contributions {#contributions}
+
+**Location:** `src/vs/workbench/common/contributions.ts`
+
+### Workbench Contributions
+
+```typescript
+import { IWorkbenchContribution } from 'vs/workbench/common/contributions';
+import { Registry } from 'vs/platform/registry/common/platform';
+import { Extensions, IWorkbenchContributionsRegistry } from 'vs/workbench/common/contributions';
+import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
+
+class MyWorkbenchContribution implements IWorkbenchContribution {
+    constructor(
+        @IFileService private readonly fileService: IFileService
+    ) {
+        this.initialize();
+    }
+    
+    private async initialize(): Promise<void> {
+        // Initialize contribution
+    }
+}
+
+// Register contribution
+Registry.as<IWorkbenchContributionsRegistry>(Extensions.Workbench)
+    .registerWorkbenchContribution(
+        MyWorkbenchContribution,
+        LifecyclePhase.Restored
+    );
+```
+
+### Lifecycle Phases
+
+<Accordion title="Workbench Lifecycle Phases">
+
+```typescript
+export enum LifecyclePhase {
+    // Before workbench starts
+    Starting = 1,
+    
+    // Workbench is ready, but not restored
+    Ready = 2,
+    
+    // Workbench state restored, views created
+    Restored = 3,
+    
+    // All extensions activated
+    Eventually = 4
+}
+```
+
+**When to use:**
+- **Starting** - Critical initialization that blocks startup
+- **Ready** - Early initialization before restoration
+- **Restored** - Most contributions (views, commands ready)
+- **Eventually** - Non-critical features
+
+</Accordion>
+
+## Workbench Services
+
+**Location:** `src/vs/workbench/services/`
+
+<CardGroup cols={2}>
+  <Card title="Lifecycle Service" icon="rotate">
+    **ILifecycleService**
+    
+    Startup and shutdown handling
+  </Card>
+  
+  <Card title="Host Service" icon="window">
+    **IHostService**
+    
+    Window and host interactions
+  </Card>
+  
+  <Card title="Extension Service" icon="puzzle-piece">
+    **IExtensionService**
+    
+    Extension management and activation
+  </Card>
+  
+  <Card title="Text File Service" icon="file-lines">
+    **ITextFileService**
+    
+    Text file operations and dirty tracking
+  </Card>
+</CardGroup>
+
+### Lifecycle Service
+
+```typescript
+import { ILifecycleService, ShutdownReason } from 'vs/workbench/services/lifecycle/common/lifecycle';
+
+lifecycleService.onWillShutdown(e => {
+    e.veto((async () => {
+        // Perform cleanup
+        const shouldVeto = await askUserToSave();
+        return shouldVeto;
+    })(), 'myExtension');
+});
+```
+
+### Text File Service
+
+```typescript
+import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
+
+const textFileService: ITextFileService = /* ... */;
+
+// Get dirty files
+const dirty = textFileService.dirty;
+
+// Save file
+await textFileService.save(uri);
+
+// Save all
+await textFileService.saveAll();
+
+// Revert
+await textFileService.revert(uri);
+```
+
+## Commands and Actions
+
+**Location:** `src/vs/workbench/browser/actions.ts`
+
+### Registering Workbench Actions
+
+```typescript
+import { Action2, registerAction2 } from 'vs/platform/actions/common/actions';
+import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
+import { IQuickInputService } from 'vs/platform/quickinput/common/quickInput';
+
+class MyAction extends Action2 {
+    constructor() {
+        super({
+            id: 'myExtension.myAction',
+            title: { value: 'My Action', original: 'My Action' },
+            category: { value: 'My Extension', original: 'My Extension' },
+            f1: true, // Show in command palette
+            keybinding: {
+                weight: 200,
+                primary: KeyMod.CtrlCmd | KeyCode.KeyM
+            }
+        });
+    }
+    
+    async run(accessor: ServicesAccessor): Promise<void> {
+        const quickInputService = accessor.get(IQuickInputService);
+        const result = await quickInputService.pick(['Option 1', 'Option 2']);
+        console.log('Selected:', result);
+    }
+}
+
+registerAction2(MyAction);
+```
+
+## Best Practices
+
+<Warning>
+**Contribution Timing:** Register contributions at the appropriate lifecycle phase. Registering too early can slow startup.
+</Warning>
+
+<Tip>
+**View State:** Persist view state in `IStorageService` to maintain user experience across sessions.
+</Tip>
+
+<Note>
+**Editor Management:** Always use `IEditorService` to open editors. Direct manipulation can break editor group management.
+</Note>
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Editor" href="/components/editor">
+    Monaco Editor integration
+  </Card>
+  <Card title="Debug" href="/components/debug">
+    Debug viewlet and features
+  </Card>
+  <Card title="Terminal" href="/components/terminal">
+    Integrated terminal panel
+  </Card>
+</CardGroup>

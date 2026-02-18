@@ -1,0 +1,433 @@
+---
+title: 'Base Layer'
+description: 'Foundational utilities and abstractions used throughout VS Code'
+---
+
+## Overview
+
+The base layer (`src/vs/base/`) provides fundamental building blocks used throughout the VS Code codebase. It contains platform-agnostic utilities, data structures, and abstractions that form the foundation of the entire application.
+
+## Architecture
+
+The base layer is organized into three main categories:
+
+- **common/** - Platform-agnostic utilities
+- **browser/** - Browser-specific implementations
+- **node/** - Node.js-specific implementations
+
+### Key Principles
+
+1. **No dependencies** on higher layers (platform, editor, workbench)
+2. **Reusable** across different contexts
+3. **Well-tested** fundamental implementations
+4. **Performance-focused** core utilities
+
+## Core Components
+
+<CardGroup cols={2}>
+  <Card title="Lifecycle Management" icon="recycle" href="#lifecycle">
+    Disposables and resource management
+  </Card>
+  <Card title="Event System" icon="bolt" href="#events">
+    Type-safe event emitters and listeners
+  </Card>
+  <Card title="Async Utilities" icon="clock" href="#async">
+    Promises, delays, and async patterns
+  </Card>
+  <Card title="Data Structures" icon="database" href="#data-structures">
+    Collections, trees, and specialized maps
+  </Card>
+</CardGroup>
+
+## Lifecycle Management {#lifecycle}
+
+The lifecycle system manages resource cleanup and prevents memory leaks.
+
+### IDisposable Interface
+
+**Location:** `src/vs/base/common/lifecycle.ts:200`
+
+```typescript
+export interface IDisposable {
+    dispose(): void;
+}
+```
+
+### Disposable Class
+
+Base class for disposable objects with tracking capabilities:
+
+```typescript
+import { Disposable } from 'vs/base/common/lifecycle';
+
+class MyService extends Disposable {
+    constructor() {
+        super();
+        
+        // Auto-cleanup when disposed
+        this._register(someResource);
+    }
+}
+```
+
+### DisposableStore
+
+**Location:** `src/vs/base/common/lifecycle.ts:300`
+
+Manages a collection of disposables:
+
+```typescript
+import { DisposableStore } from 'vs/base/common/lifecycle';
+
+const disposables = new DisposableStore();
+
+// Add disposables
+disposables.add(subscription1);
+disposables.add(subscription2);
+
+// Dispose all at once
+disposables.dispose();
+```
+
+<Accordion title="Lifecycle Patterns">
+
+**Common Patterns:**
+
+1. **Extending Disposable**
+```typescript
+class Widget extends Disposable {
+    constructor() {
+        super();
+        this._register(this.onClose(() => this.cleanup()));
+    }
+}
+```
+
+2. **Using DisposableStore**
+```typescript
+class Manager {
+    private disposables = new DisposableStore();
+    
+    init() {
+        this.disposables.add(event.onDidChange(() => {...}));
+    }
+    
+    dispose() {
+        this.disposables.dispose();
+    }
+}
+```
+
+3. **toDisposable Helper**
+```typescript
+import { toDisposable } from 'vs/base/common/lifecycle';
+
+const cleanup = toDisposable(() => {
+    // Custom cleanup logic
+});
+```
+
+</Accordion>
+
+## Event System {#events}
+
+Type-safe event emitters used throughout VS Code.
+
+### Event Interface
+
+**Location:** `src/vs/base/common/event.ts:37`
+
+```typescript
+export interface Event<T> {
+    (listener: (e: T) => unknown, 
+     thisArgs?: any, 
+     disposables?: IDisposable[]): IDisposable;
+}
+```
+
+### Emitter Class
+
+**Location:** `src/vs/base/common/event.ts:500`
+
+Creates events that can be fired:
+
+```typescript
+import { Emitter, Event } from 'vs/base/common/event';
+
+class DataModel {
+    private _onDidChange = new Emitter<string>();
+    readonly onDidChange: Event<string> = this._onDidChange.event;
+    
+    updateData(value: string) {
+        this._onDidChange.fire(value);
+    }
+    
+    dispose() {
+        this._onDidChange.dispose();
+    }
+}
+```
+
+### Event Utilities
+
+<Accordion title="Event Operators">
+
+**Common Operators:**
+
+```typescript
+import { Event } from 'vs/base/common/event';
+
+// Fire once then dispose
+const onceEvent = Event.once(someEvent);
+
+// Debounce events
+const debouncedEvent = Event.debounce(someEvent, (last, e) => e, 100);
+
+// Filter events
+const filteredEvent = Event.filter(someEvent, e => e.value > 0);
+
+// Map event values
+const mappedEvent = Event.map(someEvent, e => e.toString());
+
+// Combine multiple events
+const anyEvent = Event.any(event1, event2, event3);
+```
+
+</Accordion>
+
+## Async Utilities {#async}
+
+**Location:** `src/vs/base/common/async.ts`
+
+### Promises and Delays
+
+```typescript
+import { timeout, raceCancellation } from 'vs/base/common/async';
+import { CancellationToken } from 'vs/base/common/cancellation';
+
+// Simple delay
+await timeout(1000); // Wait 1 second
+
+// Cancellable operation
+const result = await raceCancellation(
+    longRunningOperation(),
+    cancellationToken
+);
+```
+
+### RunOnceScheduler
+
+**Location:** `src/vs/base/common/async.ts:150`
+
+Schedules work with automatic debouncing:
+
+```typescript
+import { RunOnceScheduler } from 'vs/base/common/async';
+
+const scheduler = new RunOnceScheduler(() => {
+    console.log('Executed once after 500ms');
+}, 500);
+
+// Multiple calls within 500ms result in single execution
+scheduler.schedule();
+scheduler.schedule();
+scheduler.schedule();
+```
+
+### Throttler
+
+**Location:** `src/vs/base/common/async.ts:250`
+
+```typescript
+import { Throttler } from 'vs/base/common/async';
+
+const throttler = new Throttler();
+
+// Only runs one at a time
+await throttler.queue(() => asyncWork());
+```
+
+## Data Structures {#data-structures}
+
+### LinkedList
+
+**Location:** `src/vs/base/common/linkedList.ts`
+
+Efficient doubly-linked list implementation:
+
+```typescript
+import { LinkedList } from 'vs/base/common/linkedList';
+
+const list = new LinkedList<string>();
+list.push('a');
+list.push('b');
+list.unshift('c');
+
+for (const item of list) {
+    console.log(item);
+}
+```
+
+### Resource Maps
+
+**Location:** `src/vs/base/common/map.ts`
+
+```typescript
+import { ResourceMap } from 'vs/base/common/map';
+import { URI } from 'vs/base/common/uri';
+
+// Case-insensitive URI map
+const map = new ResourceMap<string>();
+map.set(URI.file('/path/to/file'), 'value');
+
+const value = map.get(URI.file('/PATH/TO/FILE')); // Works!
+```
+
+### TernarySearchTree
+
+**Location:** `src/vs/base/common/ternarySearchTree.ts`
+
+Efficient prefix-based lookups:
+
+```typescript
+import { TernarySearchTree } from 'vs/base/common/ternarySearchTree';
+
+const tree = TernarySearchTree.forUris<string>();
+tree.set(URI.file('/workspace/src'), 'source');
+tree.set(URI.file('/workspace/test'), 'tests');
+
+// Find all with prefix
+const matches = tree.findSuperstr(URI.file('/workspace'));
+```
+
+## Common Utilities
+
+<CardGroup cols={2}>
+  <Card title="Arrays" icon="list">
+    **Location:** `src/vs/base/common/arrays.ts`
+    
+    Sorting, filtering, grouping, binary search
+  </Card>
+  
+  <Card title="Strings" icon="text">
+    **Location:** `src/vs/base/common/strings.ts`
+    
+    Formatting, comparison, escaping, parsing
+  </Card>
+  
+  <Card title="Objects" icon="cube">
+    **Location:** `src/vs/base/common/objects.ts`
+    
+    Deep cloning, merging, equality checks
+  </Card>
+  
+  <Card title="URI" icon="link">
+    **Location:** `src/vs/base/common/uri.ts`
+    
+    File path and URI handling
+  </Card>
+</CardGroup>
+
+### Array Utilities
+
+```typescript
+import { binarySearch, coalesce, distinct, groupBy } from 'vs/base/common/arrays';
+
+// Binary search in sorted array
+const index = binarySearch([1, 3, 5, 7], 5, (a, b) => a - b);
+
+// Remove nulls/undefined
+const clean = coalesce([1, null, 2, undefined, 3]); // [1, 2, 3]
+
+// Remove duplicates
+const unique = distinct([1, 2, 2, 3, 3, 3]); // [1, 2, 3]
+
+// Group by key
+const groups = groupBy(['apple', 'apricot', 'banana'], item => item[0]);
+```
+
+### String Utilities
+
+```typescript
+import { format, compare, escapeRegExpCharacters } from 'vs/base/common/strings';
+
+// String formatting
+const msg = format('Hello {0}, you have {1} messages', 'John', 5);
+
+// Natural comparison
+const result = compare('file10.txt', 'file2.txt'); // Handles numbers
+
+// Escape for regex
+const escaped = escapeRegExpCharacters('$100.00'); // '\\$100\\.00'
+```
+
+## Browser Utilities
+
+**Location:** `src/vs/base/browser/`
+
+### DOM Utilities
+
+**Location:** `src/vs/base/browser/dom.ts`
+
+```typescript
+import * as dom from 'vs/base/browser/dom';
+
+// Create elements
+const element = dom.$('.my-class', { id: 'my-id' }, 
+    dom.$('span', {}, 'Hello')
+);
+
+// Event listeners with disposable
+const listener = dom.addDisposableListener(element, 'click', (e) => {
+    console.log('Clicked!');
+});
+
+// Dimension helpers
+const size = dom.getTotalSize(element);
+const { width, height } = dom.getClientArea(element);
+```
+
+### UI Components
+
+**Location:** `src/vs/base/browser/ui/`
+
+<Accordion title="Base UI Components">
+
+- **ActionBar** - Toolbar with actions (`ui/actionbar/`)
+- **Button** - Styled buttons (`ui/button/`)
+- **InputBox** - Text input with validation (`ui/inputbox/`)
+- **List** - Virtual scrolling lists (`ui/list/`)
+- **Tree** - Hierarchical tree views (`ui/tree/`)
+- **SplitView** - Resizable panes (`ui/splitview/`)
+- **Menu** - Context and dropdown menus (`ui/menu/`)
+- **ProgressBar** - Progress indicators (`ui/progressbar/`)
+
+</Accordion>
+
+## Best Practices
+
+<Warning>
+**Memory Management:** Always dispose resources! Use `DisposableStore` or extend `Disposable` to track cleanup.
+</Warning>
+
+<Tip>
+**Event Usage:** Prefer `Event.once()` for one-time listeners to avoid memory leaks.
+</Tip>
+
+<Note>
+**Async Patterns:** Use `RunOnceScheduler` for debouncing and `Throttler` for sequential async operations.
+</Note>
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Platform Services" href="/components/platform">
+    Dependency injection and core services
+  </Card>
+  <Card title="Editor" href="/components/editor">
+    Text editor implementation
+  </Card>
+  <Card title="Workbench" href="/components/workbench">
+    Application shell and layout
+  </Card>
+</CardGroup>

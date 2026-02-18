@@ -1,0 +1,245 @@
+---
+title: Contribution Guidelines
+description: Learn how to contribute to Visual Studio Code - from asking questions to submitting pull requests
+icon: book-open
+---
+
+Welcome, and thank you for your interest in contributing to VS Code! This guide will help you understand how you can get involved in the project.
+
+## Ways to Contribute
+
+There are several ways you can contribute to VS Code beyond writing code:
+
+- Reporting bugs and feature requests
+- Improving documentation
+- Reviewing pull requests
+- Writing code to fix issues
+- Creating extensions
+- Helping others on Stack Overflow
+
+## Getting Started
+
+<Steps>
+  <Step title="Fork and Clone the Repository">
+    Fork the [VS Code repository](https://github.com/microsoft/vscode) and clone it to your local machine:
+    
+    ```bash
+    git clone https://github.com/<your-username>/vscode.git
+    cd vscode
+    ```
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Install the required dependencies using npm:
+    
+    ```bash
+    npm install
+    ```
+    
+    This will install all necessary packages and set up the development environment.
+  </Step>
+  
+  <Step title="Build the Project">
+    Start the watch task to compile TypeScript sources:
+    
+    ```bash
+    npm run watch
+    ```
+    
+    Or use the `VS Code - Build` watch task from within VS Code.
+  </Step>
+  
+  <Step title="Run VS Code">
+    Launch the development version of VS Code:
+    
+    - Press `F5` in VS Code to launch a new instance with your changes
+    - Or run `./scripts/code.sh` (Linux/macOS) or `.\scripts\code.bat` (Windows)
+  </Step>
+</Steps>
+
+## Asking Questions
+
+Have a question? Instead of opening an issue, please ask on [Stack Overflow](https://stackoverflow.com/questions/tagged/visual-studio-code) using the tag `visual-studio-code`.
+
+<Tip>
+The active community will be eager to assist you. Your well-worded question will serve as a resource to others searching for help.
+</Tip>
+
+## Providing Feedback
+
+Your comments and feedback are welcome! The development team is available via several channels:
+
+- **GitHub Discussions**: For general discussions and questions
+- **Issue Tracker**: For bug reports and feature requests
+- **Stack Overflow**: For technical questions
+- **Twitter/X**: For announcements and updates
+
+See the [Feedback Channels wiki page](https://github.com/microsoft/vscode/wiki/Feedback-Channels) for details on how to share your thoughts.
+
+## Understanding the Codebase
+
+### Project Structure
+
+VS Code is built with a layered architecture using TypeScript, web APIs, and Electron. Here's the main folder structure:
+
+```
+vscode/
+├── src/                    # Main TypeScript source code
+│   └── vs/
+│       ├── base/          # Foundation utilities
+│       ├── platform/      # Platform services
+│       ├── editor/        # Text editor implementation
+│       ├── workbench/     # Main application workbench
+│       ├── code/          # Electron main process
+│       └── server/        # Server specific code
+├── extensions/            # Built-in extensions
+├── build/                 # Build scripts
+├── test/                  # Integration tests
+└── scripts/               # Development scripts
+```
+
+### Core Architecture
+
+VS Code follows these key architectural principles:
+
+<CardGroup cols={2}>
+  <Card title="Layered Architecture" icon="layer-group">
+    Code is organized in layers from `base` → `platform` → `editor` → `workbench`
+  </Card>
+  
+  <Card title="Dependency Injection" icon="syringe">
+    Services are injected through constructor parameters using a DI framework
+  </Card>
+  
+  <Card title="Contribution Model" icon="puzzle-piece">
+    Features contribute to registries and extension points
+  </Card>
+  
+  <Card title="Cross-Platform" icon="window">
+    Abstractions separate platform-specific code from common code
+  </Card>
+</CardGroup>
+
+### Finding Related Code
+
+When working on an issue, use this approach to find relevant code:
+
+1. **Semantic search first**: Use file search for general concepts
+2. **Grep for exact strings**: Use grep for error messages or specific function names
+3. **Follow imports**: Check what files import the problematic module
+4. **Check test files**: Often reveal usage patterns and expected behavior
+
+<Warning>
+Always search existing issues and pull requests before starting work to avoid duplicating efforts.
+</Warning>
+
+## Development Workflow
+
+### TypeScript Compilation
+
+<Tip>
+MANDATORY: Always check the `VS Code - Build` watch task output for compilation errors before running ANY script or declaring work complete.
+</Tip>
+
+- Monitor the `VS Code - Build` task for real-time compilation errors
+- This task runs `Core - Build` and `Ext - Build` to incrementally compile sources
+- **Never run tests if there are compilation errors**
+- **Never use `npm run compile`** - use the watch task instead
+
+### Running Tests
+
+Use the appropriate test command based on what you're testing:
+
+```bash
+# Unit tests (with optional grep pattern)
+./scripts/test.sh --grep "<pattern>"
+
+# Integration tests
+./scripts/test-integration.sh
+
+# Check for layering issues
+npm run valid-layers-check
+```
+
+<Note>
+Integration tests end with `.integrationTest.ts` or are located in `/extensions/`.
+</Note>
+
+### Development Best Practices
+
+1. **Keep changes focused**: One issue per pull request
+2. **Write tests**: Add tests for new functionality and bug fixes
+3. **Follow code style**: Use the project's coding guidelines (see [Code Style](/contributing/code-style))
+4. **Document your changes**: Update relevant documentation
+5. **Clean up temporary files**: Remove any test files or scripts created during development
+
+## Identifying Where to Report
+
+The VS Code project is distributed across multiple repositories. Try to file issues against the correct repository:
+
+- **[microsoft/vscode](https://github.com/microsoft/vscode)**: Core VS Code product
+- **Extension repositories**: Issues specific to built-in extensions
+- **Extension-caused issues**: File on the extension's own repository
+
+<Tip>
+Check the [Related Projects wiki](https://github.com/microsoft/vscode/wiki/Related-Projects) if you're unsure which repo is correct.
+</Tip>
+
+### Testing with Extensions Disabled
+
+Before reporting an issue, recreate it after [disabling all extensions](https://code.visualstudio.com/docs/editor/extension-gallery#_disable-an-extension):
+
+```bash
+code --disable-extensions
+```
+
+If the issue disappears, it's likely caused by an extension.
+
+## Code Quality Standards
+
+All contributions must meet these quality standards:
+
+- **Copyright header**: All files must include the Microsoft copyright header
+- **Localization**: All user-facing messages must be localized using `nls.localize()`
+- **Async patterns**: Prefer `async/await` over `Promise` and `then` calls
+- **No code duplication**: Reuse existing utility functions and patterns
+- **Proper types**: Avoid `any` or `unknown` unless absolutely necessary
+- **Disposable management**: Handle disposables properly using `DisposableStore`, `MutableDisposable`, or `DisposableMap`
+
+<Warning>
+You MUST deal with disposables by registering them immediately after creation for later disposal to avoid memory leaks.
+</Warning>
+
+## Automated Issue Management
+
+VS Code uses GitHub Actions to manage issues automatically:
+
+- Close issues marked `info-needed` after 7 days of no response
+- Lock issues 45 days after they are closed
+- Implement the [feature request pipeline](https://github.com/microsoft/vscode/wiki/Issues-Triaging#managing-feature-requests)
+
+If you believe the bot made a mistake, please open a new issue and let the team know.
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Code Style Guide" icon="code" href="/contributing/code-style">
+    Learn about naming conventions, formatting rules, and code patterns
+  </Card>
+  
+  <Card title="Pull Request Process" icon="code-pull-request" href="/contributing/pull-requests">
+    Understand the PR submission and review process
+  </Card>
+  
+  <Card title="Issue Tracking" icon="bug" href="/contributing/issue-tracking">
+    Learn how to report bugs and request features effectively
+  </Card>
+  
+  <Card title="How to Contribute Wiki" icon="book" href="https://github.com/microsoft/vscode/wiki/How-to-Contribute">
+    Detailed contribution guide on the GitHub wiki
+  </Card>
+</CardGroup>
+
+## Thank You
+
+Your contributions to open source, large or small, make great projects like this possible. Thank you for taking the time to contribute!

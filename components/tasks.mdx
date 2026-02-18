@@ -1,0 +1,664 @@
+---
+title: 'Tasks'
+description: 'Task system - build tasks, problem matchers, and task automation'
+---
+
+## Overview
+
+The Tasks component (`src/vs/workbench/contrib/tasks/`) provides VS Code's task automation system, allowing you to run build scripts, linters, and other command-line tools from within the editor.
+
+**Location:** `src/vs/workbench/contrib/tasks/`
+
+## Architecture
+
+### Task System
+
+```
+┌───────────────────────────────────┐
+│         Task Service                │
+├───────────────────────────────────┤
+│     Task Configuration            │
+├───────────────────────────────────┤
+│    Problem Matchers                │
+├───────────────────────────────────┤
+│      Task Execution                │
+│    (Terminal/Process)              │
+└───────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="Task Service" icon="list-check" href="#task-service">
+    Task management and execution
+  </Card>
+  <Card title="Task Configuration" icon="gear" href="#configuration">
+    tasks.json configuration
+  </Card>
+  <Card title="Problem Matchers" icon="triangle-exclamation" href="#problem-matchers">
+    Parse output for errors and warnings
+  </Card>
+  <Card title="Task Providers" icon="plug" href="#task-providers">
+    Auto-detected and custom tasks
+  </Card>
+</CardGroup>
+
+## Task Service {#task-service}
+
+**Location:** `src/vs/workbench/contrib/tasks/common/taskService.ts`
+
+### ITaskService Interface
+
+```typescript
+export interface ITaskService {
+    readonly _serviceBrand: undefined;
+    
+    // Task execution
+    run(task: Task | undefined, options?: ITaskRunOptions): Promise<ITaskSummary>;
+    
+    // Task retrieval
+    tasks(filter?: ITaskFilter): Promise<Task[]>;
+    getTask(workspaceFolder: IWorkspaceFolder | string, identifier: string): Promise<Task | undefined>;
+    
+    // Task types
+    taskTypes(): string[];
+    
+    // Configuration
+    configureAction(): Action;
+    
+    // Events
+    onDidStateChange: Event<TaskEvent>;
+}
+
+export interface Task {
+    readonly _id: string;
+    readonly type: string;
+    readonly configurationProperties: IConfigurationProperties;
+    readonly runOptions: IRunOptions;
+    
+    readonly command: ICommandConfiguration;
+    readonly problemMatchers: (string | IProblemMatcher)[];
+}
+```
+
+### Running Tasks
+
+```typescript
+import { ITaskService, Task } from 'vs/workbench/contrib/tasks/common/taskService';
+
+export class TaskRunner {
+    constructor(
+        @ITaskService private readonly taskService: ITaskService
+    ) {}
+    
+    async runTaskByName(name: string): Promise<void> {
+        const tasks = await this.taskService.tasks();
+        const task = tasks.find(t => t.configurationProperties.name === name);
+        
+        if (task) {
+            await this.taskService.run(task);
+        }
+    }
+    
+    async runBuildTask(): Promise<void> {
+        // Run the default build task
+        await this.taskService.run(undefined, {
+            type: 'build'
+        });
+    }
+    
+    async getAllTasks(): Promise<Task[]> {
+        return await this.taskService.tasks();
+    }
+}
+```
+
+## Task Configuration {#configuration}
+
+**Location:** `.vscode/tasks.json`
+
+### Basic Task Structure
+
+```json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "npm run build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": ["$tsc"]
+        }
+    ]
+}
+```
+
+### Task Properties
+
+<Accordion title="Common Task Properties">
+
+```json
+{
+    "label": "Task Name",           // Display name
+    "type": "shell",                 // 'shell' or 'process'
+    
+    // Command
+    "command": "npm",
+    "args": ["run", "build"],
+    
+    // Working directory
+    "options": {
+        "cwd": "${workspaceFolder}/src",
+        "env": {
+            "NODE_ENV": "production"
+        }
+    },
+    
+    // When to run
+    "runOptions": {
+        "runOn": "default"  // 'default' or 'folderOpen'
+    },
+    
+    // Dependencies
+    "dependsOn": ["Clean", "Install"],
+    "dependsOrder": "parallel",  // 'parallel' or 'sequence'
+    
+    // Grouping
+    "group": {
+        "kind": "build",     // 'build', 'test', or 'none'
+        "isDefault": true
+    },
+    
+    // Presentation
+    "presentation": {
+        "reveal": "always",  // 'always', 'never', 'silent'
+        "focus": false,
+        "panel": "shared",   // 'shared', 'dedicated', 'new'
+        "showReuseMessage": true,
+        "clear": false,
+        "echo": true
+    },
+    
+    // Problem matchers
+    "problemMatcher": ["$tsc", "$eslint"],
+    
+    // Icon
+    "icon": {
+        "id": "flame",
+        "color": "terminal.ansiRed"
+    }
+}
+```
+
+</Accordion>
+
+### Task Types
+
+```typescript
+// Shell tasks - run in terminal
+{
+    "type": "shell",
+    "command": "echo",
+    "args": ["Hello World"]
+}
+
+// Process tasks - spawn process directly
+{
+    "type": "process",
+    "command": "/usr/bin/python",
+    "args": ["script.py"]
+}
+
+// Custom tasks from extensions
+{
+    "type": "npm",
+    "script": "build"
+}
+```
+
+## Problem Matchers {#problem-matchers}
+
+**Location:** `src/vs/workbench/contrib/tasks/common/problemMatcher.ts`
+
+### Built-in Problem Matchers
+
+```typescript
+// VS Code includes problem matchers for common tools:
+const BUILTIN_MATCHERS = [
+    '$tsc',           // TypeScript compiler
+    '$tsc-watch',     // TypeScript watch mode
+    '$eslint-compact',// ESLint compact format
+    '$eslint-stylish',// ESLint stylish format
+    '$go',            // Go compiler
+    '$jshint',        // JSHint
+    '$jshint-stylish',// JSHint stylish
+    '$gcc',           // GCC
+    '$msCompile',     // Microsoft compiler
+    '$lessc'          // Less compiler
+];
+```
+
+### Using Problem Matchers
+
+```json
+{
+    "label": "TypeScript Build",
+    "type": "shell",
+    "command": "tsc",
+    "problemMatcher": "$tsc"
+}
+
+// Multiple problem matchers
+{
+    "label": "Build and Lint",
+    "type": "shell",
+    "command": "npm run build-and-lint",
+    "problemMatcher": ["$tsc", "$eslint-stylish"]
+}
+```
+
+### Custom Problem Matcher
+
+```json
+{
+    "label": "Custom Build",
+    "type": "shell",
+    "command": "my-compiler",
+    "problemMatcher": {
+        "owner": "mycompiler",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+            "regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(warning|error)\\s+(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "message": 5
+        }
+    }
+}
+```
+
+### Problem Matcher Properties
+
+<Accordion title="Problem Matcher Configuration">
+
+```json
+{
+    "problemMatcher": {
+        // Ownership
+        "owner": "typescript",
+        
+        // Source
+        "source": "ts",
+        
+        // File location
+        "fileLocation": [
+            "relative",  // or 'absolute', 'autoDetect'
+            "${workspaceFolder}"
+        ],
+        
+        // Pattern
+        "pattern": {
+            "regexp": "^([^\\s].*)[\\(:]+(\\d+)[,:](\\d+)\\)?\\s*:\\s*(error|warning|info)\\s*\\w+\\s*:\\s*(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "message": 5,
+            "code": 6,
+            "loop": false  // Match multiple times
+        },
+        
+        // Multi-line patterns
+        "pattern": [
+            {
+                "regexp": "^([^\\s].*)",
+                "file": 1
+            },
+            {
+                "regexp": "^\\s+(\\d+):(\\d+)\\s+(error|warning)\\s+(.*)$",
+                "line": 1,
+                "column": 2,
+                "severity": 3,
+                "message": 4
+            }
+        ],
+        
+        // Background task
+        "background": {
+            "activeOnStart": true,
+            "beginsPattern": "^\\s*\\[.*compilation starting",
+            "endsPattern": "^\\s*\\[.*compilation complete"
+        },
+        
+        // Severity
+        "severity": "error"  // Default severity
+    }
+}
+```
+
+</Accordion>
+
+## Task Providers {#task-providers}
+
+**Location:** `src/vs/workbench/contrib/tasks/common/taskService.ts`
+
+### Auto-detected Tasks
+
+VS Code automatically detects tasks from:
+- **npm** - npm scripts from package.json
+- **Gulp** - Gulp tasks from gulpfile.js
+- **Grunt** - Grunt tasks from Gruntfile.js
+- **Jake** - Jake tasks from Jakefile
+- **Maven** - Maven goals
+- **Gradle** - Gradle tasks
+
+### Custom Task Provider
+
+```typescript
+import { Task, ITaskProvider } from 'vs/workbench/contrib/tasks/common/tasks';
+
+class MyTaskProvider implements ITaskProvider {
+    static readonly Type = 'mytask';
+    
+    async provideTasks(): Promise<Task[]> {
+        // Detect and return tasks
+        return [
+            {
+                type: MyTaskProvider.Type,
+                label: 'My Custom Task',
+                command: 'echo',
+                args: ['Hello']
+            }
+        ];
+    }
+    
+    async resolveTask(task: Task): Promise<Task | undefined> {
+        // Resolve task details
+        return task;
+    }
+}
+```
+
+## Task Variables
+
+**Location:** `src/vs/workbench/contrib/tasks/common/taskConfiguration.ts`
+
+### Common Variables
+
+```json
+{
+    "command": "${workspaceFolder}/build.sh",
+    "args": [
+        "${file}",                    // Current file
+        "${fileBasename}",            // File name
+        "${fileDirname}",             // File directory
+        "${fileExtname}",             // File extension
+        "${relativeFile}",            // Relative file path
+        "${relativeFileDirname}",     // Relative directory
+        "${workspaceFolder}",         // Workspace root
+        "${workspaceFolderBasename}", // Workspace name
+        "${cwd}",                     // Current working directory
+        "${lineNumber}",              // Current line
+        "${selectedText}",            // Selected text
+        "${env:PATH}",                // Environment variable
+        "${config:editor.fontSize}",  // Configuration value
+        "${command:extension.command}" // Command result
+    ]
+}
+```
+
+## Task Groups
+
+### Build Tasks
+
+```json
+{
+    "label": "Build",
+    "group": {
+        "kind": "build",
+        "isDefault": true
+    }
+}
+
+// Run with: Tasks: Run Build Task (Ctrl+Shift+B)
+```
+
+### Test Tasks
+
+```json
+{
+    "label": "Test",
+    "group": {
+        "kind": "test",
+        "isDefault": true
+    }
+}
+
+// Run with: Tasks: Run Test Task
+```
+
+## Task Execution
+
+### Task States
+
+```typescript
+export enum TaskEventKind {
+    Start = 'start',
+    ProcessStarted = 'processStarted',
+    Active = 'active',
+    Inactive = 'inactive',
+    Changed = 'changed',
+    Terminated = 'terminated',
+    ProcessEnded = 'processEnded',
+    End = 'end'
+}
+```
+
+### Monitoring Task Execution
+
+```typescript
+import { ITaskService, TaskEvent, TaskEventKind } from 'vs/workbench/contrib/tasks/common/taskService';
+
+export class TaskMonitor {
+    constructor(
+        @ITaskService private readonly taskService: ITaskService
+    ) {
+        this.taskService.onDidStateChange(event => {
+            this.handleTaskEvent(event);
+        });
+    }
+    
+    private handleTaskEvent(event: TaskEvent): void {
+        switch (event.kind) {
+            case TaskEventKind.Start:
+                console.log('Task started:', event.task?.configurationProperties.name);
+                break;
+            case TaskEventKind.ProcessStarted:
+                console.log('Process started, PID:', event.processId);
+                break;
+            case TaskEventKind.End:
+                console.log('Task ended:', event.exitCode);
+                break;
+            case TaskEventKind.Terminated:
+                console.log('Task terminated');
+                break;
+        }
+    }
+}
+```
+
+## Task Actions
+
+**Location:** `src/vs/workbench/contrib/tasks/browser/taskCommands.ts`
+
+### Common Task Commands
+
+```typescript
+const TASK_COMMANDS = {
+    RUN_TASK: 'workbench.action.tasks.runTask',
+    BUILD: 'workbench.action.tasks.build',
+    TEST: 'workbench.action.tasks.test',
+    TERMINATE: 'workbench.action.tasks.terminate',
+    RESTART_TASK: 'workbench.action.tasks.restartTask',
+    SHOW_TASKS: 'workbench.action.tasks.showTasks',
+    SHOW_LOG: 'workbench.action.tasks.showLog',
+    CONFIGURE_TASK: 'workbench.action.tasks.configureTaskRunner',
+    CONFIGURE_DEFAULT_BUILD: 'workbench.action.tasks.configureDefaultBuildTask',
+    CONFIGURE_DEFAULT_TEST: 'workbench.action.tasks.configureDefaultTestTask'
+};
+
+// Execute task by name
+import { ICommandService } from 'vs/platform/commands/common/commands';
+
+await commandService.executeCommand(TASK_COMMANDS.RUN_TASK, 'Build');
+```
+
+## Compound Tasks
+
+```json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Client Build",
+            "type": "shell",
+            "command": "npm run build",
+            "options": { "cwd": "${workspaceFolder}/client" }
+        },
+        {
+            "label": "Server Build",
+            "type": "shell",
+            "command": "npm run build",
+            "options": { "cwd": "${workspaceFolder}/server" }
+        },
+        {
+            "label": "Build All",
+            "dependsOn": ["Client Build", "Server Build"],
+            "dependsOrder": "parallel",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
+```
+
+## Background Tasks
+
+```json
+{
+    "label": "Watch",
+    "type": "shell",
+    "command": "tsc --watch",
+    "isBackground": true,
+    "problemMatcher": {
+        "owner": "typescript",
+        "fileLocation": "relative",
+        "pattern": "$tsc",
+        "background": {
+            "activeOnStart": true,
+            "beginsPattern": "^\\s*\\d+:\\d+:\\d+ (AM|PM) - File change detected\\. Starting incremental compilation\\.",
+            "endsPattern": "^\\s*\\d+:\\d+:\\d+ (AM|PM) - (Compilation complete|Found \\d+ errors?)\\. Watching for file changes\\."
+        }
+    }
+}
+```
+
+## Task Configuration
+
+### Settings
+
+```json
+{
+    // Auto-detection
+    "task.autoDetect": "on",
+    "npm.autoDetect": "on",
+    "gulp.autoDetect": "on",
+    "grunt.autoDetect": "on",
+    
+    // Problem matchers
+    "task.problemMatchers.neverPrompt": false,
+    "task.slowProviderWarning": true,
+    
+    // Quick open
+    "task.quickOpen.history": 30,
+    "task.quickOpen.detail": true,
+    "task.quickOpen.skip": false,
+    
+    // Execution
+    "task.saveBeforeRun": "prompt"  // 'always', 'never', 'prompt'
+}
+```
+
+## Best Practices
+
+<Warning>
+**Problem Matchers:** Test your problem matcher regex carefully. Incorrect patterns can cause performance issues.
+</Warning>
+
+<Tip>
+**Background Tasks:** Use background tasks for watch modes. They won't block the task system.
+</Tip>
+
+<Note>
+**Dependencies:** Use task dependencies wisely. Deep dependency chains can be hard to debug.
+</Note>
+
+## Extension Integration
+
+### Task Provider Extension
+
+```typescript
+// Extension API for task providers
+import * as vscode from 'vscode';
+
+class MyTaskProvider implements vscode.TaskProvider {
+    async provideTasks(): Promise<vscode.Task[]> {
+        const tasks: vscode.Task[] = [];
+        
+        // Detect tasks
+        const task = new vscode.Task(
+            { type: 'mytask', task: 'build' },
+            vscode.TaskScope.Workspace,
+            'Build',
+            'mytask',
+            new vscode.ShellExecution('npm run build')
+        );
+        
+        task.group = vscode.TaskGroup.Build;
+        tasks.push(task);
+        
+        return tasks;
+    }
+    
+    async resolveTask(task: vscode.Task): Promise<vscode.Task | undefined> {
+        return task;
+    }
+}
+
+// Register provider
+vscode.tasks.registerTaskProvider('mytask', new MyTaskProvider());
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Terminal" href="/components/terminal">
+    Tasks run in terminals
+  </Card>
+  <Card title="Debug" href="/components/debug">
+    Pre-launch tasks
+  </Card>
+  <Card title="Testing" href="/components/testing">
+    Test tasks integration
+  </Card>
+</CardGroup>

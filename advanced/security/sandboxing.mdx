@@ -1,0 +1,676 @@
+---
+title: Sandboxing
+description: Understanding Electron sandbox and process isolation in VS Code
+---
+
+# Sandboxing
+
+VS Code uses Electron's sandbox feature to isolate renderer processes and limit their access to system resources, providing defense-in-depth security.
+
+## Sandbox Architecture
+
+<Info>
+**Sandbox Model:**
+- **Main Process**: Unrestricted access (privileged)
+- **Renderer Processes**: Sandboxed (limited privileges)
+- **Preload Scripts**: Bridge between sandbox and main
+- **Context Isolation**: Separates page context from preload
+</Info>
+
+## Sandbox Configuration
+
+From `src/vs/base/parts/sandbox/common/sandboxTypes.ts:21`:
+
+```typescript
+export interface ISandboxConfiguration {
+  /**
+   * Identifier of the sandboxed renderer.
+   */
+  windowId: number;
+  
+  /**
+   * Root path of the JavaScript sources.
+   */
+  appRoot: string;
+  
+  /**
+   * Per window process environment.
+   */
+  userEnv: IProcessEnvironment;
+  
+  /**
+   * Product configuration.
+   */
+  product: IProductConfiguration;
+  
+  /**
+   * Configured zoom level.
+   */
+  zoomLevel?: number;
+  
+  /**
+   * Location of V8 code cache.
+   */
+  codeCachePath?: string;
+  
+  /**
+   * NLS support
+   */
+  nls: {
+    messages: string[];
+    language: string | undefined;
+  };
+}
+```
+
+## Enabling Sandbox
+
+VS Code enables sandbox for renderer processes:
+
+```typescript
+import { BrowserWindow } from 'electron';
+
+// Create sandboxed window
+const window = new BrowserWindow({
+  webPreferences: {
+    // Enable sandbox
+    sandbox: true,
+    
+    // Enable context isolation
+    contextIsolation: true,
+    
+    // Disable Node.js integration
+    nodeIntegration: false,
+    
+    // Disable remote module
+    enableRemoteModule: false,
+    
+    // Preload script for safe API exposure
+    preload: path.join(__dirname, 'preload.js'),
+    
+    // Disable web security in dev mode only
+    webSecurity: !isDevelopment
+  }
+});
+```
+
+<Warning>
+**Security Critical Settings:**
+- **sandbox: true** - Enables OS-level process sandbox
+- **contextIsolation: true** - Prevents accessing Node APIs from page
+- **nodeIntegration: false** - Disables Node.js in renderer
+- **enableRemoteModule: false** - Disables dangerous remote module
+</Warning>
+
+## Preload Scripts
+
+Preload scripts bridge the gap between sandbox and privileged APIs:
+
+### Safe API Exposure
+
+```typescript
+// preload.ts
+import { contextBridge, ipcRenderer } from 'electron';
+import { ISandboxConfiguration } from 'vs/base/parts/sandbox/common/sandboxTypes';
+
+// Get sandbox configuration from main process
+const configuration: ISandboxConfiguration = (
+  window as any
+).vscodeWindowConfig;
+
+// Expose safe APIs to renderer
+contextBridge.exposeInMainWorld('vscode', {
+  // Configuration
+  windowId: configuration.windowId,
+  appRoot: configuration.appRoot,
+  
+  // Safe IPC communication
+  ipcRenderer: {
+    send: (channel: string, ...args: any[]) => {
+      // Validate channel
+      if (!isAllowedChannel(channel)) {
+        throw new Error(`Channel not allowed: ${channel}`);
+      }
+      ipcRenderer.send(channel, ...args);
+    },
+    
+    invoke: async (channel: string, ...args: any[]) => {
+      if (!isAllowedChannel(channel)) {
+        throw new Error(`Channel not allowed: ${channel}`);
+      }
+      return await ipcRenderer.invoke(channel, ...args);
+    },
+    
+    on: (channel: string, listener: (...args: any[]) => void) => {
+      if (!isAllowedChannel(channel)) {
+        throw new Error(`Channel not allowed: ${channel}`);
+      }
+      ipcRenderer.on(channel, (_event, ...args) => listener(...args));
+    }
+  },
+  
+  // Process information
+  process: {
+    platform: process.platform,
+    arch: process.arch,
+    env: configuration.userEnv
+  }
+});
+
+function isAllowedChannel(channel: string): boolean {
+  const allowedChannels = [
+    'vscode:window',
+    'vscode:workbench',
+    'vscode:extension',
+    // ...
+  ];
+  return allowedChannels.some(prefix => channel.startsWith(prefix));
+}
+```
+
+### Channel Allowlist
+
+```typescript
+class ChannelValidator {
+  private static readonly allowedPrefixes = [
+    'vscode:',
+    'electron:'
+  ];
+  
+  private static readonly blockedChannels = [
+    'vscode:executeCommand:workbench.action.openSettings',
+    'electron:shell:openExternal'
+  ];
+  
+  static isAllowed(channel: string): boolean {
+    // Check if blocked
+    if (this.blockedChannels.includes(channel)) {
+      return false;
+    }
+    
+    // Check if has allowed prefix
+    return this.allowedPrefixes.some(prefix => 
+      channel.startsWith(prefix)
+    );
+  }
+  
+  static validate(channel: string, args: any[]): void {
+    if (!this.isAllowed(channel)) {
+      throw new Error(`Channel not allowed: ${channel}`);
+    }
+    
+    // Validate arguments don't contain functions
+    this.validateArgs(args);
+  }
+  
+  private static validateArgs(args: any[]): void {
+    for (const arg of args) {
+      if (typeof arg === 'function') {
+        throw new Error('Functions cannot be passed via IPC');
+      }
+      if (arg && typeof arg === 'object') {
+        this.validateArgs(Object.values(arg));
+      }
+    }
+  }
+}
+```
+
+## Context Isolation
+
+Context isolation prevents page scripts from accessing preload script context:
+
+```typescript
+// With context isolation
+// Page script cannot access preload variables
+
+// preload.ts
+const sensitiveData = 'secret';
+
+contextBridge.exposeInMainWorld('api', {
+  // Only exposed methods are accessible
+  getData: () => 'public data'
+});
+
+// page.js
+console.log(window.sensitiveData); // undefined ✓
+console.log(window.api.getData()); // 'public data' ✓
+```
+
+### Without Context Isolation (Dangerous)
+
+```typescript
+// WITHOUT context isolation (DANGEROUS - DON'T DO THIS)
+
+// preload.ts
+window.sensitiveData = 'secret';
+window.executeCommand = (cmd) => {
+  require('child_process').exec(cmd); // VULNERABLE!
+};
+
+// page.js - Malicious code can access everything
+window.executeCommand('rm -rf /'); // BAD!
+```
+
+## Sandbox Limitations
+
+Operations not allowed in sandboxed renderers:
+
+### File System Access
+
+```typescript
+// NOT ALLOWED in sandbox
+import * as fs from 'fs';
+fs.readFileSync('/etc/passwd'); // Error: fs is not defined
+
+// ALLOWED via IPC
+const content = await window.vscode.ipcRenderer.invoke(
+  'vscode:fs:readFile',
+  '/path/to/file'
+);
+```
+
+### Child Processes
+
+```typescript
+// NOT ALLOWED in sandbox
+import { spawn } from 'child_process';
+spawn('ls', ['-la']); // Error: spawn is not defined
+
+// ALLOWED via IPC to main process
+const result = await window.vscode.ipcRenderer.invoke(
+  'vscode:process:execute',
+  'ls',
+  ['-la']
+);
+```
+
+### Native Modules
+
+```typescript
+// NOT ALLOWED in sandbox
+const native = require('./native.node'); // Error
+
+// ALLOWED in main process
+// Request operation via IPC
+```
+
+## Secure IPC Patterns
+
+### Request-Response Pattern
+
+```typescript
+// Main process
+import { validatedIpcMain } from 'vs/base/parts/ipc/electron-main/ipcMain';
+
+validatedIpcMain.handle(
+  'vscode:fs:readFile',
+  async (event, filePath: string) => {
+    // Validate sender
+    if (!isValidWindow(event.sender)) {
+      throw new Error('Invalid sender');
+    }
+    
+    // Validate file path
+    if (!isAllowedPath(filePath)) {
+      throw new Error('Access denied');
+    }
+    
+    // Read file
+    return await fs.promises.readFile(filePath, 'utf8');
+  }
+);
+
+// Renderer process
+const content = await window.vscode.ipcRenderer.invoke(
+  'vscode:fs:readFile',
+  '/allowed/path/file.txt'
+);
+```
+
+### Event Pattern
+
+```typescript
+// Main process
+import { ipcMain } from 'electron';
+
+ipcMain.on('vscode:window:minimize', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window) {
+    window.minimize();
+  }
+});
+
+// Renderer process
+window.vscode.ipcRenderer.send('vscode:window:minimize');
+```
+
+### Stream Pattern
+
+```typescript
+// Main process - Stream large file
+ipcMain.handle('vscode:fs:readStream', async (event, filePath) => {
+  const stream = fs.createReadStream(filePath);
+  const chunks: Buffer[] = [];
+  
+  for await (const chunk of stream) {
+    // Send chunks progressively
+    event.sender.send('vscode:fs:chunk', chunk);
+    chunks.push(chunk);
+  }
+  
+  event.sender.send('vscode:fs:complete');
+  return Buffer.concat(chunks);
+});
+
+// Renderer process
+let data = '';
+
+window.vscode.ipcRenderer.on('vscode:fs:chunk', (chunk) => {
+  data += chunk.toString();
+  updateProgress(data.length);
+});
+
+window.vscode.ipcRenderer.on('vscode:fs:complete', () => {
+  processCompleteFile(data);
+});
+
+await window.vscode.ipcRenderer.invoke(
+  'vscode:fs:readStream',
+  '/large/file.txt'
+);
+```
+
+## Permission Model
+
+### Permission Checks
+
+```typescript
+class PermissionManager {
+  private permissions = new Map<number, Set<string>>();
+  
+  grant(windowId: number, permission: string): void {
+    if (!this.permissions.has(windowId)) {
+      this.permissions.set(windowId, new Set());
+    }
+    this.permissions.get(windowId)!.add(permission);
+  }
+  
+  revoke(windowId: number, permission: string): void {
+    this.permissions.get(windowId)?.delete(permission);
+  }
+  
+  has(windowId: number, permission: string): boolean {
+    return this.permissions.get(windowId)?.has(permission) ?? false;
+  }
+  
+  check(event: Electron.IpcMainInvokeEvent, permission: string): void {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      throw new Error('Window not found');
+    }
+    
+    if (!this.has(window.id, permission)) {
+      throw new Error(`Permission denied: ${permission}`);
+    }
+  }
+}
+
+const permissions = new PermissionManager();
+
+// Grant permission on window creation
+function createWindow(): BrowserWindow {
+  const window = new BrowserWindow({
+    webPreferences: { sandbox: true }
+  });
+  
+  permissions.grant(window.id, 'fs:read');
+  permissions.grant(window.id, 'process:execute');
+  
+  return window;
+}
+
+// Check permission in handler
+ipcMain.handle('vscode:fs:readFile', async (event, path) => {
+  permissions.check(event, 'fs:read');
+  return await fs.promises.readFile(path);
+});
+```
+
+## Sandbox Escape Prevention
+
+### Prevent Prototype Pollution
+
+```typescript
+// Validate object before merging
+function safeMerge(target: any, source: any): void {
+  for (const key of Object.keys(source)) {
+    // Prevent prototype pollution
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
+    
+    target[key] = source[key];
+  }
+}
+
+// Better: Use Object.assign with null prototype
+const obj = Object.create(null);
+Object.assign(obj, userInput);
+```
+
+### Prevent Code Injection
+
+```typescript
+// DANGEROUS - Never do this
+eval(userInput); // VULNERABLE
+new Function(userInput)(); // VULNERABLE
+
+// SAFE - Parse and validate
+function safeEvaluate(expression: string): any {
+  // Only allow specific expressions
+  const allowedPattern = /^[\d\s+\-*/()]+$/;
+  
+  if (!allowedPattern.test(expression)) {
+    throw new Error('Invalid expression');
+  }
+  
+  // Use safe evaluation
+  return Function('"use strict"; return (' + expression + ')')();
+}
+```
+
+### Validate IPC Messages
+
+```typescript
+import * as z from 'zod';
+
+// Define schema
+const FileReadSchema = z.object({
+  path: z.string(),
+  encoding: z.enum(['utf8', 'binary']).optional()
+});
+
+// Validate in handler
+ipcMain.handle('vscode:fs:readFile', async (event, args) => {
+  // Validate arguments
+  const validated = FileReadSchema.parse(args);
+  
+  // Use validated data
+  return await fs.promises.readFile(
+    validated.path,
+    validated.encoding
+  );
+});
+```
+
+## Platform-Specific Sandboxing
+
+### macOS Sandbox
+
+```typescript
+// App Sandbox entitlements (Info.plist)
+const entitlements = {
+  'com.apple.security.app-sandbox': true,
+  'com.apple.security.files.user-selected.read-write': true,
+  'com.apple.security.network.client': true,
+  'com.apple.security.network.server': true
+};
+```
+
+### Windows Sandbox
+
+```typescript
+// Windows process isolation
+const windowsOptions = {
+  // Low integrity level
+  integrityLevel: 'low',
+  
+  // AppContainer isolation
+  useAppContainer: true
+};
+```
+
+### Linux Sandbox
+
+```typescript
+// Use seccomp and namespaces
+const linuxOptions = {
+  // Chromium sandbox
+  enableChromiumSandbox: true,
+  
+  // Namespace isolation
+  useNamespaces: true
+};
+```
+
+## Debugging Sandboxed Renderers
+
+### DevTools Access
+
+```typescript
+// Open DevTools for sandboxed renderer
+const window = BrowserWindow.getAllWindows()[0];
+window.webContents.openDevTools({ mode: 'detach' });
+
+// DevTools has same restrictions as renderer
+// Cannot access Node.js APIs
+```
+
+### Logging from Sandbox
+
+```typescript
+// Renderer process
+console.log('Debug message'); // Goes to DevTools console
+
+// To send to main process
+window.vscode.ipcRenderer.send('vscode:log', {
+  level: 'info',
+  message: 'Debug information'
+});
+
+// Main process
+ipcMain.on('vscode:log', (event, { level, message }) => {
+  console.log(`[${level}] ${message}`);
+});
+```
+
+## Testing Sandbox
+
+```typescript
+import { BrowserWindow } from 'electron';
+import * as assert from 'assert';
+
+describe('Sandbox', () => {
+  let window: BrowserWindow;
+  
+  beforeEach(() => {
+    window = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    });
+  });
+  
+  afterEach(() => {
+    window.destroy();
+  });
+  
+  it('should not have Node.js access', async () => {
+    await window.loadURL('about:blank');
+    
+    const hasFs = await window.webContents.executeJavaScript(`
+      typeof require !== 'undefined' && 
+      typeof require('fs') !== 'undefined'
+    `);
+    
+    assert.strictEqual(hasFs, false, 'Should not have fs access');
+  });
+  
+  it('should have context isolation', async () => {
+    await window.loadURL('about:blank');
+    
+    const canAccessPreload = await window.webContents.executeJavaScript(`
+      typeof window.electronAPI !== 'undefined'
+    `);
+    
+    assert.strictEqual(
+      canAccessPreload,
+      false,
+      'Should not access preload directly'
+    );
+  });
+});
+```
+
+## Security Best Practices
+
+<Warning>
+**Sandbox Security Checklist:**
+- ✅ Enable sandbox for all renderer processes
+- ✅ Enable context isolation
+- ✅ Disable Node.js integration
+- ✅ Disable remote module
+- ✅ Validate all IPC messages
+- ✅ Use allowlist for IPC channels
+- ✅ Never expose dangerous APIs to renderer
+- ✅ Validate sender in IPC handlers
+- ✅ Use preload scripts for API exposure
+- ✅ Test sandbox restrictions
+</Warning>
+
+## Migration Guide
+
+### Migrating to Sandbox
+
+If you have code that needs to work in a sandbox:
+
+```typescript
+// Before (non-sandboxed)
+import * as fs from 'fs';
+const content = fs.readFileSync('file.txt', 'utf8');
+
+// After (sandboxed)
+// 1. Create IPC handler in main process
+ipcMain.handle('readFile', async (event, path) => {
+  return await fs.promises.readFile(path, 'utf8');
+});
+
+// 2. Expose via preload
+contextBridge.exposeInMainWorld('fileSystem', {
+  readFile: (path: string) => ipcRenderer.invoke('readFile', path)
+});
+
+// 3. Use in renderer
+const content = await window.fileSystem.readFile('file.txt');
+```
+
+## Related Files
+
+- `src/vs/base/parts/sandbox/common/sandboxTypes.ts:21` - Sandbox configuration
+- `src/vs/base/parts/ipc/electron-main/ipcMain.ts` - Validated IPC
+- `src/vs/code/electron-sandbox/` - Sandboxed renderer code
+- `src/vs/workbench/electron-sandbox/` - Sandboxed workbench

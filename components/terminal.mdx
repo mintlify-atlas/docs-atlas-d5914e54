@@ -1,0 +1,613 @@
+---
+title: 'Terminal'
+description: 'Integrated terminal - shell integration, terminal instances, and xterm.js'
+---
+
+## Overview
+
+The Terminal component (`src/vs/workbench/contrib/terminal/`) provides VS Code's integrated terminal functionality, including terminal instances, shell integration, terminal tabs, and xterm.js integration.
+
+**Location:** `src/vs/workbench/contrib/terminal/`
+
+## Architecture
+
+### Terminal System
+
+```
+┌───────────────────────────────────┐
+│       Terminal Panel/Editor          │
+├───────────────────────────────────┤
+│       Terminal Service               │
+├───────────────────────────────────┤
+│    Terminal Instance                │
+├───────────────────────────────────┤
+│    Xterm.js + Addons                 │
+├───────────────────────────────────┤
+│    Terminal Process (PTY)            │
+└───────────────────────────────────┘
+```
+
+<CardGroup cols={2}>
+  <Card title="Terminal Service" icon="terminal" href="#terminal-service">
+    Terminal management and lifecycle
+  </Card>
+  <Card title="Terminal Instances" icon="window" href="#terminal-instances">
+    Individual terminal sessions
+  </Card>
+  <Card title="Shell Integration" icon="link" href="#shell-integration">
+    Command detection and enhancements
+  </Card>
+  <Card title="Terminal Profiles" icon="list" href="#profiles">
+    Shell configurations
+  </Card>
+</CardGroup>
+
+## Terminal Service {#terminal-service}
+
+**Location:** `src/vs/workbench/contrib/terminal/browser/terminal.ts:39`
+
+### ITerminalService Interface
+
+```typescript
+export interface ITerminalService {
+    readonly _serviceBrand: undefined;
+    
+    // Instances
+    readonly instances: readonly ITerminalInstance[];
+    readonly activeInstance: ITerminalInstance | undefined;
+    
+    // Events
+    readonly onDidCreateInstance: Event<ITerminalInstance>;
+    readonly onDidDisposeInstance: Event<ITerminalInstance>;
+    readonly onDidChangeActiveInstance: Event<ITerminalInstance | undefined>;
+    readonly onDidChangeInstances: Event<void>;
+    
+    // Instance management
+    createTerminal(options?: ICreateTerminalOptions): Promise<ITerminalInstance>;
+    getInstanceFromResource(resource: URI): ITerminalInstance | undefined;
+    setActiveInstance(instance: ITerminalInstance): void;
+    
+    // Groups
+    getGroupLabels(): string[];
+    
+    // Configuration
+    getAvailableProfiles(): Promise<ITerminalProfile[]>;
+}
+```
+
+### Creating Terminals
+
+```typescript
+import { ITerminalService } from 'vs/workbench/contrib/terminal/browser/terminal';
+import { ITerminalProfile } from 'vs/platform/terminal/common/terminal';
+
+export class TerminalManager {
+    constructor(
+        @ITerminalService private readonly terminalService: ITerminalService
+    ) {}
+    
+    async createBasicTerminal(): Promise<void> {
+        const terminal = await this.terminalService.createTerminal({
+            name: 'My Terminal'
+        });
+        
+        terminal.show();
+    }
+    
+    async createTerminalWithProfile(profile: ITerminalProfile): Promise<void> {
+        const terminal = await this.terminalService.createTerminal({
+            config: profile,
+            cwd: '/workspace'
+        });
+        
+        terminal.show();
+    }
+    
+    async createTerminalWithCommand(): Promise<void> {
+        const terminal = await this.terminalService.createTerminal({
+            name: 'Build',
+            shellArgs: ['-c', 'npm run build']
+        });
+        
+        terminal.show();
+    }
+    
+    getActiveTerminal(): ITerminalInstance | undefined {
+        return this.terminalService.activeInstance;
+    }
+    
+    getAllTerminals(): readonly ITerminalInstance[] {
+        return this.terminalService.instances;
+    }
+}
+```
+
+## Terminal Instances {#terminal-instances}
+
+**Location:** `src/vs/workbench/contrib/terminal/browser/terminal.ts`
+
+### ITerminalInstance Interface
+
+```typescript
+export interface ITerminalInstance {
+    readonly instanceId: number;
+    readonly resource: URI;
+    
+    // Properties
+    readonly title: string;
+    readonly shellType: TerminalShellType;
+    readonly cwd: string | undefined;
+    
+    // Events
+    readonly onDisposed: Event<ITerminalInstance>;
+    readonly onTitleChanged: Event<string>;
+    readonly onDataReceived: Event<string>;
+    readonly onProcessIdReady: Event<number>;
+    
+    // UI
+    show(preserveFocus?: boolean): void;
+    hide(): void;
+    focus(force?: boolean): void;
+    
+    // Input/Output
+    sendText(text: string, shouldExecute?: boolean): Promise<void>;
+    paste(text: string): Promise<void>;
+    
+    // Selection
+    selectAll(): void;
+    clearSelection(): void;
+    hasSelection(): boolean;
+    
+    // Lifecycle
+    dispose(): void;
+}
+```
+
+### Working with Terminal Instances
+
+```typescript
+import { ITerminalInstance } from 'vs/workbench/contrib/terminal/browser/terminal';
+
+export class TerminalController {
+    constructor(private readonly terminal: ITerminalInstance) {
+        this.setupListeners();
+    }
+    
+    private setupListeners(): void {
+        // Listen to title changes
+        this.terminal.onTitleChanged(title => {
+            console.log('Terminal title:', title);
+        });
+        
+        // Listen to data
+        this.terminal.onDataReceived(data => {
+            console.log('Terminal output:', data);
+        });
+        
+        // Process ID ready
+        this.terminal.onProcessIdReady(pid => {
+            console.log('Terminal PID:', pid);
+        });
+    }
+    
+    async runCommand(command: string): Promise<void> {
+        // Send command and execute
+        await this.terminal.sendText(command, true);
+    }
+    
+    async sendTextWithoutExecuting(text: string): Promise<void> {
+        // Type text without pressing enter
+        await this.terminal.sendText(text, false);
+    }
+    
+    focusTerminal(): void {
+        this.terminal.show();
+        this.terminal.focus(true);
+    }
+    
+    copySelection(): void {
+        if (this.terminal.hasSelection()) {
+            // Selection is automatically copied to clipboard
+        }
+    }
+}
+```
+
+## Shell Integration {#shell-integration}
+
+**Location:** `src/vs/platform/terminal/common/capabilities/`
+
+### Shell Integration Features
+
+```typescript
+export interface IShellIntegration {
+    readonly capabilities: ITerminalCapabilityStore;
+    
+    // Command detection
+    readonly onDidChangeCommandDetection: Event<void>;
+    
+    // Current command
+    readonly currentCommand: ICurrentPartialCommand | undefined;
+}
+
+export interface ITerminalCommand {
+    readonly command: string;
+    readonly cwd: URI;
+    readonly exitCode: number | undefined;
+    readonly timestamp: number;
+    readonly executedMarker: IMarker;
+    readonly endMarker: IMarker | undefined;
+}
+```
+
+### Command Detection
+
+```typescript
+import { ITerminalInstance } from 'vs/workbench/contrib/terminal/browser/terminal';
+import { TerminalCapability } from 'vs/platform/terminal/common/capabilities/capabilities';
+
+function getTerminalCommands(terminal: ITerminalInstance): ITerminalCommand[] {
+    const capabilities = terminal.capabilities;
+    
+    if (capabilities.has(TerminalCapability.CommandDetection)) {
+        const commandDetection = capabilities.get(TerminalCapability.CommandDetection);
+        return commandDetection.commands;
+    }
+    
+    return [];
+}
+
+function onCommandExecuted(terminal: ITerminalInstance): void {
+    terminal.capabilities.onDidAddCapability(e => {
+        if (e === TerminalCapability.CommandDetection) {
+            const commandDetection = terminal.capabilities.get(TerminalCapability.CommandDetection);
+            
+            commandDetection.onCommandFinished(command => {
+                console.log('Command completed:', command.command);
+                console.log('Exit code:', command.exitCode);
+                console.log('Working directory:', command.cwd);
+            });
+        }
+    });
+}
+```
+
+### Terminal Capabilities
+
+<Accordion title="Available Terminal Capabilities">
+
+- **CommandDetection** - Detect when commands start/end
+- **CwdDetection** - Track current working directory
+- **BufferMarkDetection** - Custom markers in buffer
+- **NaiveCwdDetection** - Basic cwd tracking
+- **PartialCommandDetection** - Track incomplete commands
+
+</Accordion>
+
+## Terminal Profiles {#profiles}
+
+**Location:** `src/vs/platform/terminal/common/terminal.ts`
+
+### ITerminalProfile Interface
+
+```typescript
+export interface ITerminalProfile {
+    profileName: string;
+    path: string;
+    args?: string | string[];
+    env?: { [key: string]: string | null };
+    icon?: ThemeIcon | URI | { light: URI; dark: URI };
+    color?: string;
+    overrideName?: boolean;
+    isAutoDetected?: boolean;
+}
+```
+
+### Working with Profiles
+
+```typescript
+import { ITerminalService } from 'vs/workbench/contrib/terminal/browser/terminal';
+import { ITerminalProfile } from 'vs/platform/terminal/common/terminal';
+
+export class ProfileManager {
+    constructor(
+        @ITerminalService private readonly terminalService: ITerminalService
+    ) {}
+    
+    async getAvailableProfiles(): Promise<ITerminalProfile[]> {
+        return await this.terminalService.getAvailableProfiles();
+    }
+    
+    async createTerminalWithProfile(profileName: string): Promise<void> {
+        const profiles = await this.getAvailableProfiles();
+        const profile = profiles.find(p => p.profileName === profileName);
+        
+        if (profile) {
+            await this.terminalService.createTerminal({
+                config: profile
+            });
+        }
+    }
+}
+```
+
+### Profile Configuration
+
+```json
+// settings.json
+{
+    "terminal.integrated.profiles.windows": {
+        "PowerShell": {
+            "source": "PowerShell",
+            "icon": "terminal-powershell"
+        },
+        "Git Bash": {
+            "path": "C:\\Program Files\\Git\\bin\\bash.exe",
+            "icon": "terminal-bash"
+        },
+        "Custom": {
+            "path": "cmd.exe",
+            "args": ["/k", "echo Hello"],
+            "icon": "terminal-cmd"
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "PowerShell"
+}
+```
+
+## Xterm.js Integration
+
+**Location:** `src/vs/workbench/contrib/terminal/browser/xterm/`
+
+### XtermTerminal
+
+```typescript
+import { XtermTerminal } from 'vs/workbench/contrib/terminal/browser/xterm/xtermTerminal';
+import { Terminal as RawXtermTerminal } from '@xterm/xterm';
+
+export interface IXtermTerminal {
+    readonly raw: RawXtermTerminal;
+    
+    // Rendering
+    attachToElement(container: HTMLElement): void;
+    
+    // Input
+    write(data: string): void;
+    paste(data: string): void;
+    
+    // Selection
+    selectAll(): void;
+    clearSelection(): void;
+    getSelection(): string;
+    
+    // Search
+    findNext(term: string, options?: ISearchOptions): boolean;
+    findPrevious(term: string, options?: ISearchOptions): boolean;
+    
+    // Scrolling
+    scrollToTop(): void;
+    scrollToBottom(): void;
+    scrollToLine(line: number): void;
+}
+```
+
+### Xterm Addons
+
+<CardGroup cols={2}>
+  <Card title="WebLinksAddon" icon="link">
+    Clickable URLs in terminal
+  </Card>
+  
+  <Card title="SearchAddon" icon="search">
+    Find in terminal
+  </Card>
+  
+  <Card title="SerializeAddon" icon="floppy-disk">
+    Save/restore terminal content
+  </Card>
+  
+  <Card title="Unicode11Addon" icon="language">
+    Unicode support
+  </Card>
+</CardGroup>
+
+## Terminal Groups
+
+**Location:** `src/vs/workbench/contrib/terminal/browser/terminalGroup.ts`
+
+### Terminal Tabs
+
+```typescript
+import { ITerminalService } from 'vs/workbench/contrib/terminal/browser/terminal';
+
+// Terminals are organized in groups (tabs)
+// Each tab can contain multiple split terminals
+
+export class TerminalTabManager {
+    constructor(
+        @ITerminalService private readonly terminalService: ITerminalService
+    ) {}
+    
+    getGroups(): string[] {
+        return this.terminalService.getGroupLabels();
+    }
+}
+```
+
+## Terminal Links
+
+**Location:** `src/vs/workbench/contrib/terminal/browser/links/`
+
+### Link Detection
+
+```typescript
+// Terminal automatically detects and makes clickable:
+// - File paths (relative and absolute)
+// - URLs (http, https, etc.)
+// - Line/column references (file.ts:10:5)
+// - Git diffs
+```
+
+## Terminal Commands
+
+**Location:** `src/vs/workbench/contrib/terminal/browser/terminalActions.ts`
+
+### Common Terminal Commands
+
+```typescript
+const TERMINAL_COMMANDS = {
+    NEW: 'workbench.action.terminal.new',
+    KILL: 'workbench.action.terminal.kill',
+    FOCUS: 'workbench.action.terminal.focus',
+    SPLIT: 'workbench.action.terminal.split',
+    RENAME: 'workbench.action.terminal.rename',
+    CLEAR: 'workbench.action.terminal.clear',
+    SCROLL_UP: 'workbench.action.terminal.scrollUp',
+    SCROLL_DOWN: 'workbench.action.terminal.scrollDown',
+    SELECT_ALL: 'workbench.action.terminal.selectAll',
+    COPY_SELECTION: 'workbench.action.terminal.copySelection',
+    PASTE: 'workbench.action.terminal.paste'
+};
+
+// Execute commands
+import { ICommandService } from 'vs/platform/commands/common/commands';
+
+await commandService.executeCommand(TERMINAL_COMMANDS.NEW);
+```
+
+### Custom Terminal Commands
+
+```typescript
+import { registerAction2, Action2 } from 'vs/platform/actions/common/actions';
+import { ITerminalService } from 'vs/workbench/contrib/terminal/browser/terminal';
+
+class RunBuildInTerminal extends Action2 {
+    constructor() {
+        super({
+            id: 'myExtension.runBuild',
+            title: { value: 'Run Build', original: 'Run Build' },
+            category: { value: 'Terminal', original: 'Terminal' },
+            f1: true
+        });
+    }
+    
+    async run(accessor: ServicesAccessor): Promise<void> {
+        const terminalService = accessor.get(ITerminalService);
+        
+        const terminal = await terminalService.createTerminal({
+            name: 'Build'
+        });
+        
+        terminal.show();
+        await terminal.sendText('npm run build', true);
+    }
+}
+
+registerAction2(RunBuildInTerminal);
+```
+
+## Environment Variables
+
+**Location:** `src/vs/platform/terminal/common/environmentVariable.ts`
+
+### Terminal Environment
+
+```typescript
+import { IMergedEnvironmentVariableCollection } from 'vs/platform/terminal/common/environmentVariable';
+
+// Extensions can contribute environment variables
+// Settings can override environment variables
+{
+    "terminal.integrated.env.windows": {
+        "MY_VAR": "value",
+        "PATH": "${env:PATH};C:\\MyPath"
+    },
+    "terminal.integrated.env.linux": {
+        "MY_VAR": "value",
+        "PATH": "${env:PATH}:/my/path"
+    }
+}
+```
+
+## Terminal Configuration
+
+### Common Settings
+
+```json
+{
+    // Shell
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "terminal.integrated.profiles.windows": { /* profiles */ },
+    
+    // Appearance
+    "terminal.integrated.fontFamily": "Consolas, monospace",
+    "terminal.integrated.fontSize": 14,
+    "terminal.integrated.lineHeight": 1.2,
+    "terminal.integrated.cursorStyle": "block",
+    "terminal.integrated.cursorBlinking": true,
+    
+    // Behavior
+    "terminal.integrated.scrollback": 1000,
+    "terminal.integrated.copyOnSelection": true,
+    "terminal.integrated.rightClickBehavior": "default",
+    "terminal.integrated.confirmOnExit": "hasChildProcesses",
+    
+    // Shell integration
+    "terminal.integrated.shellIntegration.enabled": true,
+    "terminal.integrated.shellIntegration.decorationsEnabled": "both",
+    
+    // Working directory
+    "terminal.integrated.cwd": "${workspaceFolder}"
+}
+```
+
+## Best Practices
+
+<Warning>
+**Process Management:** Always dispose terminal instances properly. Lingering processes can consume resources.
+</Warning>
+
+<Tip>
+**Shell Integration:** Enable shell integration for enhanced features like command detection and navigation.
+</Tip>
+
+<Note>
+**Performance:** Limit scrollback for terminals with heavy output. Large buffers can impact performance.
+</Note>
+
+## Extension Integration
+
+### Terminal API
+
+```typescript
+// Extension API for terminals
+import * as vscode from 'vscode';
+
+// Create terminal
+const terminal = vscode.window.createTerminal('My Terminal');
+terminal.show();
+terminal.sendText('echo Hello');
+
+// Listen to terminal events
+vscode.window.onDidOpenTerminal(terminal => {
+    console.log('Terminal opened:', terminal.name);
+});
+
+vscode.window.onDidCloseTerminal(terminal => {
+    console.log('Terminal closed:', terminal.name);
+});
+```
+
+## Related Components
+
+<CardGroup cols={3}>
+  <Card title="Workbench" href="/components/workbench">
+    Terminal panel integration
+  </Card>
+  <Card title="Tasks" href="/components/tasks">
+    Task execution in terminals
+  </Card>
+  <Card title="Debug" href="/components/debug">
+    Debug console
+  </Card>
+</CardGroup>

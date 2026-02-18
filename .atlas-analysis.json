@@ -1,10 +1,10 @@
 {
-  "projectType": "frontend",
+  "projectType": "general",
   "projectName": "Visual Studio Code",
-  "projectDescription": "A powerful, extensible code editor built with TypeScript, Electron, and web technologies",
-  "theme": "aspen",
+  "projectDescription": "A powerful, extensible code editor built on Electron for modern development workflows.",
+  "theme": "palm",
   "primaryColor": "#007ACC",
-  "lightColor": "#61DAFB",
+  "lightColor": "#0098FF",
   "darkColor": "#005A9E",
   "navigation": {
     "tabs": [
@@ -12,7 +12,7 @@
         "tab": "Documentation",
         "groups": [
           {
-            "group": "Get Started",
+            "group": "Getting Started",
             "pages": [
               "introduction",
               "quickstart",
@@ -20,142 +20,111 @@
             ]
           },
           {
+            "group": "Building VS Code",
+            "pages": [
+              "building/prerequisites",
+              "building/build-from-source",
+              "building/development-workflow"
+            ]
+          },
+          {
             "group": "Architecture",
             "pages": [
               "architecture/overview",
-              "architecture/layers",
-              "architecture/dependency-injection",
-              "architecture/contribution-model"
+              "architecture/electron-main-process",
+              "architecture/renderer-process",
+              "architecture/workbench",
+              "architecture/editor",
+              "architecture/extensions"
             ]
           },
           {
             "group": "Core Concepts",
             "pages": [
-              "concepts/workbench",
-              "concepts/editor",
-              "concepts/extensions",
-              "concepts/services"
-            ]
-          },
-          {
-            "group": "Building from Source",
-            "pages": [
-              "building/setup",
-              "building/compile",
-              "building/debugging",
-              "building/tests"
-            ]
-          },
-          {
-            "group": "Contributing",
-            "pages": [
-              "contributing/guidelines",
-              "contributing/code-style",
-              "contributing/pull-requests",
-              "contributing/issue-tracking"
+              "concepts/command-palette",
+              "concepts/settings",
+              "concepts/keybindings",
+              "concepts/tasks",
+              "concepts/debugging"
             ]
           }
         ]
       },
       {
-        "tab": "Extension API",
+        "tab": "Extension Development",
         "groups": [
           {
             "group": "Getting Started",
             "pages": [
-              "api/overview",
-              "api/your-first-extension",
-              "api/extension-structure"
+              "extensions/overview",
+              "extensions/your-first-extension",
+              "extensions/extension-anatomy"
             ]
           },
           {
-            "group": "API Reference",
+            "group": "Extension Capabilities",
             "pages": [
-              "api/commands",
-              "api/text-editor",
-              "api/workspace",
-              "api/languages",
-              "api/debug",
-              "api/scm"
+              "extensions/capabilities/common-capabilities",
+              "extensions/capabilities/theming",
+              "extensions/capabilities/language-extensions",
+              "extensions/capabilities/debugger-extensions",
+              "extensions/capabilities/webview"
             ]
           },
           {
             "group": "Extension Guides",
             "pages": [
-              "api/guides/command-palette",
-              "api/guides/webviews",
-              "api/guides/tree-views",
-              "api/guides/language-server",
-              "api/guides/debugger-extension"
-            ]
-          },
-          {
-            "group": "Publishing",
-            "pages": [
-              "api/publishing/overview",
-              "api/publishing/marketplace"
+              "extensions/guides/commands",
+              "extensions/guides/tree-view",
+              "extensions/guides/custom-editors",
+              "extensions/guides/testing",
+              "extensions/guides/publishing"
             ]
           }
         ]
       },
       {
-        "tab": "Components",
+        "tab": "Contributing",
         "groups": [
           {
-            "group": "Core Layers",
+            "group": "Get Involved",
             "pages": [
-              "components/base",
-              "components/platform",
-              "components/editor",
-              "components/workbench"
+              "contributing/how-to-contribute",
+              "contributing/coding-guidelines",
+              "contributing/submitting-bugs",
+              "contributing/pull-requests"
             ]
           },
           {
-            "group": "Workbench Features",
+            "group": "Development",
             "pages": [
-              "components/debug",
-              "components/terminal",
-              "components/search",
-              "components/git",
-              "components/tasks",
-              "components/testing"
-            ]
-          },
-          {
-            "group": "Built-in Extensions",
-            "pages": [
-              "components/language-features",
-              "components/themes",
-              "components/snippets"
+              "contributing/development-setup",
+              "contributing/debugging",
+              "contributing/running-tests",
+              "contributing/code-organization"
             ]
           }
         ]
       },
       {
-        "tab": "Advanced",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "Deep Dives",
+            "group": "Extension API",
             "pages": [
-              "advanced/electron-integration",
-              "advanced/monaco-editor",
-              "advanced/language-services",
-              "advanced/remote-development"
+              "api/vscode-api",
+              "api/commands",
+              "api/activation-events",
+              "api/contribution-points"
             ]
           },
           {
-            "group": "Performance",
+            "group": "Advanced",
             "pages": [
-              "advanced/performance/startup",
-              "advanced/performance/memory",
-              "advanced/performance/profiling"
-            ]
-          },
-          {
-            "group": "Security",
-            "pages": [
-              "advanced/security/overview",
-              "advanced/security/sandboxing"
+              "api/language-extensions",
+              "api/theme-color-reference",
+              "api/icon-reference",
+              "api/extension-manifest"
             ]
           }
         ]
@@ -164,38 +133,26 @@
   },
   "keyFeatures": [
     "IntelliSense code completion",
-    "Integrated debugging",
-    "Git integration",
-    "Extensible architecture with 100+ built-in extensions",
-    "Cross-platform support (Windows, macOS, Linux)",
+    "Built-in Git integration",
+    "Extensive extension marketplace",
+    "Multi-cursor editing",
     "Integrated terminal",
-    "Monaco editor core",
-    "Language Server Protocol support",
-    "Remote development capabilities",
-    "Customizable themes and keybindings",
-    "Multi-root workspaces",
-    "Web and desktop support"
+    "Cross-platform support",
+    "Remote development",
+    "Customizable themes and keybindings"
   ],
   "publicApiSurface": [
-    "vscode.commands",
-    "vscode.window",
-    "vscode.workspace",
-    "vscode.languages",
-    "vscode.debug",
-    "vscode.scm",
-    "vscode.tasks",
-    "vscode.extensions",
-    "vscode.env",
-    "vscode.Uri",
-    "vscode.Range",
-    "vscode.Position",
-    "vscode.TextDocument",
-    "vscode.TextEditor",
-    "vscode.TreeDataProvider",
-    "vscode.Webview",
-    "vscode.Terminal",
-    "vscode.QuickPick",
-    "vscode.StatusBarItem",
-    "vscode.DiagnosticCollection"
+    "vscode.commands.registerCommand",
+    "vscode.window.showInformationMessage",
+    "vscode.workspace.openTextDocument",
+    "vscode.languages.registerCompletionItemProvider",
+    "vscode.languages.registerHoverProvider",
+    "vscode.languages.registerDefinitionProvider",
+    "vscode.debug.registerDebugConfigurationProvider",
+    "vscode.extensions.getExtension",
+    "vscode.window.createTreeView",
+    "vscode.window.registerWebviewViewProvider",
+    "vscode.tasks.registerTaskProvider",
+    "vscode.authentication.registerAuthenticationProvider"
   ]
 }

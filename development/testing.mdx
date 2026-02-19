@@ -1,0 +1,641 @@
+---
+title: Testing VS Code
+description: Comprehensive guide to running unit tests, integration tests, and writing tests for Visual Studio Code
+---
+
+This guide covers the testing infrastructure in VS Code, including how to run existing tests and write new ones.
+
+## Overview
+
+VS Code has multiple test suites covering different aspects of the codebase:
+
+<CardGroup cols={3}>
+  <Card title="Unit Tests" icon="vial">
+    Fast, isolated tests for individual components
+  </Card>
+  
+  <Card title="Integration Tests" icon="gears">
+    Tests that verify components work together
+  </Card>
+  
+  <Card title="Smoke Tests" icon="wind">
+    End-to-end UI tests for critical workflows
+  </Card>
+</CardGroup>
+
+## Test Directory Structure
+
+```
+vscode/
+├── test/
+│   ├── unit/              # Unit test infrastructure
+│   ├── integration/       # Integration test infrastructure
+│   ├── smoke/             # Smoke test suite
+│   └── automation/        # UI automation helpers
+├── src/
+│   └── vs/
+│       └── **/test/       # Unit tests alongside source
+└── extensions/
+    └── */test/            # Extension tests
+```
+
+<Info>
+Unit tests are typically located in `test/` subdirectories next to the source code they test, following the pattern `src/vs/*/test/`.
+</Info>
+
+## Running Unit Tests
+
+Unit tests run inside Electron with access to both Node.js and DOM APIs.
+
+### Run All Unit Tests
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/test.sh
+  ```
+  
+  ```bash Windows
+  scripts\test.bat
+  ```
+  
+  ```bash npm
+  npm run test-node
+  ```
+</CodeGroup>
+
+The test script (scripts/test.sh:32):
+- Automatically installs dependencies if needed
+- Downloads Electron if not present
+- Runs tests in an Electron environment
+- Enables crash reporting to `.build/crashes/`
+
+<Note>
+The main test command in **package.json:13** intentionally shows a message directing you to use scripts from the `scripts/` folder.
+</Note>
+
+### Run Tests with Debug Mode
+
+Enable debugging for tests:
+
+```bash
+./scripts/test.sh --debug
+```
+
+This opens an Electron window with Chrome DevTools, allowing you to:
+- Set breakpoints
+- Inspect variables
+- Step through test code
+- View console output
+
+<Tip>
+Use `--debug` when investigating test failures or writing new tests. The DevTools make it much easier to understand what's happening.
+</Tip>
+
+### Run Specific Tests
+
+Use the `--run` or `--glob` option to run specific test files:
+
+<CodeGroup>
+  ```bash Run Specific File
+  ./scripts/test.sh --run src/vs/editor/test/common/core/position.test.ts
+  ```
+  
+  ```bash Pattern Matching
+  ./scripts/test.sh --glob **/extHost*.test.js
+  ```
+  
+  ```bash Grep Pattern
+  ./scripts/test.sh --grep "findModel"
+  ```
+</CodeGroup>
+
+From the test/unit/README.md:13, the `--grep` option allows running specific tests by name pattern.
+
+### Run Tests in Different Environments
+
+<Tabs>
+  <Tab title="Electron (Default)">
+    Tests run in Electron with full API access:
+    
+    ```bash
+    ./scripts/test.sh
+    ```
+    
+    This is the closest environment to how VS Code actually runs.
+  </Tab>
+  
+  <Tab title="Browser">
+    Run tests in real browsers (Chromium, WebKit, Firefox):
+    
+    ```bash
+    npm run test-browser -- --browser webkit --browser chromium
+    ```
+    
+    From **package.json:14**, this uses Playwright to run tests in multiple browsers.
+    
+    <Warning>
+    Only tests from `common` and `browser` layers can run in browsers. Tests requiring Node.js APIs will fail.
+    </Warning>
+  </Tab>
+  
+  <Tab title="Node.js">
+    Run tests in pure Node.js environment:
+    
+    ```bash
+    npm run test-node -- --run src/vs/editor/test/browser/controller/cursor.test.ts
+    ```
+    
+    Uses Mocha directly (**package.json:16**).
+  </Tab>
+</Tabs>
+
+### Test Coverage
+
+Generate code coverage reports:
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/test.sh --coverage
+  ```
+  
+  ```bash Windows
+  scripts\test --coverage
+  ```
+</CodeGroup>
+
+Coverage reports are saved to `.build/coverage/` (test/unit/README.md:34).
+
+## Running Integration Tests
+
+Integration tests verify that components work together correctly. They test extensions, language features, and API functionality.
+
+### Run All Integration Tests
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/test-integration.sh
+  ```
+  
+  ```bash Windows
+  scripts\test-integration.bat
+  ```
+</CodeGroup>
+
+The integration test script (scripts/test-integration.sh) includes:
+
+<Accordion title="Integration Test Suite Components">
+  1. **Node.js Integration Tests** (.sh:39)
+     ```bash
+     ./scripts/test.sh --runGlob **/*.integrationTest.js
+     ```
+  
+  2. **API Tests (Folder)** (.sh:54)
+     - Tests VS Code API in single folder workspace
+     - Located in `extensions/vscode-api-tests/`
+  
+  3. **API Tests (Workspace)** (.sh:60)
+     - Tests with multi-root workspace
+     - Uses `testworkspace.code-workspace`
+  
+  4. **Language Extension Tests** (.sh:66-92)
+     - Colorize tests
+     - TypeScript tests (.sh:78)
+     - Markdown tests (.sh:84)
+     - Emmet tests (.sh:90)
+  
+  5. **Git Tests** (.sh:96)
+     - Tests Git extension functionality
+  
+  6. **Other Extension Tests** (.sh:101-128)
+     - Git Base, Ipynb, Notebook Output
+     - Configuration editing
+     - GitHub Authentication
+  
+  7. **Language Server Tests** (.sh:133-141)
+     - CSS language features
+     - HTML language features
+</Accordion>
+
+### Run Specific Extension Tests
+
+Run tests for individual extensions:
+
+<CodeGroup>
+  ```bash TypeScript
+  ./scripts/test-integration.sh
+  # This runs all tests including TypeScript (line 78)
+  ```
+  
+  ```bash Using npm
+  npm run test-extension -- -l markdown-language-features
+  ```
+  
+  ```bash Git Extension
+  npm run test-extension -- -l git
+  ```
+</CodeGroup>
+
+### Integration Test Environment
+
+Integration tests run with specific flags (scripts/test-integration.sh:44):
+
+```bash
+--disable-telemetry
+--disable-experiments
+--skip-welcome
+--skip-release-notes
+--crash-reporter-directory=$VSCODECRASHDIR
+--logsPath=$VSCODELOGSDIR
+--no-cached-data
+--disable-updates
+--use-inmemory-secretstorage
+--disable-extensions
+--disable-workspace-trust
+--user-data-dir=$VSCODEUSERDATADIR
+```
+
+<Info>
+Integration tests use a temporary user data directory that's automatically cleaned up after tests complete (scripts/test-integration.sh:145).
+</Info>
+
+## Running Web Integration Tests
+
+Test VS Code in browser environments:
+
+```bash
+./scripts/test-web-integration.sh
+```
+
+## Running Remote Integration Tests
+
+Test remote development scenarios:
+
+```bash
+./scripts/test-remote-integration.sh
+```
+
+## Writing Tests
+
+### Test File Naming
+
+Follow these conventions:
+
+- **Unit tests**: `*.test.ts` - Located in `test/` folders next to source
+- **Integration tests**: `*.integrationTest.ts` - Also in `test/` folders
+- **Compiled output**: Tests compile to `out/**/*.test.js`
+
+### Test Structure
+
+VS Code uses Mocha with TDD-style tests:
+
+```typescript
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import * as assert from 'assert';
+import { MyClass } from '../myModule';
+
+suite('MyClass', () => {
+	
+	test('should do something', () => {
+		const instance = new MyClass();
+		const result = instance.doSomething();
+		assert.strictEqual(result, 'expected');
+	});
+	
+	test('should handle edge cases', () => {
+		const instance = new MyClass();
+		assert.throws(() => instance.doSomethingBad());
+	});
+	
+});
+```
+
+<Warning>
+From .github/copilot-instructions.md:131-133:
+- Don't add tests to the wrong suite
+- Use `suite` and `test` consistently
+- Look for existing patterns before creating new structures
+</Warning>
+
+### Assertion Best Practices
+
+From .github/copilot-instructions.md:145:
+
+<Tip>
+Minimize the amount of assertions in tests. Prefer one snapshot-style `assert.deepStrictEqual` over multiple precise assertions, as they are much more difficult to understand and update.
+</Tip>
+
+Example:
+
+<CodeGroup>
+  ```typescript Good - Single Assertion
+  test('parser output', () => {
+    const result = parser.parse(input);
+    assert.deepStrictEqual(result, {
+      type: 'document',
+      children: [...],
+      metadata: {...}
+    });
+  });
+  ```
+  
+  ```typescript Avoid - Multiple Assertions
+  test('parser output', () => {
+    const result = parser.parse(input);
+    assert.strictEqual(result.type, 'document');
+    assert.strictEqual(result.children.length, 3);
+    assert.strictEqual(result.children[0].type, 'paragraph');
+    assert.strictEqual(result.metadata.version, 1);
+    // ... many more assertions
+  });
+  ```
+</CodeGroup>
+
+### Integration Test Example
+
+For extension tests, use the Extension Host:
+
+```typescript
+import * as vscode from 'vscode';
+import * as assert from 'assert';
+
+suite('Extension Integration Tests', () => {
+	
+	test('should register command', async () => {
+		const commands = await vscode.commands.getCommands();
+		assert.ok(commands.includes('myExtension.myCommand'));
+	});
+	
+	test('should process document', async () => {
+		const doc = await vscode.workspace.openTextDocument({
+			content: 'test content',
+			language: 'typescript'
+		});
+		
+		const result = await vscode.commands.executeCommand(
+			'myExtension.process',
+			doc
+		);
+		
+		assert.deepStrictEqual(result, expectedOutput);
+	});
+	
+});
+```
+
+### Test Utilities
+
+VS Code provides test utilities in the codebase:
+
+<Accordion title="Common Test Utilities">
+  - **`ensureNoDisposablesAreLeakedInTestSuite()`**: Ensures disposables are properly cleaned up
+  - **`TestInstantiationService`**: Mock dependency injection service
+  - **`mock<T>()`**: Create mock objects
+  - **`sinon`**: Stubbing and mocking library (available via **package.json:214**)
+  - **`@types/mocha`**: TypeScript types for Mocha (**package.json:139**)
+</Accordion>
+
+## Test Validation Scripts
+
+Before running tests, ensure code compiles correctly:
+
+### Watch for Compilation Errors
+
+From .github/copilot-instructions.md:52:
+
+<Warning>
+**MANDATORY**: Always check the `VS Code - Build` watch task output for compilation errors before running ANY script or declaring work complete.
+- NEVER run tests if there are compilation errors
+- NEVER use `npm run compile` to compile TypeScript files
+</Warning>
+
+Start the watch task:
+
+```bash
+npm run watch
+```
+
+### Validate Layers
+
+Check architectural layer boundaries:
+
+```bash
+npm run valid-layers-check
+```
+
+This runs multiple TypeScript checks for different layers (**package.json:54**):
+- `tsconfig.browser.json`
+- `tsconfig.worker.json`
+- `tsconfig.node.json`
+- `tsconfig.electron-browser.json`
+- `tsconfig.electron-main.json`
+- `tsconfig.electron-utility.json`
+
+## Continuous Integration Tests
+
+VS Code includes scripts for CI/CD pipelines:
+
+<CodeGroup>
+  ```bash Core CI
+  npm run core-ci
+  ```
+  
+  ```bash Core CI (Pull Request)
+  npm run core-ci-pr
+  ```
+  
+  ```bash Extensions CI
+  npm run extensions-ci
+  ```
+  
+  ```bash Extensions CI (Pull Request)
+  npm run extensions-ci-pr
+  ```
+</CodeGroup>
+
+From **package.json:71-74**, these scripts orchestrate the full test suite for continuous integration.
+
+## Smoke Tests
+
+Smoke tests are end-to-end UI tests that verify critical user workflows.
+
+### Run Smoke Tests
+
+```bash
+npm run smoketest
+```
+
+Or skip compilation if already compiled:
+
+```bash
+npm run smoketest-no-compile
+```
+
+Smoke tests (**package.json:47-48**):
+- Located in `test/smoke/`
+- Use Playwright for UI automation
+- Test critical user workflows
+- Run against the built application
+
+<Info>
+See `test/smoke/README.md` for detailed smoke test documentation.
+</Info>
+
+## Test Scripts Reference
+
+From **package.json**, here's a complete reference:
+
+<AccordionGroup>
+  <Accordion title="Unit Tests">
+    ```json
+    "test-browser": "npx playwright install && node test/unit/browser/index.js"
+    "test-browser-no-install": "node test/unit/browser/index.js"
+    "test-node": "mocha test/unit/node/index.js --delay --ui=tdd --timeout=5000 --exit"
+    "test-extension": "vscode-test"
+    ```
+  </Accordion>
+
+  <Accordion title="Integration Tests">
+    Run via shell scripts:
+    - `./scripts/test-integration.sh`
+    - `./scripts/test-web-integration.sh`
+    - `./scripts/test-remote-integration.sh`
+  </Accordion>
+
+  <Accordion title="Build Scripts Tests">
+    ```json
+    "test-build-scripts": "cd build && npm run test"
+    ```
+    
+    Tests for build system (**package.json:18**).
+  </Accordion>
+
+  <Accordion title="Smoke Tests">
+    ```json
+    "smoketest": "node build/lib/preLaunch.ts && cd test/smoke && npm run compile && node test/index.js"
+    "smoketest-no-compile": "cd test/smoke && node test/index.js"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Debugging Tests
+
+See the [Debugging guide](/development/debugging) for detailed instructions on debugging tests.
+
+Quick reference:
+
+<CodeGroup>
+  ```bash Debug Unit Tests
+  ./scripts/test.sh --debug
+  ```
+  
+  ```bash Debug Specific Test
+  ./scripts/test.sh --debug --run src/vs/editor/test/common/core/position.test.ts
+  ```
+  
+  ```bash Debug with Grep
+  ./scripts/test.sh --debug --grep "findModel"
+  ```
+</CodeGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Tests fail with compilation errors">
+    **Solution**: Ensure watch mode is running and code compiles:
+    
+    ```bash
+    npm run watch
+    # Wait for compilation to complete
+    ./scripts/test.sh
+    ```
+  </Accordion>
+
+  <Accordion title="Integration tests timeout">
+    **Solutions**:
+    1. Increase timeout in test configuration
+    2. Check if VS Code is already running
+    3. Verify Electron downloaded correctly:
+       ```bash
+       npm run electron
+       ```
+  </Accordion>
+
+  <Accordion title="Browser tests fail">
+    **Solutions**:
+    1. Install Playwright browsers:
+       ```bash
+       npm run playwright-install
+       ```
+    2. Check browser-specific issues in test output
+    3. Some tests only work in specific browsers
+  </Accordion>
+
+  <Accordion title="Tests pass locally but fail in CI">
+    **Common causes**:
+    - Platform-specific behavior (test on target OS)
+    - Missing environment setup
+    - Race conditions (add proper async handling)
+    - Different Node.js versions
+  </Accordion>
+
+  <Accordion title="Memory errors during tests">
+    **Solution**: Increase Node.js memory:
+    
+    ```bash
+    export NODE_OPTIONS="--max-old-space-size=8192"
+    ./scripts/test.sh
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Performance Testing
+
+VS Code includes performance testing tools:
+
+```bash
+npm run perf
+```
+
+This runs `scripts/code-perf.js` (**package.json:75**) to measure performance metrics.
+
+## Test Documentation
+
+Additional test documentation:
+
+<CardGroup cols={2}>
+  <Card title="Unit Tests README" icon="file">
+    `test/unit/README.md` - Detailed unit test documentation
+  </Card>
+  
+  <Card title="Integration Tests README" icon="file">
+    `test/integration/browser/README.md` - Integration test guide
+  </Card>
+  
+  <Card title="Smoke Tests README" icon="file">
+    `test/smoke/README.md` - Smoke test documentation
+  </Card>
+  
+  <Card title="Automation README" icon="file">
+    `test/automation/README.md` - UI automation helpers
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Debugging" icon="bug" href="/development/debugging">
+    Learn how to debug tests effectively
+  </Card>
+  
+  <Card title="Coding Guidelines" icon="code" href="/development/coding-guidelines">
+    Follow VS Code's testing best practices
+  </Card>
+  
+  <Card title="Building from Source" icon="hammer" href="/development/building-from-source">
+    Build VS Code before running tests
+  </Card>
+</CardGroup>

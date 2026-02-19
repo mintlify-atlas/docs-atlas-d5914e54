@@ -1,0 +1,975 @@
+---
+title: Extension System
+description: How VS Code's extension system works with extension hosts, APIs, and activation
+---
+
+VS Code's **extension system** enables third-party developers to add new features, languages, themes, and debuggers without modifying the core codebase. This architecture keeps VS Code fast, stable, and extensible.
+
+## Architecture Overview
+
+Extensions run in a separate **extension host process**, isolated from the main VS Code process for stability and security.
+
+<Frame>
+```
+┌──────────────────────────────────────────────────┐
+│         Main Process (Electron/Browser)          │
+│                                                   │
+│  ┌─────────────┐         ┌──────────────────┐   │
+│  │  Workbench  │ ◄─────► │ Extension Host   │   │
+│  │     UI      │  RPC    │   Process        │   │
+│  └─────────────┘         └──────────────────┘   │
+│                                   │               │
+│                          ┌────────┴────────┐     │
+│                          │                 │     │
+│                     Extension 1       Extension 2 │
+│                     (TypeScript)      (JavaScript)│
+└──────────────────────────────────────────────────┘
+```
+</Frame>
+
+<Steps>
+  <Step title="Extension Discovery">
+    VS Code discovers extensions in the extensions folder and reads their `package.json` manifests
+  </Step>
+  
+  <Step title="Extension Activation">
+    Extensions are activated lazily based on activation events (file opened, command invoked, etc.)
+  </Step>
+  
+  <Step title="API Access">
+    Extensions interact with VS Code through the `vscode` API module
+  </Step>
+  
+  <Step title="Process Isolation">
+    Extension code runs in a separate process, protecting VS Code from crashes
+  </Step>
+</Steps>
+
+## Extension Host
+
+The extension host is a separate Node.js (or Web Worker) process that executes extension code.
+
+**Location:** `src/vs/workbench/services/extensions/`
+
+<CodeGroup>
+```typescript Extension Host Types
+enum ExtensionHostKind {
+  LocalProcess,     // Node.js process (desktop)
+  LocalWebWorker,   // Web Worker (browser)
+  Remote            // Remote server process
+}
+```
+
+```typescript Extension Service
+// src/vs/workbench/services/extensions/common/extensions.ts:38
+export const IExtensionService = createDecorator<IExtensionService>('extensionService');
+
+interface IExtensionService {
+  // Activation
+  activateByEvent(activationEvent: string): Promise<void>;
+  activateById(extensionId: ExtensionIdentifier): Promise<void>;
+  
+  // Status
+  getExtensions(): Promise<IExtensionDescription[]>;
+  getExtension(id: string): Promise<IExtensionDescription | undefined>;
+  
+  // Events
+  readonly onDidChangeExtensions: Event<void>;
+  readonly onDidChangeExtensionsStatus: Event<ExtensionIdentifier[]>;
+  
+  // Runtime
+  canAddExtension(extension: IExtensionDescription): boolean;
+  canRemoveExtension(extension: IExtensionDescription): boolean;
+}
+```
+</CodeGroup>
+
+### Extension Host Communication
+
+Extensions communicate with VS Code via JSON-RPC over IPC (Inter-Process Communication):
+
+<CodeGroup>
+```typescript Main Side (VS Code)
+// In the main VS Code process
+class MainThreadCommands {
+  constructor(
+    @ICommandService private commandService: ICommandService
+  ) {}
+
+  // Called by extension host
+  $executeCommand(id: string, args: any[]): Promise<any> {
+    return this.commandService.executeCommand(id, ...args);
+  }
+}
+```
+
+```typescript Extension Side
+// In the extension host
+class ExtHostCommands {
+  // Call main thread
+  async executeCommand(id: string, ...args: any[]): Promise<any> {
+    return this.proxy.$executeCommand(id, args);
+  }
+  
+  // Called by main thread
+  $executeContributedCommand(id: string, args: any[]): Promise<any> {
+    const handler = this.commands.get(id);
+    return handler?.(...args);
+  }
+}
+```
+</CodeGroup>
+
+## Extension API
+
+Extensions interact with VS Code through the `vscode` module, which is defined in TypeScript.
+
+**Location:** `src/vscode-dts/vscode.d.ts`
+
+### Core Namespaces
+
+<CardGroup cols={2}>
+  <Card title="commands" icon="terminal">
+    Register and execute commands
+  </Card>
+  <Card title="window" icon="window">
+    Interact with UI (messages, inputs, editors)
+  </Card>
+  <Card title="workspace" icon="folder">
+    Access workspace files and configuration
+  </Card>
+  <Card title="languages" icon="language">
+    Language features (IntelliSense, diagnostics)
+  </Card>
+  <Card title="debug" icon="bug">
+    Debugging functionality
+  </Card>
+  <Card title="tasks" icon="list-check">
+    Task execution and providers
+  </Card>
+  <Card title="scm" icon="code-branch">
+    Source control integration
+  </Card>
+  <Card title="extensions" icon="puzzle-piece">
+    Access other extensions
+  </Card>
+</CardGroup>
+
+### Extension Entry Point
+
+Every extension has a main file that exports `activate` and `deactivate` functions:
+
+<CodeGroup>
+```typescript extension.ts
+import * as vscode from 'vscode';
+
+// Called when extension is activated
+export function activate(context: vscode.ExtensionContext) {
+  console.log('Extension activated');
+
+  // Register a command
+  const disposable = vscode.commands.registerCommand(
+    'myExtension.helloWorld',
+    () => {
+      vscode.window.showInformationMessage('Hello from my extension!');
+    }
+  );
+
+  // Add to subscriptions for cleanup
+  context.subscriptions.push(disposable);
+
+  // Access extension path
+  console.log('Extension path:', context.extensionPath);
+  
+  // Use workspace storage
+  context.workspaceState.update('lastRun', Date.now());
+}
+
+// Called when extension is deactivated
+export function deactivate() {
+  console.log('Extension deactivated');
+}
+```
+
+```typescript ExtensionContext
+interface ExtensionContext {
+  // Paths
+  readonly extensionPath: string;
+  readonly extensionUri: Uri;
+  readonly globalStorageUri: Uri;
+  readonly logUri: Uri;
+  readonly storageUri: Uri | undefined;
+  
+  // Storage
+  readonly workspaceState: Memento;
+  readonly globalState: Memento;
+  readonly secrets: SecretStorage;
+  
+  // Lifecycle
+  readonly subscriptions: { dispose(): any }[];
+  
+  // Extension info
+  readonly extension: Extension<any>;
+  readonly extensionMode: ExtensionMode;
+}
+```
+</CodeGroup>
+
+### Common API Patterns
+
+<Accordion title="Commands">
+```typescript
+// Register a command
+const disposable = vscode.commands.registerCommand(
+  'extension.commandId',
+  async (arg1, arg2) => {
+    // Command handler
+    await vscode.window.showInformationMessage('Command executed!');
+  }
+);
+
+context.subscriptions.push(disposable);
+
+// Execute a command
+await vscode.commands.executeCommand('workbench.action.files.save');
+
+// Get all commands
+const commands = await vscode.commands.getCommands();
+```
+</Accordion>
+
+<Accordion title="Text Editing">
+```typescript
+// Get active editor
+const editor = vscode.window.activeTextEditor;
+if (!editor) return;
+
+// Read content
+const document = editor.document;
+const text = document.getText();
+const line = document.lineAt(0).text;
+
+// Edit content
+await editor.edit(editBuilder => {
+  // Insert text
+  editBuilder.insert(new vscode.Position(0, 0), 'Hello\n');
+  
+  // Replace text
+  editBuilder.replace(
+    new vscode.Range(0, 0, 0, 5),
+    'Hi'
+  );
+  
+  // Delete text
+  editBuilder.delete(new vscode.Range(1, 0, 2, 0));
+});
+
+// Set selection
+editor.selection = new vscode.Selection(0, 0, 0, 5);
+
+// Set decorations
+const decorationType = vscode.window.createTextEditorDecorationType({
+  backgroundColor: 'rgba(255, 0, 0, 0.3)',
+  border: '1px solid red'
+});
+
+editor.setDecorations(decorationType, [
+  new vscode.Range(0, 0, 0, 10)
+]);
+```
+</Accordion>
+
+<Accordion title="File System">
+```typescript
+// Read file
+const uri = vscode.Uri.file('/path/to/file.txt');
+const fileContent = await vscode.workspace.fs.readFile(uri);
+const text = Buffer.from(fileContent).toString('utf8');
+
+// Write file
+const content = Buffer.from('Hello, World!', 'utf8');
+await vscode.workspace.fs.writeFile(uri, content);
+
+// Watch files
+const watcher = vscode.workspace.createFileSystemWatcher('**/*.js');
+watcher.onDidCreate(uri => console.log('Created:', uri.fsPath));
+watcher.onDidChange(uri => console.log('Changed:', uri.fsPath));
+watcher.onDidDelete(uri => console.log('Deleted:', uri.fsPath));
+
+context.subscriptions.push(watcher);
+```
+</Accordion>
+
+<Accordion title="Language Features">
+```typescript
+// Hover provider
+vscode.languages.registerHoverProvider('javascript', {
+  provideHover(document, position, token) {
+    const range = document.getWordRangeAtPosition(position);
+    const word = document.getText(range);
+    
+    return new vscode.Hover(
+      `**${word}**\n\nThis is hover information`
+    );
+  }
+});
+
+// Completion provider
+vscode.languages.registerCompletionItemProvider('javascript', {
+  provideCompletionItems(document, position, token, context) {
+    const completions = [];
+    
+    const item = new vscode.CompletionItem('myFunction');
+    item.kind = vscode.CompletionItemKind.Function;
+    item.insertText = new vscode.SnippetString('myFunction(${1:arg})');
+    item.documentation = 'My custom function';
+    
+    completions.push(item);
+    return completions;
+  }
+}, '.');
+
+// Diagnostics
+const diagnosticCollection = vscode.languages.createDiagnosticCollection('myext');
+
+function updateDiagnostics(document: vscode.TextDocument) {
+  const diagnostics: vscode.Diagnostic[] = [];
+  
+  // Find issues
+  const text = document.getText();
+  const regex = /TODO/g;
+  let match;
+  
+  while (match = regex.exec(text)) {
+    const line = document.positionAt(match.index).line;
+    const range = new vscode.Range(line, match.index, line, match.index + 4);
+    
+    diagnostics.push(new vscode.Diagnostic(
+      range,
+      'TODO found',
+      vscode.DiagnosticSeverity.Warning
+    ));
+  }
+  
+  diagnosticCollection.set(document.uri, diagnostics);
+}
+```
+</Accordion>
+
+<Accordion title="UI Elements">
+```typescript
+// Show message
+vscode.window.showInformationMessage('Info message');
+vscode.window.showWarningMessage('Warning message');
+vscode.window.showErrorMessage('Error message', 'Action 1', 'Action 2')
+  .then(selection => {
+    if (selection === 'Action 1') {
+      // Handle action
+    }
+  });
+
+// Quick pick
+const items = ['Option 1', 'Option 2', 'Option 3'];
+const selected = await vscode.window.showQuickPick(items, {
+  placeHolder: 'Select an option'
+});
+
+// Input box
+const input = await vscode.window.showInputBox({
+  prompt: 'Enter a value',
+  placeHolder: 'Type here...',
+  validateInput: (value) => {
+    return value.length < 3 ? 'Too short' : null;
+  }
+});
+
+// Progress
+vscode.window.withProgress({
+  location: vscode.ProgressLocation.Notification,
+  title: 'Processing...',
+  cancellable: true
+}, async (progress, token) => {
+  progress.report({ increment: 0 });
+  
+  for (let i = 0; i < 10; i++) {
+    if (token.isCancellationRequested) break;
+    
+    await sleep(1000);
+    progress.report({ 
+      increment: 10,
+      message: `Step ${i + 1}/10`
+    });
+  }
+});
+```
+</Accordion>
+
+<Accordion title="Tree Views">
+```typescript
+// Tree data provider
+class MyTreeDataProvider implements vscode.TreeDataProvider<TreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<TreeItem | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  getTreeItem(element: TreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: TreeItem): Promise<TreeItem[]> {
+    if (!element) {
+      // Root items
+      return [
+        new TreeItem('Item 1', vscode.TreeItemCollapsibleState.Collapsed),
+        new TreeItem('Item 2', vscode.TreeItemCollapsibleState.None)
+      ];
+    }
+    
+    // Child items
+    return [
+      new TreeItem('Child 1', vscode.TreeItemCollapsibleState.None),
+      new TreeItem('Child 2', vscode.TreeItemCollapsibleState.None)
+    ];
+  }
+}
+
+class TreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly label: string,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+  ) {
+    super(label, collapsibleState);
+    this.tooltip = `${this.label} - tooltip`;
+    this.contextValue = 'myTreeItem';
+  }
+}
+
+// Register tree view
+const treeDataProvider = new MyTreeDataProvider();
+vscode.window.createTreeView('myView', {
+  treeDataProvider
+});
+```
+</Accordion>
+
+## Extension Manifest
+
+Every extension must have a `package.json` manifest:
+
+<CodeGroup>
+```json package.json
+{
+  "name": "my-extension",
+  "displayName": "My Extension",
+  "description": "A sample extension",
+  "version": "1.0.0",
+  "publisher": "myname",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onCommand:myExtension.helloWorld"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "myExtension.helloWorld",
+        "title": "Hello World",
+        "category": "My Extension"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "myExtension.helloWorld",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "myExtension.helloWorld",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "My Extension",
+      "properties": {
+        "myExtension.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable my extension"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^16.x",
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+```json Activation Events
+{
+  "activationEvents": [
+    // Always activate (discouraged)
+    "*",
+    
+    // When a language is opened
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    
+    // When a command is invoked
+    "onCommand:myExtension.doSomething",
+    
+    // When a file scheme is used
+    "onFileSystem:sftp",
+    
+    // When a debug session starts
+    "onDebug",
+    "onDebugResolve:node",
+    "onDebugInitialConfigurations",
+    
+    // When a task is run
+    "onTaskType:npm",
+    
+    // When a view is visible
+    "onView:myExtension.myView",
+    
+    // When a URI is opened
+    "onUri",
+    
+    // When a webview is restored
+    "onWebviewPanel:myExtension.myPanel",
+    
+    // When a custom event occurs
+    "onCustomEditor:myExtension.myEditor",
+    
+    // When authentication is needed
+    "onAuthenticationRequest:github"
+  ]
+}
+```
+</CodeGroup>
+
+## Contribution Points
+
+Extensions can contribute various UI elements and functionality:
+
+<AccordionGroup>
+  <Accordion title="Commands">
+    ```json
+    "contributes": {
+      "commands": [
+        {
+          "command": "extension.commandId",
+          "title": "My Command",
+          "category": "Extension Name",
+          "icon": "$(symbol-method)",
+          "enablement": "editorTextFocus"
+        }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Menus">
+    ```json
+    "contributes": {
+      "menus": {
+        "editor/context": [
+          {
+            "command": "extension.commandId",
+            "when": "editorTextFocus",
+            "group": "navigation"
+          }
+        ],
+        "explorer/context": [
+          {
+            "command": "extension.commandId",
+            "when": "resourceLangId == javascript"
+          }
+        ],
+        "commandPalette": [
+          {
+            "command": "extension.commandId",
+            "when": "workspaceFolderCount > 0"
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Views">
+    ```json
+    "contributes": {
+      "viewsContainers": {
+        "activitybar": [
+          {
+            "id": "myExtension",
+            "title": "My Extension",
+            "icon": "resources/icon.svg"
+          }
+        ]
+      },
+      "views": {
+        "myExtension": [
+          {
+            "id": "myExtension.myView",
+            "name": "My View",
+            "when": "workspaceFolderCount > 0"
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Languages">
+    ```json
+    "contributes": {
+      "languages": [
+        {
+          "id": "mylang",
+          "extensions": [".mylang"],
+          "aliases": ["MyLang", "mylang"],
+          "configuration": "./language-configuration.json",
+          "icon": {
+            "light": "./icons/mylang-light.svg",
+            "dark": "./icons/mylang-dark.svg"
+          }
+        }
+      ],
+      "grammars": [
+        {
+          "language": "mylang",
+          "scopeName": "source.mylang",
+          "path": "./syntaxes/mylang.tmLanguage.json"
+        }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Themes">
+    ```json
+    "contributes": {
+      "themes": [
+        {
+          "label": "My Dark Theme",
+          "uiTheme": "vs-dark",
+          "path": "./themes/dark-theme.json"
+        }
+      ],
+      "iconThemes": [
+        {
+          "id": "my-icons",
+          "label": "My Icons",
+          "path": "./icons/icon-theme.json"
+        }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Debuggers">
+    ```json
+    "contributes": {
+      "breakpoints": [
+        {
+          "language": "mylang"
+        }
+      ],
+      "debuggers": [
+        {
+          "type": "mylang",
+          "label": "MyLang Debug",
+          "program": "./out/debugAdapter.js",
+          "runtime": "node",
+          "configurationAttributes": {
+            "launch": {
+              "required": ["program"],
+              "properties": {
+                "program": {
+                  "type": "string",
+                  "description": "Program to debug"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Built-in Extensions
+
+VS Code ships with many built-in extensions in the `extensions/` folder:
+
+<CardGroup cols={3}>
+  <Card title="Language Support" icon="language">
+    - TypeScript/JavaScript
+    - HTML/CSS
+    - JSON
+    - Markdown
+    - Python, C++, C#, etc.
+  </Card>
+  <Card title="Features" icon="star">
+    - Git integration
+    - Emmet
+    - Configuration editing
+    - Extension editing
+    - Debug auto-launch
+  </Card>
+  <Card title="Themes" icon="palette">
+    - Built-in color themes
+    - Icon themes
+    - Syntax highlighting
+  </Card>
+</CardGroup>
+
+Example built-in extensions in `~/workspace/source/extensions/`:
+
+<Tabs>
+  <Tab title="typescript-language-features">
+    Provides TypeScript and JavaScript language support including:
+    - IntelliSense
+    - Type checking
+    - Refactoring
+    - Organize imports
+    - Quick fixes
+  </Tab>
+  
+  <Tab title="git">
+    Git source control integration:
+    - File status in explorer
+    - Commit UI
+    - Diff editor
+    - Branch management
+    - Push/pull operations
+  </Tab>
+  
+  <Tab title="emmet">
+    Emmet abbreviation expansion:
+    - HTML/CSS snippets
+    - Abbreviation expansion
+    - Works in multiple languages
+  </Tab>
+  
+  <Tab title="markdown-language-features">
+    Markdown editing support:
+    - Preview
+    - Outline
+    - Link navigation
+    - Syntax highlighting
+  </Tab>
+</Tabs>
+
+## Extension Lifecycle
+
+<Steps>
+  <Step title="Discovery">
+    VS Code scans extension directories on startup and reads `package.json` manifests
+  </Step>
+  
+  <Step title="Registration">
+    Extension contributions (commands, views, etc.) are registered without activating the extension
+  </Step>
+  
+  <Step title="Activation">
+    Extension is activated when an activation event occurs:
+    ```typescript
+    // Extension main file
+    export function activate(context: vscode.ExtensionContext) {
+      // Extension is now active
+      console.log('Extension activated');
+    }
+    ```
+  </Step>
+  
+  <Step title="Running">
+    Extension responds to events, provides language features, executes commands
+  </Step>
+  
+  <Step title="Deactivation">
+    Extension is deactivated when VS Code closes or extension is disabled:
+    ```typescript
+    export function deactivate() {
+      // Cleanup resources
+      console.log('Extension deactivated');
+    }
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+Extensions should activate quickly (< 1 second) to avoid degrading startup performance. Use lazy activation events whenever possible.
+</Warning>
+
+## Testing Extensions
+
+<CodeGroup>
+```typescript Extension Tests
+import * as assert from 'assert';
+import * as vscode from 'vscode';
+
+suite('Extension Test Suite', () => {
+  vscode.window.showInformationMessage('Start all tests.');
+
+  test('Sample test', async () => {
+    // Activate extension
+    const ext = vscode.extensions.getExtension('publisher.extension-name');
+    await ext?.activate();
+
+    // Execute command
+    const result = await vscode.commands.executeCommand('extension.commandId');
+    
+    // Assert
+    assert.strictEqual(result, expectedValue);
+  });
+
+  test('Document test', async () => {
+    // Open document
+    const doc = await vscode.workspace.openTextDocument({
+      content: 'test content',
+      language: 'javascript'
+    });
+
+    // Show in editor
+    const editor = await vscode.window.showTextDocument(doc);
+
+    // Test editor operations
+    await editor.edit(editBuilder => {
+      editBuilder.insert(new vscode.Position(0, 0), 'new ');
+    });
+
+    assert.strictEqual(doc.getText(), 'new test content');
+  });
+});
+```
+
+```json launch.json (for debugging)
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ]
+    },
+    {
+      "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--extensionTestsPath=${workspaceFolder}/out/test/suite/index"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/test/**/*.js"
+      ]
+    }
+  ]
+}
+```
+</CodeGroup>
+
+## Extension Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Lazy Activation" icon="hourglass">
+    Use specific activation events instead of `*`. Activate only when needed.
+  </Card>
+  
+  <Card title="Dispose Resources" icon="trash">
+    Add all disposables to `context.subscriptions` for automatic cleanup.
+  </Card>
+  
+  <Card title="Use Async/Await" icon="clock">
+    Most VS Code APIs are asynchronous. Use async/await for cleaner code.
+  </Card>
+  
+  <Card title="Provide Telemetry" icon="chart-line">
+    Track extension usage to understand user behavior (with user consent).
+  </Card>
+  
+  <Card title="Handle Errors" icon="triangle-exclamation">
+    Catch and handle errors gracefully. Show user-friendly error messages.
+  </Card>
+  
+  <Card title="Respect Settings" icon="gear">
+    Make features configurable and respect user settings.
+  </Card>
+  
+  <Card title="Performance" icon="bolt">
+    Avoid blocking the UI thread. Use workers for heavy computation.
+  </Card>
+  
+  <Card title="Accessibility" icon="universal-access">
+    Ensure UI is accessible with keyboard navigation and screen readers.
+  </Card>
+</CardGroup>
+
+## Key Files Reference
+
+| Path | Description |
+|------|-------------|
+| `vscode-dts/vscode.d.ts` | Extension API definition (line 1-100) |
+| `workbench/services/extensions/common/extensions.ts` | Extension service (line 38) |
+| `workbench/api/` | Extension host API implementation |
+| `extensions/` | Built-in extensions |
+
+## Resources
+
+<CardGroup cols={3}>
+  <Card title="API Documentation" icon="book" href="https://code.visualstudio.com/api">
+    Official VS Code Extension API docs
+  </Card>
+  <Card title="Extension Samples" icon="code" href="https://github.com/microsoft/vscode-extension-samples">
+    Sample extensions on GitHub
+  </Card>
+  <Card title="Publishing" icon="cloud-arrow-up" href="https://code.visualstudio.com/api/working-with-extensions/publishing-extension">
+    Publish to the marketplace
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Base Layer" icon="foundation" href="/architecture/base-layer">
+    Review foundation utilities
+  </Card>
+  <Card title="Platform Layer" icon="layer-group" href="/architecture/platform-layer">
+    Understand services
+  </Card>
+  <Card title="Workbench" icon="window" href="/architecture/workbench">
+    Learn about the UI
+  </Card>
+</CardGroup>

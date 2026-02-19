@@ -1,89 +1,172 @@
 ---
-title: 'Extension API Overview'
-description: 'Comprehensive guide to the Visual Studio Code Extension API'
+title: 'VS Code Extension API Overview'
+description: 'Complete guide to the Visual Studio Code Extension API, including core concepts, API structure, and versioning'
 ---
 
-# Extension API Overview
+# VS Code Extension API Overview
 
-The Visual Studio Code Extension API allows you to extend VS Code's functionality by creating extensions that integrate seamlessly with the editor. This API provides access to the editor's core features, including text editing, workspace management, language services, debugging, and source control.
+The Visual Studio Code Extension API allows you to extend VS Code's functionality through a rich set of JavaScript/TypeScript APIs. This comprehensive API provides access to the editor's core features and enables you to create powerful extensions that integrate seamlessly with the VS Code experience.
 
-## Core API Namespaces
+## What is the VS Code Extension API?
 
-The VS Code Extension API is organized into several namespaces, each providing specific functionality:
+The VS Code Extension API is a collection of JavaScript APIs that extensions can use to interact with VS Code. It provides programmatic access to:
 
-<CardGroup cols={2}>
-  <Card title="commands" icon="terminal" href="/api/commands">
-    Register and execute commands
-  </Card>
-  <Card title="window" icon="window" href="/api/text-editor">
-    Interact with the editor window and UI
-  </Card>
-  <Card title="workspace" icon="folder" href="/api/workspace">
-    Access and manipulate workspace files and folders
-  </Card>
-  <Card title="languages" icon="code" href="/api/languages">
-    Provide language features like completion and diagnostics
-  </Card>
-  <Card title="debug" icon="bug" href="/api/debug">
-    Integrate debugging functionality
-  </Card>
-  <Card title="scm" icon="git-branch" href="/api/scm">
-    Implement source control providers
-  </Card>
-</CardGroup>
+- **Editor functionality**: Text editing, selections, decorations
+- **Workspace management**: Files, folders, configuration
+- **Language features**: IntelliSense, diagnostics, code actions
+- **UI components**: Quick picks, input boxes, status bar, webviews
+- **Debugging**: Debug adapters and debug UI
+- **Source control**: SCM providers and git integration
+- **Terminal**: Integrated terminal interaction
+- **Extensions**: Interact with other extensions
 
-## API Version
+## Main API Surface (vscode.d.ts)
 
-The Extension API is versioned using the `engines.vscode` field in your `package.json`:
+The entire stable Extension API is defined in a single TypeScript definition file called `vscode.d.ts`. This file serves as the contract between VS Code and extensions, defining all available types, interfaces, classes, and namespaces.
+
+### Key Characteristics
+
+<AccordionGroup>
+  <Accordion title="Single Module Design">
+    All APIs are exported from the `vscode` module:
+    
+    ```typescript
+    import * as vscode from 'vscode';
+    
+    // Access namespaces
+    vscode.commands.executeCommand('...');
+    vscode.window.showInformationMessage('...');
+    
+    // Use classes and interfaces
+    const position = new vscode.Position(0, 0);
+    const uri = vscode.Uri.file('/path/to/file');
+    ```
+  </Accordion>
+  
+  <Accordion title="Namespace Organization">
+    The API is organized into logical namespaces:
+    
+    - `vscode.commands` - Command registration and execution
+    - `vscode.window` - UI interactions and editor windows
+    - `vscode.workspace` - Workspace and file system operations
+    - `vscode.languages` - Language features and providers
+    - `vscode.debug` - Debugging functionality
+    - `vscode.scm` - Source control management
+    - `vscode.tasks` - Task execution
+    - `vscode.extensions` - Extension management
+    - `vscode.env` - Environment information
+    - `vscode.notebooks` - Notebook support
+    - `vscode.chat` - Chat participant API
+    - `vscode.lm` - Language model API
+  </Accordion>
+  
+  <Accordion title="Type Safety">
+    The API is fully typed using TypeScript, providing:
+    
+    - IntelliSense and autocomplete in supported editors
+    - Compile-time type checking
+    - Inline documentation
+    - Better refactoring support
+  </Accordion>
+</AccordionGroup>
+
+### Core API Components
+
+The `vscode.d.ts` file includes:
+
+1. **Interfaces**: Define contracts for objects (e.g., `TextDocument`, `Command`)
+2. **Classes**: Concrete types you can instantiate (e.g., `Position`, `Range`, `Uri`)
+3. **Enums**: Named constants (e.g., `TextEditorCursorStyle`, `ViewColumn`)
+4. **Namespaces**: Organize related functionality (e.g., `commands`, `window`)
+5. **Type Aliases**: Simplified type definitions (e.g., `Thenable<T>`, `ProviderResult<T>`)
+
+## API Stability and Versioning
+
+### Semantic Versioning
+
+VS Code uses semantic versioning (semver) for API compatibility:
 
 ```json
 {
   "engines": {
-    "vscode": "^1.5.0"
+    "vscode": "^1.85.0"
   }
 }
 ```
 
-## Core Concepts
-
-### Activation Events
-
-Extensions are activated based on activation events declared in `package.json`:
-
-```json
-{
-  "activationEvents": [
-    "onLanguage:javascript",
-    "onCommand:myExtension.doSomething",
-    "onFileSystem:git",
-    "*"
-  ]
-}
-```
+This declaration means:
+- Your extension requires VS Code version 1.85.0 or higher
+- The `^` symbol indicates compatibility with any 1.x version >= 1.85.0
+- Breaking changes only occur in major versions (e.g., 2.0.0)
 
 <Note>
-Use specific activation events instead of `"*"` to improve VS Code's startup performance.
+In practice, VS Code has maintained backward compatibility across all 1.x releases, meaning extensions built for VS Code 1.0 still work in 1.85+.
 </Note>
 
-### Extension Context
+### API Evolution
 
-The `activate` function receives an `ExtensionContext` object that provides:
+The VS Code API evolves through a careful process:
 
-- **subscriptions**: Disposables that are cleaned up when the extension is deactivated
-- **extensionUri**: The absolute file path of the extension
-- **globalState**: Workspace-independent state storage
-- **workspaceState**: Workspace-specific state storage
-- **secrets**: Secure storage for sensitive data
-- **extensionPath**: Deprecated, use `extensionUri` instead
+<Steps>
+  <Step title="Proposed API Phase">
+    New APIs start as proposed APIs that are:
+    - Not included in `vscode.d.ts`
+    - Defined in separate `vscode.proposed.*.d.ts` files
+    - Subject to breaking changes
+    - Only available to extensions that opt-in
+  </Step>
+  
+  <Step title="Finalization">
+    After testing and refinement, APIs are:
+    - Moved to stable `vscode.d.ts`
+    - Guaranteed to remain stable
+    - Available to all extensions
+  </Step>
+  
+  <Step title="Deprecation (Rare)">
+    When APIs need to change:
+    - Old APIs are marked `@deprecated`
+    - Better alternatives are provided
+    - Deprecated APIs continue to work
+  </Step>
+</Steps>
+
+### Stability Guarantees
+
+<CardGroup cols={2}>
+  <Card title="Stable APIs" icon="check-circle">
+    - Never break between minor versions
+    - Fully documented and tested
+    - Suitable for production use
+    - Available to all extensions
+  </Card>
+  
+  <Card title="Proposed APIs" icon="flask">
+    - May change without notice
+    - Require explicit opt-in
+    - Not available in Marketplace extensions
+    - Used for experimentation
+  </Card>
+</CardGroup>
+
+## Proposed vs Stable APIs
+
+### Stable APIs
+
+The stable API surface is defined in `vscode.d.ts` and includes all production-ready functionality. These APIs:
+
+- Are backward compatible
+- Are fully documented
+- Can be used in published extensions
+- Have comprehensive test coverage
+
+**Example from stable API:**
 
 ```typescript
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
-  // Store a value
-  await context.globalState.update('myKey', 'myValue');
-  
-  // Register a command
+  // Register a command - stable API
   const disposable = vscode.commands.registerCommand(
     'myExtension.helloWorld',
     () => {
@@ -95,155 +178,97 @@ export function activate(context: vscode.ExtensionContext) {
 }
 ```
 
-## Key Interfaces and Classes
+### Proposed APIs
 
-### Uri
+Proposed APIs are experimental features under development. They:
 
-Represents file and resource locations:
+- May change or be removed
+- Require explicit enablement
+- Cannot be published to the Marketplace
+- Are intended for feedback and testing
 
-<ParamField path="Uri.file" type="(path: string) => Uri">
-  Creates a URI from a file system path
-</ParamField>
+To use proposed APIs, you must:
 
-<ParamField path="Uri.parse" type="(value: string) => Uri">
-  Creates a URI from a string (e.g., `http://example.com`)
-</ParamField>
-
-```typescript
-const fileUri = vscode.Uri.file('/path/to/file.txt');
-const webUri = vscode.Uri.parse('https://code.visualstudio.com');
+1. Enable them in `package.json`:
+```json
+{
+  "enabledApiProposals": [
+    "languageModelSystem",
+    "chatParticipantAdditions"
+  ]
+}
 ```
 
-### Position and Range
-
-Represent locations in text documents:
-
+2. Reference the type definitions:
 ```typescript
-// Position (line and character are zero-based)
-const position = new vscode.Position(5, 10);
-
-// Range (from start to end position)
-const range = new vscode.Range(
-  new vscode.Position(5, 0),
-  new vscode.Position(5, 20)
-);
-
-// Alternative constructor
-const range2 = new vscode.Range(5, 0, 5, 20);
+import * as vscode from 'vscode';
+// Proposed APIs are merged into the vscode namespace
 ```
 
-### Disposable
+<Warning>
+Extensions using proposed APIs cannot be published to the Visual Studio Marketplace. They are only suitable for internal use or local development.
+</Warning>
 
-Represents resources that need cleanup:
+### When to Use Each
 
-```typescript
-const disposable = vscode.workspace.onDidChangeTextDocument(event => {
-  console.log('Document changed:', event.document.uri);
-});
-
-// Clean up when no longer needed
-context.subscriptions.push(disposable);
-```
-
-## API Patterns
-
-### Events
-
-Many APIs provide events using the `Event<T>` pattern:
-
-```typescript
-// Subscribe to events
-vscode.window.onDidChangeActiveTextEditor(editor => {
-  if (editor) {
-    console.log('Active editor:', editor.document.fileName);
-  }
-});
-```
-
-### Providers
-
-Extensions register providers to contribute functionality:
-
-```typescript
-// Register a completion provider
-vscode.languages.registerCompletionItemProvider(
-  'javascript',
-  {
-    provideCompletionItems(document, position) {
-      const completionItem = new vscode.CompletionItem('console.log');
-      return [completionItem];
-    }
-  },
-  '.' // Trigger character
-);
-```
-
-### Thenable (Promise)
-
-Many APIs return `Thenable<T>`, which is VS Code's promise-like type:
-
-```typescript
-vscode.window.showQuickPick(['Option 1', 'Option 2']).then(selection => {
-  if (selection) {
-    vscode.window.showInformationMessage(`You picked: ${selection}`);
-  }
-});
-
-// Or use async/await
-const selection = await vscode.window.showQuickPick(['Option 1', 'Option 2']);
-```
-
-## Best Practices
-
-<AccordionGroup>
-  <Accordion title="Dispose Resources Properly">
-    Always dispose of resources by adding them to `context.subscriptions`:
-    
-    ```typescript
-    const watcher = vscode.workspace.createFileSystemWatcher('**/*.js');
-    context.subscriptions.push(watcher);
-    ```
-  </Accordion>
+<Tabs>
+  <Tab title="Use Stable APIs When">
+    - Building production extensions
+    - Publishing to the Marketplace
+    - Requiring long-term stability
+    - Serving external users
+  </Tab>
   
-  <Accordion title="Use Activation Events Wisely">
-    Avoid using `"*"` as an activation event. Use specific events like `onLanguage:` or `onCommand:`.
-  </Accordion>
+  <Tab title="Use Proposed APIs When">
+    - Building internal tools
+    - Testing new features
+    - Providing early feedback to VS Code team
+    - Experimenting with cutting-edge functionality
+  </Tab>
+</Tabs>
+
+## Core API Namespaces
+
+The VS Code API is organized into several namespaces, each providing specific functionality:
+
+<CardGroup cols={2}>
+  <Card title="commands" icon="terminal" href="/api/commands">
+    Register and execute commands that can be triggered via keyboard shortcuts, menus, or programmatically
+  </Card>
   
-  <Accordion title="Handle Errors Gracefully">
-    Always handle errors and provide meaningful messages to users:
-    
-    ```typescript
-    try {
-      await someOperation();
-    } catch (error) {
-      vscode.window.showErrorMessage(`Operation failed: ${error.message}`);
-    }
-    ```
-  </Accordion>
+  <Card title="window" icon="window" href="/api/text-editor">
+    Interact with the editor window, show messages, create input boxes, manage editors and terminals
+  </Card>
   
-  <Accordion title="Respect User Settings">
-    Read and respect user configuration:
-    
-    ```typescript
-    const config = vscode.workspace.getConfiguration('myExtension');
-    const enabled = config.get<boolean>('enabled', true);
-    ```
-  </Accordion>
-</AccordionGroup>
+  <Card title="workspace" icon="folder" href="/api/workspace">
+    Access workspace folders, manage files, handle configuration, and monitor file system changes
+  </Card>
+  
+  <Card title="languages" icon="code" href="/api/languages">
+    Provide language features like IntelliSense, diagnostics, formatting, and code actions
+  </Card>
+  
+  <Card title="debug" icon="bug" href="/api/debug">
+    Integrate debugging functionality with custom debug adapters and debug UI
+  </Card>
+  
+  <Card title="scm" icon="git-branch" href="/api/scm">
+    Implement source control management providers for version control systems
+  </Card>
+</CardGroup>
 
 ## Next Steps
 
-<CardGroup cols={2}>
+<CardGroup cols={3}>
+  <Card title="Extension API Reference" icon="book" href="/api/extension-api">
+    Explore the complete Extension API with detailed examples
+  </Card>
+  
+  <Card title="Proposed APIs" icon="flask" href="/api/proposed-apis">
+    Learn about experimental APIs and how to use them
+  </Card>
+  
   <Card title="Your First Extension" icon="rocket" href="/api/your-first-extension">
-    Create your first VS Code extension
-  </Card>
-  <Card title="Extension Structure" icon="folder-tree" href="/api/extension-structure">
-    Learn about extension project structure
-  </Card>
-  <Card title="Commands" icon="terminal" href="/api/commands">
-    Register and execute commands
-  </Card>
-  <Card title="Text Editor" icon="pen" href="/api/text-editor">
-    Work with text editors and documents
+    Create your first VS Code extension step by step
   </Card>
 </CardGroup>

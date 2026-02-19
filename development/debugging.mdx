@@ -1,0 +1,541 @@
+---
+title: Debugging VS Code
+description: Learn how to debug Visual Studio Code's main process, renderer process, and extensions
+---
+
+This guide explains how to debug different parts of Visual Studio Code during development.
+
+## Overview
+
+VS Code runs in multiple processes, and debugging requires different approaches for each:
+
+<CardGroup cols={3}>
+  <Card title="Main Process" icon="desktop">
+    Electron's main process (Node.js)
+  </Card>
+  
+  <Card title="Renderer Process" icon="window-maximize">
+    Electron's renderer process (Chromium)
+  </Card>
+  
+  <Card title="Extension Host" icon="puzzle-piece">
+    Separate Node.js process for extensions
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+Before debugging, ensure you've:
+
+1. Built VS Code from source (see [Building from Source](/development/building-from-source))
+2. Started watch mode for automatic compilation:
+   ```bash
+   npm run watch
+   ```
+
+<Note>
+Watch mode must be running for code changes to take effect during debugging sessions.
+</Note>
+
+## Launch Configurations
+
+VS Code includes comprehensive launch configurations in `.vscode/launch.json`. You can access these through the Debug view (Cmd/Ctrl + Shift + D).
+
+### Main Launch Configurations
+
+<Tabs>
+  <Tab title="VS Code (Full)">
+    The most common debugging configuration that launches VS Code with all debuggers attached.
+    
+    **Configuration**: `VS Code`
+    
+    This compound configuration includes:
+    - Launch VS Code Internal
+    - Attach to Main Process (.vscode/launch.json:645)
+    - Attach to Extension Host (.vscode/launch.json:646)
+    - Attach to Shared Process (.vscode/launch.json:647)
+    
+    ```json
+    {
+      "name": "VS Code",
+      "stopAll": true,
+      "configurations": [
+        "Launch VS Code Internal",
+        "Attach to Main Process",
+        "Attach to Extension Host",
+        "Attach to Shared Process"
+      ],
+      "preLaunchTask": "Ensure Prelaunch Dependencies"
+    }
+    ```
+  </Tab>
+  
+  <Tab title="VS Code (Hot Reload)">
+    Launch with Vite hot module replacement for faster development iteration.
+    
+    **Configuration**: `VS Code (Hot Reload)`
+    
+    Uses environment variables to enable hot reload:
+    - `VSCODE_DEV=1`
+    - `VSCODE_DEV_SERVER_URL=http://localhost:5199/build/vite/workbench-vite-electron.html`
+    
+    Includes the preLaunch task: `Launch Monaco Editor Vite`
+  </Tab>
+  
+  <Tab title="Main Process Only">
+    Debug only the main process without the renderer.
+    
+    **Configuration**: `Main Process`
+    
+    Useful for debugging:
+    - Window management
+    - Native integrations
+    - File system operations
+    - Process management
+  </Tab>
+</Tabs>
+
+## Debugging the Main Process
+
+The main process runs Node.js code and handles system-level operations.
+
+<Steps>
+  <Step title="Set Breakpoints">
+    Set breakpoints in any file under:
+    - `src/vs/code/electron-main/`
+    - `src/vs/platform/` (main process parts)
+  </Step>
+
+  <Step title="Launch with Debug">
+    Select "Main Process" or "VS Code" configuration and press F5.
+    
+    The main process starts with `--inspect-brk=5875` flag (.vscode/launch.json:357).
+  </Step>
+
+  <Step title="Debug">
+    VS Code will pause at your breakpoints. The debug port is **5875**.
+  </Step>
+</Steps>
+
+<Info>
+The main process executable path varies by platform:
+- **macOS**: `.build/electron/Code - OSS.app/Contents/MacOS/Code - OSS`
+- **Windows**: `.build/electron/Code - OSS.exe`
+- **Linux**: `.build/electron/code-oss`
+</Info>
+
+### Attaching to Running Main Process
+
+If VS Code is already running, you can attach to the main process:
+
+**Configuration**: `Attach to Main Process` (.vscode/launch.json:64)
+
+```json
+{
+  "type": "node",
+  "request": "attach",
+  "name": "Attach to Main Process",
+  "timeout": 30000,
+  "port": 5875,
+  "continueOnAttach": true
+}
+```
+
+## Debugging the Renderer Process
+
+The renderer process displays the UI and runs in a Chromium environment.
+
+<Steps>
+  <Step title="Launch VS Code Internal">
+    Use the "Launch VS Code Internal" configuration (.vscode/launch.json:240).
+    
+    This launches VS Code with Chrome DevTools protocol enabled on port **9222**.
+  </Step>
+
+  <Step title="Open Chrome DevTools">
+    The configuration automatically attaches Chrome DevTools. You can also manually navigate to:
+    ```
+    chrome://inspect/#devices
+    ```
+  </Step>
+
+  <Step title="Set Breakpoints">
+    Set breakpoints in renderer process code:
+    - `src/vs/workbench/`
+    - `src/vs/editor/`
+    - Any browser-layer code
+  </Step>
+</Steps>
+
+### Attaching to Renderer
+
+You can attach to an already-running renderer process:
+
+**Configuration**: `Attach to VS Code` (.vscode/launch.json:224)
+
+```json
+{
+  "type": "chrome",
+  "request": "attach",
+  "name": "Attach to VS Code",
+  "browserAttachLocation": "workspace",
+  "port": 9222
+}
+```
+
+<Warning>
+Make sure to disable the `CalculateNativeWinOcclusion` feature on Windows to avoid runtime freezes (.vscode/launch.json:264).
+</Warning>
+
+## Debugging Extensions
+
+Extensions run in a separate extension host process.
+
+### Built-in Extension Tests
+
+VS Code includes configurations for debugging built-in extensions:
+
+<Accordion title="Available Extension Test Configurations">
+  <Tabs>
+    <Tab title="API Tests">
+      **VS Code API Tests (single folder)** (.vscode/launch.json:152)
+      
+      Tests the VS Code Extension API in a single folder workspace:
+      ```json
+      {
+        "type": "extensionHost",
+        "request": "launch",
+        "name": "VS Code API Tests (single folder)",
+        "runtimeExecutable": "${execPath}",
+        "args": [
+          "${workspaceFolder}/extensions/vscode-api-tests/testWorkspace",
+          "--extensionDevelopmentPath=${workspaceFolder}/extensions/vscode-api-tests",
+          "--extensionTestsPath=${workspaceFolder}/extensions/vscode-api-tests/out/singlefolder-tests",
+          "--disable-extensions"
+        ]
+      }
+      ```
+      
+      **VS Code API Tests (workspace)** (.vscode/launch.json:172)
+      
+      Tests with a multi-root workspace.
+    </Tab>
+    
+    <Tab title="Language Features">
+      - **TypeScript Extension Tests** (.vscode/launch.json:488)
+      - **Markdown Extension Tests** (.vscode/launch.json:470)
+      - **Emmet Tests** (.vscode/launch.json:81)
+      - **Git Tests** (.vscode/launch.json:116)
+    </Tab>
+    
+    <Tab title="Other Extensions">
+      - **Configuration Editing Tests** (.vscode/launch.json:99)
+      - **GitHub Tests** (.vscode/launch.json:134)
+      - **Tokenizer Tests** (.vscode/launch.json:190)
+    </Tab>
+  </Tabs>
+</Accordion>
+
+### Debugging Extension Host
+
+Attach to the extension host process:
+
+**Configuration**: `Attach to Extension Host` (.vscode/launch.json:14)
+
+```json
+{
+  "type": "node",
+  "request": "attach",
+  "restart": true,
+  "name": "Attach to Extension Host",
+  "timeout": 0,
+  "port": 5870,
+  "outFiles": [
+    "${workspaceFolder}/out/**/*.js",
+    "${workspaceFolder}/extensions/*/out/**/*.js"
+  ]
+}
+```
+
+The extension host debugger:
+- Runs on port **5870**
+- Automatically restarts when extensions reload
+- Includes source maps from `out/` directory
+
+### Debugging Your Own Extension
+
+To debug a custom extension:
+
+<Steps>
+  <Step title="Set Development Path">
+    Create a launch configuration with `--extensionDevelopmentPath`:
+    
+    ```json
+    {
+      "type": "extensionHost",
+      "request": "launch",
+      "name": "Launch My Extension",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extensions/my-extension"
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Set Breakpoints">
+    Set breakpoints in your extension's TypeScript files.
+  </Step>
+
+  <Step title="Launch">
+    Press F5 to launch a new VS Code window with your extension loaded.
+  </Step>
+</Steps>
+
+## Other Process Debugging
+
+VS Code includes several other debuggable processes:
+
+<AccordionGroup>
+  <Accordion title="Shared Process">
+    **Port**: 5879
+    
+    **Configuration**: `Attach to Shared Process` (.vscode/launch.json:26)
+    
+    The shared process handles:
+    - Extension management
+    - Storage services
+    - Telemetry
+    
+    ```json
+    {
+      "type": "node",
+      "request": "attach",
+      "restart": true,
+      "name": "Attach to Shared Process",
+      "timeout": 0,
+      "port": 5879
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Search Process">
+    **Port**: 5876
+    
+    **Configuration**: `Attach to Search Process` (.vscode/launch.json:38)
+    
+    Dedicated process for file searching and text search operations.
+  </Accordion>
+
+  <Accordion title="Pty Host Process">
+    **Port**: 5877
+    
+    **Configuration**: `Attach to Pty Host Process` (.vscode/launch.json:47)
+    
+    Manages terminal (pseudoterminal) instances.
+  </Accordion>
+
+  <Accordion title="CLI Process">
+    **Port**: 5874
+    
+    **Configuration**: `Attach to CLI Process` (.vscode/launch.json:55)
+    
+    Handles command-line interface operations.
+  </Accordion>
+</AccordionGroup>
+
+## Web Debugging
+
+Debug VS Code running in a browser:
+
+<Tabs>
+  <Tab title="VS Code Server (Chrome)">
+    **Configuration**: `VS Code Server (Web, Chrome)` (.vscode/launch.json:369)
+    
+    ```json
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "VS Code Server (Web, Chrome)",
+      "url": "http://localhost:8080?tkn=dev-token",
+      "preLaunchTask": "Run code server"
+    }
+    ```
+  </Tab>
+  
+  <Tab title="VS Code Server (Edge)">
+    **Configuration**: `VS Code Server (Web, Edge)` (.vscode/launch.json:381)
+    
+    Same as Chrome but uses Microsoft Edge browser.
+  </Tab>
+  
+  <Tab title="VS Code Web">
+    Standalone web version:
+    - **Chrome**: `VS Code Web (Chrome)` (.vscode/launch.json:396)
+    - **Edge**: `VS Code Web (Edge)` (.vscode/launch.json:408)
+  </Tab>
+</Tabs>
+
+## Compound Configurations
+
+VS Code provides compound configurations for debugging multiple processes simultaneously:
+
+<CardGroup cols={2}>
+  <Card title="Search, Renderer, and Main">
+    Debugs search functionality with main and renderer processes.
+    
+    (.vscode/launch.json:671)
+  </Card>
+  
+  <Card title="Renderer, Extension Host, and Main">
+    Most comprehensive debugging for extension development.
+    
+    (.vscode/launch.json:683)
+  </Card>
+  
+  <Card title="Debug Unit Tests">
+    Runs and debugs unit tests.
+    
+    (.vscode/launch.json:695)
+  </Card>
+  
+  <Card title="Renderer and Main">
+    Minimal configuration for core debugging.
+    
+    (.vscode/launch.json:717)
+  </Card>
+</CardGroup>
+
+## Debugging Unit Tests
+
+VS Code includes configurations for debugging tests:
+
+<Tabs>
+  <Tab title="All Unit Tests">
+    **Configuration**: `Run Unit Tests` (.vscode/launch.json:506)
+    
+    Runs all unit tests with the debugger attached.
+    
+    <Info>
+    Unit tests run inside Electron with access to both Node.js and DOM APIs.
+    </Info>
+  </Tab>
+  
+  <Tab title="Current File Tests">
+    **Configuration**: `Run Unit Tests For Current File` (.vscode/launch.json:536)
+    
+    Runs only tests in the currently open file using the `--run ${relativeFile}` argument (.vscode/launch.json:552).
+  </Tab>
+  
+  <Tab title="Debug Unit Tests Compound">
+    **Configuration**: `Debug Unit Tests` (.vscode/launch.json:695)
+    
+    Combines:
+    - Attach to VS Code
+    - Run Unit Tests
+  </Tab>
+</Tabs>
+
+## Debugging Tips
+
+<AccordionGroup>
+  <Accordion title="Enable Debug Logging">
+    Set environment variables for verbose logging:
+    
+    ```bash
+    ELECTRON_ENABLE_LOGGING=1 ./scripts/code.sh
+    ```
+    
+    This is automatically enabled in launch configurations (.vscode/launch.json:35).
+  </Accordion>
+
+  <Accordion title="Debug Observables">
+    Enable observable debugging:
+    
+    ```bash
+    VSCODE_DEV_DEBUG_OBSERVABLES=1 ./scripts/code.sh
+    ```
+    
+    Install the extension: `ms-vscode.debug-value-editor` (.vscode/launch.json:282)
+  </Accordion>
+
+  <Accordion title="Pause on Start">
+    Use `--inspect-brk` instead of `--inspect` to pause immediately:
+    
+    ```bash
+    ./scripts/code.sh --inspect-brk=5875
+    ```
+  </Accordion>
+
+  <Accordion title="Skip Pre-launch">
+    Skip download/build steps for faster launches:
+    
+    ```bash
+    VSCODE_SKIP_PRELAUNCH=1 ./scripts/code.sh
+    ```
+    
+    (.vscode/launch.json:254)
+  </Accordion>
+
+  <Accordion title="Source Maps">
+    Ensure source maps are enabled for proper debugging:
+    
+    - Use watch mode (`npm run watch`)
+    - Check `outFiles` configuration includes your code
+    - Verify `.js.map` files exist in `out/`
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Breakpoints not hitting">
+    **Solutions**:
+    1. Ensure watch mode is running
+    2. Check that source maps are generated
+    3. Verify `outFiles` pattern in launch config
+    4. Try cleaning and rebuilding:
+       ```bash
+       rm -rf out/
+       npm run watch
+       ```
+  </Accordion>
+
+  <Accordion title="Cannot attach to process">
+    **Solutions**:
+    1. Check if the process is running
+    2. Verify the debug port is correct
+    3. Ensure no firewall is blocking the port
+    4. Try increasing the timeout value
+  </Accordion>
+
+  <Accordion title="Extension Host disconnects">
+    **Solutions**:
+    1. Use the `restart: true` option (.vscode/launch.json:17)
+    2. Check extension host output for errors
+    3. Verify extension code has no infinite loops
+  </Accordion>
+
+  <Accordion title="Slow debugging performance">
+    **Solutions**:
+    1. Reduce the number of watched files
+    2. Disable unnecessary extensions
+    3. Use `perScriptSourcemaps` (.vscode/launch.json:235)
+    4. Increase Node.js memory:
+       ```bash
+       export NODE_OPTIONS="--max-old-space-size=8192"
+       ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Learn how to run and write tests
+  </Card>
+  
+  <Card title="Coding Guidelines" icon="code" href="/development/coding-guidelines">
+    Follow VS Code's coding standards
+  </Card>
+</CardGroup>

@@ -1,0 +1,549 @@
+---
+title: Editor APIs
+description: Monaco Editor APIs and text model manipulation in VS Code
+---
+
+# Editor APIs
+
+The editor APIs (`src/vs/editor/`) provide the Monaco Editor functionality at the core of VS Code. These APIs handle text models, editor instances, decorations, and editor contributions.
+
+## Monaco Editor
+
+Monaco Editor is the code editor that powers VS Code. The editor APIs are split into:
+
+- **Common** (`src/vs/editor/common/`) - Core editor logic, platform-agnostic
+- **Browser** (`src/vs/editor/browser/`) - Browser-based editor implementation
+- **Standalone** (`src/vs/editor/standalone/`) - Standalone Monaco editor for embedding
+
+## Text Models
+
+Text models represent the document content and provide APIs for reading and editing text.
+
+### ITextModel Interface
+
+```typescript
+// From src/vs/editor/common/model.ts
+export interface ITextModel extends ITextSnapshot {
+  readonly uri: URI;
+  readonly id: string;
+
+  // Content
+  getValue(eol?: EndOfLinePreference, preserveBOM?: boolean): string;
+  getValueLength(eol?: EndOfLinePreference, preserveBOM?: boolean): number;
+  getValueInRange(range: IRange, eol?: EndOfLinePreference): string;
+  getLineContent(lineNumber: number): string;
+  getLineCount(): number;
+  getLineLength(lineNumber: number): number;
+
+  // Language
+  getLanguageId(): string;
+  setLanguage(languageSelection: ILanguageSelection): void;
+
+  // Editing
+  pushEditOperations(
+    beforeCursorState: Selection[] | null,
+    editOperations: IIdentifiedSingleEditOperation[],
+    cursorStateComputer: ICursorStateComputer | null
+  ): Selection[] | null;
+
+  applyEdits(operations: IIdentifiedSingleEditOperation[]): void;
+
+  // Version
+  getVersionId(): number;
+  getAlternativeVersionId(): number;
+
+  // Options
+  getOptions(): TextModelResolvedOptions;
+  updateOptions(newOpts: ITextModelUpdateOptions): void;
+
+  // Events
+  readonly onDidChangeContent: Event<IModelContentChangedEvent>;
+  readonly onWillDispose: Event<void>;
+}
+```
+
+### Working with Text Models
+
+```typescript
+import { ITextModel } from 'vs/editor/common/model';
+import { Range } from 'vs/editor/common/core/range';
+import { Selection } from 'vs/editor/common/core/selection';
+
+function manipulateModel(model: ITextModel): void {
+  // Read content
+  const fullText = model.getValue();
+  const lineCount = model.getLineCount();
+  const firstLine = model.getLineContent(1);
+
+  // Read range
+  const range = new Range(1, 1, 5, 10);
+  const rangeText = model.getValueInRange(range);
+
+  // Edit the model
+  model.pushEditOperations(
+    null,
+    [{
+      range: new Range(1, 1, 1, 1),
+      text: '// Added comment\n'
+    }],
+    null
+  );
+
+  // Apply multiple edits
+  model.applyEdits([
+    {
+      range: new Range(1, 1, 1, 1),
+      text: 'prefix'
+    },
+    {
+      range: new Range(10, 1, 10, 5),
+      text: 'replacement'
+    }
+  ]);
+
+  // Listen to changes
+  model.onDidChangeContent(e => {
+    console.log('Model changed:', e.changes);
+  });
+
+  // Get language
+  const languageId = model.getLanguageId();
+  console.log('Language:', languageId);
+}
+```
+
+### Creating Text Models
+
+```typescript
+import { IModelService } from 'vs/editor/common/services/model';
+import { URI } from 'vs/base/common/uri';
+
+class ModelManager {
+  constructor(
+    @IModelService private readonly modelService: IModelService
+  ) {}
+
+  createModel(content: string, languageId: string, uri: URI): ITextModel {
+    // Create a new model
+    return this.modelService.createModel(content, languageId, uri);
+  }
+
+  getModel(uri: URI): ITextModel | null {
+    return this.modelService.getModel(uri);
+  }
+
+  getAllModels(): ITextModel[] {
+    return this.modelService.getModels();
+  }
+}
+```
+
+## Code Editor
+
+The code editor provides the visual editor interface.
+
+### ICodeEditor Interface
+
+```typescript
+// From src/vs/editor/browser/editorBrowser.ts
+export interface ICodeEditor extends editorCommon.IEditor {
+  // DOM
+  getDomNode(): HTMLElement | null;
+  getContainerDomNode(): HTMLElement;
+
+  // Model
+  getModel(): ITextModel | null;
+  setModel(model: ITextModel | null): void;
+
+  // Position and Selection
+  getPosition(): Position | null;
+  setPosition(position: IPosition, source?: string): void;
+  getSelection(): Selection | null;
+  getSelections(): Selection[] | null;
+  setSelection(selection: IRange | Range | ISelection | Selection, source?: string): void;
+  setSelections(selections: readonly ISelection[], source?: string): void;
+  revealLine(lineNumber: number, scrollType?: ScrollType): void;
+  revealLineInCenter(lineNumber: number, scrollType?: ScrollType): void;
+  revealPosition(position: IPosition, scrollType?: ScrollType): void;
+  revealPositionInCenter(position: IPosition, scrollType?: ScrollType): void;
+  revealRange(range: IRange, scrollType?: ScrollType): void;
+  revealRangeInCenter(range: IRange, scrollType?: ScrollType): void;
+
+  // Viewport
+  getVisibleRanges(): Range[];
+  getScrollTop(): number;
+  setScrollTop(newScrollTop: number, scrollType?: ScrollType): void;
+
+  // Options
+  getOptions(): IComputedEditorOptions;
+  updateOptions(newOptions: IEditorOptions): void;
+
+  // Layout
+  layout(dimension?: IDimension): void;
+  focus(): void;
+  hasTextFocus(): boolean;
+
+  // Actions
+  getAction(id: string): IEditorAction | null;
+  getSupportedActions(): IEditorAction[];
+  trigger(source: string | null | undefined, handlerId: string, payload?: any): void;
+
+  // Events
+  readonly onDidChangeModelContent: Event<IModelContentChangedEvent>;
+  readonly onDidChangeCursorPosition: Event<ICursorPositionChangedEvent>;
+  readonly onDidChangeCursorSelection: Event<ICursorSelectionChangedEvent>;
+}
+```
+
+### Using ICodeEditor
+
+```typescript
+import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
+import { Position } from 'vs/editor/common/core/position';
+import { Range } from 'vs/editor/common/core/range';
+
+function manipulateEditor(editor: ICodeEditor): void {
+  // Get/set position
+  const position = editor.getPosition();
+  if (position) {
+    console.log(`Line ${position.lineNumber}, Column ${position.column}`);
+  }
+
+  editor.setPosition(new Position(5, 10));
+
+  // Get/set selection
+  const selection = editor.getSelection();
+  editor.setSelection(new Range(1, 1, 5, 20));
+
+  // Reveal position/range
+  editor.revealLineInCenter(100);
+  editor.revealPositionInCenter(new Position(50, 5));
+
+  // Get visible ranges
+  const visibleRanges = editor.getVisibleRanges();
+  console.log('Visible:', visibleRanges);
+
+  // Focus editor
+  editor.focus();
+
+  // Execute action
+  const action = editor.getAction('editor.action.formatDocument');
+  if (action) {
+    action.run();
+  }
+
+  // Listen to events
+  editor.onDidChangeCursorPosition(e => {
+    console.log('Cursor moved to:', e.position);
+  });
+
+  editor.onDidChangeModelContent(e => {
+    console.log('Content changed:', e.changes.length, 'changes');
+  });
+}
+```
+
+### Creating Code Editors
+
+```typescript
+import { ICodeEditorService } from 'vs/editor/browser/services/codeEditorService';
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+
+class EditorFactory {
+  constructor(
+    @ICodeEditorService private readonly codeEditorService: ICodeEditorService,
+    @IInstantiationService private readonly instantiationService: IInstantiationService
+  ) {}
+
+  createEditor(container: HTMLElement): ICodeEditor {
+    const editor = this.instantiationService.createInstance(
+      CodeEditorWidget,
+      container,
+      {
+        automaticLayout: true,
+        minimap: { enabled: false },
+        lineNumbers: 'on'
+      },
+      {}
+    );
+
+    return editor;
+  }
+
+  getActiveEditor(): ICodeEditor | null {
+    return this.codeEditorService.getActiveCodeEditor();
+  }
+}
+```
+
+## Decorations
+
+Decorations add visual styling and markers to the editor.
+
+### Model Decorations
+
+```typescript
+import { ITextModel, IModelDeltaDecoration, OverviewRulerLane } from 'vs/editor/common/model';
+import { Range } from 'vs/editor/common/core/range';
+
+function addDecorations(model: ITextModel): void {
+  const decorations: IModelDeltaDecoration[] = [
+    {
+      range: new Range(5, 1, 5, 100),
+      options: {
+        isWholeLine: true,
+        className: 'highlight-line',
+        glyphMarginClassName: 'glyph-icon',
+        overviewRuler: {
+          color: 'rgba(255, 0, 0, 0.3)',
+          position: OverviewRulerLane.Left
+        }
+      }
+    },
+    {
+      range: new Range(10, 5, 10, 15),
+      options: {
+        inlineClassName: 'inline-decoration',
+        hoverMessage: { value: 'This is important' }
+      }
+    }
+  ];
+
+  // Add decorations (returns IDs)
+  const ids = model.deltaDecorations([], decorations);
+
+  // Update decorations
+  model.deltaDecorations(ids, [
+    {
+      range: new Range(6, 1, 6, 100),
+      options: { isWholeLine: true, className: 'updated-highlight' }
+    }
+  ]);
+
+  // Remove decorations
+  model.deltaDecorations(ids, []);
+}
+```
+
+### Editor Decorations
+
+```typescript
+import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
+
+function addEditorDecorations(editor: ICodeEditor): void {
+  const decorations = editor.deltaDecorations(
+    [],
+    [
+      {
+        range: new Range(1, 1, 1, 10),
+        options: {
+          beforeContentClassName: 'decoration-before',
+          afterContentClassName: 'decoration-after'
+        }
+      }
+    ]
+  );
+
+  // Decorations with custom styles
+  editor.deltaDecorations([], [
+    {
+      range: new Range(5, 1, 5, 50),
+      options: {
+        before: {
+          content: '→',
+          inlineClassName: 'arrow-before'
+        },
+        after: {
+          content: '✓',
+          inlineClassName: 'checkmark-after'
+        }
+      }
+    }
+  ]);
+}
+```
+
+## Editor Contributions
+
+Editor contributions extend editor functionality.
+
+```typescript
+import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
+import { registerEditorContribution, IEditorContribution } from 'vs/editor/browser/editorExtensions';
+import { IDisposable, DisposableStore } from 'vs/base/common/lifecycle';
+
+class MyEditorContribution implements IEditorContribution {
+  public static readonly ID = 'editor.contrib.myContribution';
+
+  private readonly disposables = new DisposableStore();
+
+  constructor(private readonly editor: ICodeEditor) {
+    this.disposables.add(
+      editor.onDidChangeModelContent(() => {
+        this.onModelChanged();
+      })
+    );
+  }
+
+  private onModelChanged(): void {
+    const model = this.editor.getModel();
+    if (model) {
+      console.log('Model has', model.getLineCount(), 'lines');
+    }
+  }
+
+  public dispose(): void {
+    this.disposables.dispose();
+  }
+}
+
+// Register the contribution
+registerEditorContribution(
+  MyEditorContribution.ID,
+  MyEditorContribution,
+  EditorContributionInstantiation.Eager
+);
+```
+
+## Editor Actions
+
+Register custom editor actions:
+
+```typescript
+import { registerEditorAction, EditorAction, ServicesAccessor } from 'vs/editor/browser/editorExtensions';
+import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
+import { EditorContextKeys } from 'vs/editor/common/editorContextKeys';
+
+class MyEditorAction extends EditorAction {
+  constructor() {
+    super({
+      id: 'editor.action.myAction',
+      label: 'My Custom Action',
+      alias: 'My Custom Action',
+      precondition: EditorContextKeys.writable,
+      kbOpts: {
+        kbExpr: EditorContextKeys.textInputFocus,
+        primary: KeyMod.CtrlCmd | KeyCode.KeyK,
+        weight: KeybindingWeight.EditorContrib
+      }
+    });
+  }
+
+  public async run(accessor: ServicesAccessor, editor: ICodeEditor): Promise<void> {
+    const model = editor.getModel();
+    if (!model) {
+      return;
+    }
+
+    const selection = editor.getSelection();
+    if (selection) {
+      const text = model.getValueInRange(selection);
+      console.log('Selected text:', text);
+    }
+  }
+}
+
+registerEditorAction(MyEditorAction);
+```
+
+## Diff Editor
+
+Compare two text models:
+
+```typescript
+import { IDiffEditor } from 'vs/editor/browser/editorBrowser';
+import { ITextModel } from 'vs/editor/common/model';
+
+function setupDiffEditor(
+  diffEditor: IDiffEditor,
+  originalModel: ITextModel,
+  modifiedModel: ITextModel
+): void {
+  // Set models
+  diffEditor.setModel({
+    original: originalModel,
+    modified: modifiedModel
+  });
+
+  // Get diff information
+  const lineChanges = diffEditor.getLineChanges();
+  if (lineChanges) {
+    console.log('Changes:', lineChanges.length);
+  }
+
+  // Navigate between changes
+  diffEditor.goToDiff('next');
+  diffEditor.goToDiff('previous');
+
+  // Access individual editors
+  const originalEditor = diffEditor.getOriginalEditor();
+  const modifiedEditor = diffEditor.getModifiedEditor();
+}
+```
+
+## Best Practices
+
+<Tip>
+  Always check if a model exists before using it. Models can be null in various scenarios.
+</Tip>
+
+<Warning>
+  Model edits should be batched when possible. Use `pushEditOperations` with multiple operations instead of multiple single-operation calls.
+</Warning>
+
+<Info>
+  Decorations are tied to model versions. Keep decoration IDs to update or remove them later.
+</Info>
+
+## Common Patterns
+
+### Safe Model Access
+
+```typescript
+function safeModelAccess(editor: ICodeEditor): void {
+  const model = editor.getModel();
+  if (!model) {
+    return; // No model attached
+  }
+
+  // Safe to use model
+  const text = model.getValue();
+}
+```
+
+### Batch Edits with Undo
+
+```typescript
+import { ITextModel } from 'vs/editor/common/model';
+
+function batchEdit(model: ITextModel): void {
+  model.pushStackElement(); // Create undo stop
+
+  model.pushEditOperations(
+    null,
+    [
+      { range: new Range(1, 1, 1, 1), text: 'edit 1\n' },
+      { range: new Range(5, 1, 5, 1), text: 'edit 2\n' },
+      { range: new Range(10, 1, 10, 1), text: 'edit 3\n' }
+    ],
+    null
+  );
+
+  model.pushStackElement(); // Create undo stop
+  // All three edits can be undone as one operation
+}
+```
+
+## Related Resources
+
+- [Monaco Editor Playground](https://microsoft.github.io/monaco-editor/playground.html) - Interactive examples
+- [Workbench Services](/api/workbench-services) - Higher-level editor services
+- [Text Editor Extension API](https://code.visualstudio.com/api/references/vscode-api#TextEditor) - Extension API equivalent
+
+## Source Code References
+
+- `src/vs/editor/common/model.ts` - Text model interfaces
+- `src/vs/editor/browser/editorBrowser.ts` - Editor interfaces
+- `src/vs/editor/browser/editorExtensions.ts` - Contributions and actions
+- `src/vs/editor/common/core/range.ts` - Range implementation
+- `src/vs/editor/common/core/position.ts` - Position implementation

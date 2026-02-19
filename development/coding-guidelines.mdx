@@ -1,0 +1,826 @@
+---
+title: Coding Guidelines
+description: TypeScript conventions, code quality standards, and architectural principles for VS Code development
+---
+
+This guide covers the coding standards and conventions used in the Visual Studio Code codebase.
+
+<Info>
+These guidelines are based on VS Code's official `.github/copilot-instructions.md` file and represent the standards used by the core development team.
+</Info>
+
+## Indentation
+
+VS Code uses **tabs**, not spaces, for indentation.
+
+```typescript
+// ✅ Correct - Uses tabs
+function example() {
+	if (condition) {
+		doSomething();
+	}
+}
+
+// ❌ Incorrect - Uses spaces
+function example() {
+    if (condition) {
+        doSomething();
+    }
+}
+```
+
+## Naming Conventions
+
+Follow these TypeScript naming conventions from .github/copilot-instructions.md:73-78:
+
+<Tabs>
+  <Tab title="Types & Enums">
+    Use **PascalCase** for type names and enum values:
+    
+    ```typescript
+    // Types
+    type UserProfile = {
+    	name: string;
+    	age: number;
+    };
+    
+    interface ITextEditor {
+    	readonly document: TextDocument;
+    	edit(callback: (editBuilder: TextEditorEdit) => void): void;
+    }
+    
+    // Enums
+    enum ViewColumn {
+    	Active = -1,
+    	Beside = -2,
+    	One = 1,
+    	Two = 2
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Functions & Properties">
+    Use **camelCase** for functions, methods, properties, and local variables:
+    
+    ```typescript
+    // Functions
+    function calculateDistance(x: number, y: number): number {
+    	return Math.sqrt(x * x + y * y);
+    }
+    
+    // Methods
+    class TextEditor {
+    	public edit(callback: EditCallback): void {
+    		// implementation
+    	}
+    }
+    
+    // Properties
+    const config = {
+    	maxFileSize: 1024,
+    	enableLogging: true
+    };
+    
+    // Local variables
+    const userName = 'John';
+    let isActive = false;
+    ```
+  </Tab>
+  
+  <Tab title="General Rules">
+    From .github/copilot-instructions.md:78:
+    
+    <Tip>
+    Use whole words in names when possible. Avoid abbreviations unless they're widely understood (like `URI`, `URL`, `HTML`).
+    </Tip>
+    
+    ```typescript
+    // ✅ Good
+    const userConfiguration = getUserConfig();
+    const documentProvider = new DocumentProvider();
+    
+    // ❌ Avoid
+    const usrCfg = getUserConfig();
+    const docProv = new DocumentProvider();
+    ```
+  </Tab>
+</Tabs>
+
+## Types
+
+### Type Exports
+
+From .github/copilot-instructions.md:82-83:
+
+<Warning>
+Do not export types or functions unless you need to share them across multiple components. Keep visibility as narrow as possible.
+</Warning>
+
+```typescript
+// ✅ Good - Only export what's needed
+export interface IPublicAPI {
+	execute(): void;
+}
+
+// Internal implementation details (not exported)
+interface InternalState {
+	data: string;
+}
+
+// ❌ Avoid - Don't export unnecessarily
+export interface InternalHelperType {
+	// Only used in this file
+}
+```
+
+### Global Namespace
+
+From .github/copilot-instructions.md:83:
+
+<Warning>
+Do not introduce new types or values to the global namespace.
+</Warning>
+
+```typescript
+// ✅ Good - Use modules
+export namespace MyFeature {
+	export interface Config {
+		enabled: boolean;
+	}
+}
+
+// ❌ Avoid - Polluting global namespace
+declare global {
+	interface Window {
+		myCustomProperty: string;
+	}
+}
+```
+
+### Avoid Any and Unknown
+
+From .github/copilot-instructions.md:137-138:
+
+<Warning>
+Do not use `any` or `unknown` as the type for variables, parameters, or return values unless absolutely necessary. Use proper types or interfaces.
+</Warning>
+
+```typescript
+// ✅ Good - Specific types
+function processData(input: UserData): ProcessedResult {
+	return transform(input);
+}
+
+// ❌ Avoid - Loses type safety
+function processData(input: any): any {
+	return transform(input);
+}
+```
+
+## Comments
+
+### JSDoc Style
+
+From .github/copilot-instructions.md:88:
+
+Use JSDoc style comments for functions, interfaces, enums, and classes:
+
+```typescript
+/**
+ * Represents a text document in the editor.
+ */
+export interface ITextDocument {
+	
+	/**
+	 * The URI of the document.
+	 */
+	readonly uri: URI;
+	
+	/**
+	 * Gets the text content at the specified range.
+	 * @param range The range to get text from
+	 * @returns The text content
+	 */
+	getText(range?: IRange): string;
+	
+}
+
+/**
+ * Calculates the Levenshtein distance between two strings.
+ * @param a The first string
+ * @param b The second string
+ * @returns The edit distance between the strings
+ */
+function levenshteinDistance(a: string, b: string): number {
+	// implementation
+}
+```
+
+## Strings
+
+### Quote Styles
+
+From .github/copilot-instructions.md:92-94:
+
+<Tabs>
+  <Tab title="User-Facing Strings">
+    Use **double quotes** for strings that will be shown to users and need localization:
+    
+    ```typescript
+    import { localize } from 'vs/nls';
+    
+    const message = localize('errorMessage', "Failed to save file");
+    const title = localize('dialogTitle', "Confirm Action");
+    ```
+  </Tab>
+  
+  <Tab title="Internal Strings">
+    Use **single quotes** for all other strings:
+    
+    ```typescript
+    const className = 'editor-widget';
+    const eventName = 'onDidChange';
+    const configKey = 'editor.fontSize';
+    ```
+  </Tab>
+</Tabs>
+
+### String Externalization (Localization)
+
+From .github/copilot-instructions.md:93-94:
+
+<Warning>
+All strings visible to the user must be externalized using the `vs/nls` module. Never use string concatenation for externalized strings - use placeholders instead.
+</Warning>
+
+```typescript
+import { localize } from 'vs/nls';
+
+// ✅ Good - Using placeholders
+const message = localize(
+	'fileCount',
+	"Found {0} files in {1} directories",
+	fileCount,
+	dirCount
+);
+
+// ❌ Avoid - String concatenation
+const message = localize('fileCount', "Found") + " " + 
+	fileCount + " " + 
+	localize('files', "files");
+```
+
+The `localize` function signature (from src/vs/nls.ts):
+
+```typescript
+export function localize(
+	key: string | ILocalizeInfo,
+	message: string,
+	...args: (string | number | boolean | undefined | null)[]
+): string;
+```
+
+### UI Labels
+
+From .github/copilot-instructions.md:97-98:
+
+<Tip>
+Use title-style capitalization for command labels, buttons, and menu items. Each word is capitalized except prepositions of four or fewer letters (unless first or last word).
+</Tip>
+
+```typescript
+// ✅ Good - Title case
+const commands = [
+	'Open File',
+	'Save As',
+	'Find in Files',
+	'Go to Definition',
+	'Toggle Line Comment'
+];
+
+// ❌ Avoid - Sentence case
+const commands = [
+	'Open file',
+	'Save as',
+	'Find in files'
+];
+```
+
+## Style Guidelines
+
+### Arrow Functions
+
+From .github/copilot-instructions.md:103-109:
+
+<Tabs>
+  <Tab title="Parameter Parentheses">
+    Only surround arrow function parameters with parentheses when necessary:
+    
+    ```typescript
+    // ✅ Good - Single parameter, no parens needed
+    items.map(x => x * 2);
+    items.filter(item => item.isValid);
+    
+    // ✅ Good - Multiple parameters need parens
+    items.reduce((sum, x) => sum + x, 0);
+    
+    // ✅ Good - Type parameters need parens
+    function compare<T>(x: T, y: T) => x === y;
+    
+    // ❌ Avoid - Unnecessary parens
+    items.map((x) => x * 2);
+    ```
+  </Tab>
+  
+  <Tab title="Prefer Arrow Functions">
+    From .github/copilot-instructions.md:103:
+    
+    Use arrow functions over anonymous function expressions:
+    
+    ```typescript
+    // ✅ Good
+    array.forEach(item => console.log(item));
+    element.addEventListener('click', e => handleClick(e));
+    
+    // ❌ Avoid
+    array.forEach(function(item) {
+    	console.log(item);
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### Braces and Formatting
+
+From .github/copilot-instructions.md:111-122:
+
+<AccordionGroup>
+  <Accordion title="Curly Braces">
+    Always surround loop and conditional bodies with curly braces:
+    
+    ```typescript
+    // ✅ Good
+    if (condition) {
+    	doSomething();
+    }
+    
+    // ❌ Avoid - No braces
+    if (condition) doSomething();
+    ```
+  </Accordion>
+
+  <Accordion title="Brace Placement">
+    Open curly braces always go on the same line:
+    
+    ```typescript
+    // ✅ Good
+    function example() {
+    	if (condition) {
+    		doSomething();
+    	}
+    }
+    
+    // ❌ Avoid - Brace on new line
+    function example()
+    {
+    	if (condition)
+    	{
+    		doSomething();
+    	}
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Whitespace in Constructs">
+    From .github/copilot-instructions.md:113-122:
+    
+    Parenthesized constructs should have no surrounding whitespace. Single space follows commas, colons, and semicolons:
+    
+    ```typescript
+    // ✅ Good
+    for (let i = 0, n = str.length; i < 10; i++) {
+    	if (x < 10) {
+    		foo();
+    	}
+    }
+    function f(x: number, y: string): void { }
+    
+    // ❌ Avoid - Extra whitespace
+    for ( let i = 0 , n = str.length ; i < 10 ; i++ ) {
+    	if ( x < 10 ) {
+    		foo();
+    	}
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Function Declarations
+
+From .github/copilot-instructions.md:124:
+
+<Tip>
+In top-level scopes, prefer `export function x() {...}` over `export const x = () => {...}`. Function declarations show better names in stack traces.
+</Tip>
+
+```typescript
+// ✅ Good - Better stack traces
+export function processDocument(doc: TextDocument): void {
+	// implementation
+}
+
+// ❌ Avoid - Anonymous in stack trace
+export const processDocument = (doc: TextDocument): void => {
+	// implementation
+};
+```
+
+## Code Quality
+
+### Copyright Headers
+
+From .github/copilot-instructions.md:128:
+
+All files must include the Microsoft copyright header:
+
+```typescript
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+```
+
+### Async/Await
+
+From .github/copilot-instructions.md:129:
+
+<Tip>
+Prefer `async` and `await` over `Promise` and `then` calls for better readability.
+</Tip>
+
+```typescript
+// ✅ Good - async/await
+async function loadUserData(userId: string): Promise<User> {
+	const response = await fetch(`/api/users/${userId}`);
+	const data = await response.json();
+	return data;
+}
+
+// ❌ Avoid - Promise chains
+function loadUserData(userId: string): Promise<User> {
+	return fetch(`/api/users/${userId}`)
+		.then(response => response.json())
+		.then(data => data);
+}
+```
+
+### Localization
+
+From .github/copilot-instructions.md:130:
+
+<Warning>
+All user-facing messages must be localized using the applicable localization framework (e.g., `nls.localize()` method).
+</Warning>
+
+### Test Organization
+
+From .github/copilot-instructions.md:131-138:
+
+<AccordionGroup>
+  <Accordion title="Test Suite Structure">
+    Don't add tests to the wrong suite. Use `suite` and `test` consistently:
+    
+    ```typescript
+    suite('TextEditor', () => {
+    	
+    	test('should highlight syntax', () => {
+    		// test implementation
+    	});
+    	
+    	test('should handle large files', () => {
+    		// test implementation
+    	});
+    	
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Follow Existing Patterns">
+    Look for existing test patterns before creating new structures. Reuse test utilities and helpers.
+  </Accordion>
+
+  <Accordion title="Minimize Assertions">
+    From .github/copilot-instructions.md:145:
+    
+    Prefer one snapshot-style `assert.deepStrictEqual` over multiple precise assertions:
+    
+    ```typescript
+    // ✅ Good - Single comprehensive assertion
+    test('parse result', () => {
+    	const result = parser.parse(input);
+    	assert.deepStrictEqual(result, {
+    		type: 'document',
+    		children: [...],
+    		metadata: {...}
+    	});
+    });
+    
+    // ❌ Avoid - Many assertions
+    test('parse result', () => {
+    	const result = parser.parse(input);
+    	assert.strictEqual(result.type, 'document');
+    	assert.strictEqual(result.children.length, 3);
+    	// ... many more
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Regex Best Practices
+
+From .github/copilot-instructions.md:134:
+
+<Tip>
+Prefer regex capture groups with names over numbered capture groups for better readability.
+</Tip>
+
+```typescript
+// ✅ Good - Named groups
+const pattern = /(?<protocol>https?):\/\/(?<host>[^/]+)(?<path>\/.*)/;
+const match = url.match(pattern);
+if (match) {
+	console.log(match.groups.protocol);
+	console.log(match.groups.host);
+}
+
+// ❌ Avoid - Numbered groups
+const pattern = /(https?):\/\/([^/]+)(\/.*)/;
+const match = url.match(pattern);
+if (match) {
+	console.log(match[1]); // What is this?
+	console.log(match[2]); // What is this?
+}
+```
+
+### Code Duplication
+
+From .github/copilot-instructions.md:140:
+
+<Warning>
+Do not duplicate code. Always look for existing utility functions, helpers, or patterns in the codebase before implementing new functionality.
+</Warning>
+
+Search the codebase for similar functionality:
+- Check `src/vs/base/common/` for utilities
+- Look in `src/vs/platform/` for platform services
+- Review existing code in the same area
+
+### Import Management
+
+From .github/copilot-instructions.md:136:
+
+<Warning>
+Never duplicate imports. Always reuse existing imports if they are present.
+</Warning>
+
+```typescript
+// ✅ Good - Single import
+import { URI, Utils } from 'vs/base/common/uri';
+
+// ❌ Avoid - Duplicate imports
+import { URI } from 'vs/base/common/uri';
+// ... later in file
+import { Utils } from 'vs/base/common/uri';
+```
+
+## Architectural Principles
+
+### Dependency Injection
+
+From .github/copilot-instructions.md:31:
+
+Services are injected through constructor parameters:
+
+```typescript
+export class MyService {
+	
+	constructor(
+		@IFileService private readonly fileService: IFileService,
+		@ILogService private readonly logService: ILogService
+	) { }
+	
+	async doWork(): Promise<void> {
+		const content = await this.fileService.readFile(uri);
+		this.logService.info('File read successfully');
+	}
+	
+}
+```
+
+<Info>
+If non-service parameters are needed, they must come **after** service parameters (.github/copilot-instructions.md:31-32).
+</Info>
+
+### Layered Architecture
+
+VS Code follows a strict layered architecture (.github/copilot-instructions.md:29):
+
+```
+src/vs/
+├── base/         # Foundation utilities
+├── platform/     # Platform services and DI
+├── editor/       # Text editor
+├── workbench/    # Application workbench
+├── code/         # Electron main process
+└── server/       # Server implementation
+```
+
+<Warning>
+Run `npm run valid-layers-check` to verify layer boundaries are respected (.github/copilot-instructions.md:64).
+</Warning>
+
+### Disposables Management
+
+From .github/copilot-instructions.md:141:
+
+<Warning>
+You **MUST** deal with disposables by registering them immediately after creation for later disposal. Use helpers such as `DisposableStore`, `MutableDisposable`, or `DisposableMap`.
+</Warning>
+
+```typescript
+// ✅ Good - Proper disposal
+class MyWidget {
+	private readonly disposables = new DisposableStore();
+	
+	constructor() {
+		this.disposables.add(
+			this.onEvent(() => this.handleEvent())
+		);
+	}
+	
+	dispose(): void {
+		this.disposables.dispose();
+	}
+}
+
+// ❌ Avoid - Memory leak
+class MyWidget {
+	constructor() {
+		this.onEvent(() => this.handleEvent());
+		// Event listener never cleaned up!
+	}
+}
+```
+
+<Warning>
+Do NOT register a disposable to the containing class if the object is created within a method that is called repeatedly to avoid leaks. Instead, return an `IDisposable` from such method and let the caller register it.
+</Warning>
+
+### Component Isolation
+
+From .github/copilot-instructions.md:142-143:
+
+<Warning>
+You **MUST NOT** use storage keys of another component only to make changes to that component. You **MUST** come up with proper API to change another component.
+</Warning>
+
+```typescript
+// ✅ Good - Proper API
+interface IConfigurationService {
+	updateValue(key: string, value: any): Promise<void>;
+}
+
+// ❌ Avoid - Direct storage access
+class MyComponent {
+	async changeOtherComponentSetting() {
+		// Don't access another component's storage directly!
+		await storage.set('otherComponent.setting', value);
+	}
+}
+```
+
+### File Watching
+
+From .github/copilot-instructions.md:138-139:
+
+<Tip>
+When adding file watching, prefer correlated file watchers (via `fileService.createWatcher`) to shared ones.
+</Tip>
+
+### Tooltips
+
+From .github/copilot-instructions.md:139:
+
+<Tip>
+When adding tooltips to UI elements, prefer the use of `IHoverService` service.
+</Tip>
+
+## File Cleanup
+
+From .github/copilot-instructions.md:135:
+
+<Warning>
+If you create any temporary new files, scripts, or helper files for iteration, clean up these files by removing them at the end of the task.
+</Warning>
+
+## Validation
+
+Before submitting code, always validate:
+
+<Steps>
+  <Step title="Check Compilation">
+    Monitor the `VS Code - Build` watch task output (.github/copilot-instructions.md:52):
+    
+    ```bash
+    npm run watch
+    # Check for TypeScript errors
+    ```
+  </Step>
+
+  <Step title="Run Layer Checks">
+    ```bash
+    npm run valid-layers-check
+    ```
+  </Step>
+
+  <Step title="Run Tests">
+    ```bash
+    ./scripts/test.sh --grep "your feature"
+    ```
+  </Step>
+
+  <Step title="Check Code Style">
+    ```bash
+    npm run eslint
+    npm run hygiene
+    ```
+  </Step>
+</Steps>
+
+## Quick Reference
+
+<AccordionGroup>
+  <Accordion title="Do's">
+    ✅ Use tabs for indentation
+    
+    ✅ Use PascalCase for types and enums
+    
+    ✅ Use camelCase for functions and variables
+    
+    ✅ Use JSDoc comments
+    
+    ✅ Externalize user-facing strings with `vs/nls`
+    
+    ✅ Use `async`/`await` over promises
+    
+    ✅ Prefer named capture groups in regex
+    
+    ✅ Register disposables properly
+    
+    ✅ Follow existing code patterns
+    
+    ✅ Use arrow functions for callbacks
+  </Accordion>
+
+  <Accordion title="Don'ts">
+    ❌ Don't use spaces for indentation
+    
+    ❌ Don't use `any` or `unknown` unnecessarily
+    
+    ❌ Don't export types unless needed
+    
+    ❌ Don't pollute global namespace
+    
+    ❌ Don't concatenate localized strings
+    
+    ❌ Don't duplicate code or imports
+    
+    ❌ Don't access other component's storage
+    
+    ❌ Don't forget to dispose resources
+    
+    ❌ Don't add tests to wrong suite
+    
+    ❌ Don't run tests with compilation errors
+  </Accordion>
+</AccordionGroup>
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Copilot Instructions" icon="file">
+    See `.github/copilot-instructions.md` in the VS Code repository for the complete and authoritative guidelines
+  </Card>
+  
+  <Card title="Architecture Overview" icon="sitemap">
+    Review the project structure in `.github/copilot-instructions.md` lines 3-48
+  </Card>
+  
+  <Card title="Finding Related Code" icon="magnifying-glass">
+    Guidelines for navigating the codebase (.github/copilot-instructions.md:44-48)
+  </Card>
+  
+  <Card title="Testing Guide" icon="flask" href="/development/testing">
+    Learn about writing and running tests
+  </Card>
+</CardGroup>

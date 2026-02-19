@@ -1,0 +1,404 @@
+---
+title: Building VS Code from Source
+description: Complete guide to building Visual Studio Code from source on Windows, macOS, and Linux
+---
+
+This guide covers everything you need to know to build Visual Studio Code from source.
+
+## Prerequisites
+
+Before you start building VS Code, ensure you have the following installed:
+
+<Steps>
+  <Step title="Node.js and npm">
+    Install Node.js (version 22.x or higher). This will also install npm.
+    
+    ```bash
+    node --version
+    npm --version
+    ```
+  </Step>
+
+  <Step title="Python">
+    Python 3.x is required for native module compilation.
+    
+    <CodeGroup>
+      ```bash macOS/Linux
+      python3 --version
+      ```
+      
+      ```powershell Windows
+      python --version
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="C++ Compiler">
+    A C++ compiler is required for native dependencies.
+    
+    <Tabs>
+      <Tab title="macOS">
+        Install Xcode Command Line Tools:
+        ```bash
+        xcode-select --install
+        ```
+      </Tab>
+      
+      <Tab title="Windows">
+        Install Visual Studio Build Tools with C++ workload
+      </Tab>
+      
+      <Tab title="Linux">
+        Install build-essential:
+        ```bash
+        sudo apt-get install build-essential
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Git">
+    Git is required to clone the repository.
+    
+    ```bash
+    git --version
+    ```
+  </Step>
+</Steps>
+
+## Clone the Repository
+
+Clone the VS Code repository from GitHub:
+
+```bash
+git clone https://github.com/microsoft/vscode.git
+cd vscode
+```
+
+## Install Dependencies
+
+Install all required npm dependencies. This will take several minutes:
+
+```bash
+npm install
+```
+
+<Note>
+The `postinstall` script will automatically run after `npm install` to set up native modules and download Electron.
+</Note>
+
+## Build Commands
+
+VS Code provides several build commands depending on your needs.
+
+### Initial Compilation
+
+Compile the entire codebase:
+
+<CodeGroup>
+  ```bash npm
+  npm run compile
+  ```
+  
+  ```bash gulp
+  npm run gulp compile
+  ```
+</CodeGroup>
+
+This command compiles all TypeScript files in the `src/` directory to JavaScript in the `out/` directory.
+
+<Info>
+The `compile` script is defined in **package.json:22** as `npm run gulp compile`. It uses Gulp to orchestrate the build process.
+</Info>
+
+### Watch Mode
+
+For development, use watch mode to automatically recompile when files change:
+
+```bash
+npm run watch
+```
+
+This runs multiple watch tasks in parallel:
+- `watch-client-transpile` - Transpiles TypeScript files
+- `watch-client` - Watches client code
+- `watch-extensions` - Watches built-in extensions
+
+<Tip>
+Watch mode is essential for development. It provides fast incremental compilation and runs in parallel using `npm-run-all2`.
+</Tip>
+
+### Watch Individual Components
+
+You can watch specific parts of the codebase:
+
+<Accordion title="Available Watch Commands">
+  <CodeGroup>
+    ```bash Client Only
+    npm run watch-client
+    ```
+    
+    ```bash Extensions Only
+    npm run watch-extensions
+    ```
+    
+    ```bash Web
+    npm run watch-web
+    ```
+    
+    ```bash CLI
+    npm run watch-cli
+    ```
+  </CodeGroup>
+</Accordion>
+
+### Using Deemon for Background Watching
+
+VS Code includes `deemon` for managing watch processes:
+
+```bash
+# Start watch in background
+npm run watchd
+
+# Restart watch process
+npm run restart-watchd
+
+# Kill watch process
+npm run kill-watchd
+```
+
+## Running VS Code
+
+After building, run VS Code from source:
+
+<CodeGroup>
+  ```bash macOS/Linux
+  ./scripts/code.sh
+  ```
+  
+  ```bash Windows
+  .\scripts\code.bat
+  ```
+</CodeGroup>
+
+## Platform-Specific Builds
+
+### Building for Production
+
+Compile with optimizations for production:
+
+```bash
+npm run compile-build
+```
+
+This command runs `gulp compile-build-with-mangling` which includes:
+- Minification
+- Name mangling for smaller bundle sizes
+- Dead code elimination
+
+### Building Extensions
+
+Build all built-in extensions:
+
+```bash
+npm run compile-extensions-build
+```
+
+### Building for Different Platforms
+
+<Tabs>
+  <Tab title="Desktop (Electron)">
+    The default build targets Electron. Use the standard compile commands.
+    
+    ```bash
+    npm run compile
+    ./scripts/code.sh
+    ```
+  </Tab>
+  
+  <Tab title="Web">
+    Build for web deployment:
+    
+    ```bash
+    npm run compile-web
+    npm run watch-web
+    ```
+    
+    Then run the web server:
+    ```bash
+    ./scripts/code-web.sh
+    ```
+  </Tab>
+  
+  <Tab title="CLI">
+    Build the VS Code CLI:
+    
+    ```bash
+    npm run compile-cli
+    npm run watch-cli
+    ```
+  </Tab>
+</Tabs>
+
+## Build Directory Structure
+
+The build system uses several key directories:
+
+```
+vscode/
+├── build/              # Build scripts and configuration
+│   ├── gulpfile.*.ts   # Gulp build tasks
+│   ├── lib/            # Build utilities
+│   └── npm/            # npm-related scripts
+├── out/                # Compiled JavaScript output
+├── src/                # TypeScript source code
+├── extensions/         # Built-in extensions
+└── scripts/            # Helper scripts
+```
+
+<Info>
+The **build/** directory contains the build system implementation. Key files include:
+- `build/gulpfile.ts` - Main Gulp configuration
+- `build/buildfile.ts` - Module entry points
+- `build/lib/` - Build utilities and helpers
+</Info>
+
+## Advanced Build Options
+
+### Type Checking
+
+Run type checking without emitting files:
+
+```bash
+# Check main codebase
+npm run compile-check-ts-native
+
+# Check Monaco editor types
+npm run monaco-compile-check
+
+# Check VS Code API types
+npm run vscode-dts-compile-check
+
+# Check layer separation
+npm run valid-layers-check
+```
+
+### Code Quality Checks
+
+Run linting and style checks:
+
+<CodeGroup>
+  ```bash ESLint
+  npm run eslint
+  ```
+  
+  ```bash Stylelint
+  npm run stylelint
+  ```
+  
+  ```bash Hygiene (All Checks)
+  npm run hygiene
+  ```
+</CodeGroup>
+
+### Minification
+
+Minify the compiled code:
+
+<CodeGroup>
+  ```bash Desktop
+  npm run minify-vscode
+  ```
+  
+  ```bash Remote Extension Host
+  npm run minify-vscode-reh
+  ```
+  
+  ```bash Remote Extension Host (Web)
+  npm run minify-vscode-reh-web
+  ```
+</CodeGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Build fails with 'out of memory' error">
+    Increase Node.js heap size:
+    
+    ```bash
+    export NODE_OPTIONS="--max-old-space-size=8192"
+    npm run compile
+    ```
+    
+    The Gulp task already uses this setting (see **package.json:41**).
+  </Accordion>
+  
+  <Accordion title="Native module compilation fails">
+    Ensure you have the correct build tools installed:
+    
+    - **macOS**: Xcode Command Line Tools
+    - **Windows**: Visual Studio Build Tools
+    - **Linux**: build-essential package
+    
+    Try rebuilding native modules:
+    ```bash
+    npm rebuild
+    ```
+  </Accordion>
+  
+  <Accordion title="Electron download fails">
+    The postinstall script downloads Electron. If it fails:
+    
+    ```bash
+    npm run electron
+    ```
+    
+    Or skip the download during install:
+    ```bash
+    VSCODE_SKIP_PRELAUNCH=1 npm install
+    ```
+  </Accordion>
+  
+  <Accordion title="'Cannot find module' errors">
+    Clean and reinstall dependencies:
+    
+    ```bash
+    rm -rf node_modules
+    npm install
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## CI/CD Integration
+
+VS Code includes scripts for continuous integration:
+
+```bash
+# Core CI checks
+npm run core-ci
+
+# Core CI for pull requests
+npm run core-ci-pr
+
+# Extension CI checks
+npm run extensions-ci
+
+# Extension CI for pull requests
+npm run extensions-ci-pr
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Debugging" icon="bug" href="/development/debugging">
+    Learn how to debug VS Code during development
+  </Card>
+  
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Run unit and integration tests
+  </Card>
+  
+  <Card title="Coding Guidelines" icon="code" href="/development/coding-guidelines">
+    Follow VS Code's coding standards
+  </Card>
+</CardGroup>

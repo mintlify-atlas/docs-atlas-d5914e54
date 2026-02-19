@@ -1,0 +1,493 @@
+---
+title: CLI Commands Reference
+description: Complete reference for VS Code CLI commands and options
+---
+
+This reference covers all commands available in the VS Code CLI, organized by functionality with practical examples.
+
+## Basic Usage
+
+```bash
+code [options] [paths...]
+```
+
+The CLI accepts one or more file paths, folders, or URIs to open. You can also pipe input:
+
+```bash
+echo "Hello World" | code -
+```
+
+## Opening Files and Folders
+
+### Open Files
+
+Open one or more files in VS Code:
+
+<CodeGroup>
+```bash Single File
+code myfile.txt
+```
+
+```bash Multiple Files
+code file1.js file2.js file3.css
+```
+
+```bash With Line Number
+# Opens file at specific line
+code myfile.txt:10
+
+# Or use --goto
+code --goto myfile.txt:10:5
+```
+
+```bash From stdin
+# Read from pipe
+cat data.json | code -
+
+# Process output
+git diff | code -
+```
+</CodeGroup>
+
+### Open Folders
+
+```bash
+# Open current directory
+code .
+
+# Open specific folder
+code /path/to/project
+
+# Open folder in new window
+code -n /path/to/project
+```
+
+### Window Management
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--new-window` | `-n` | Force open in a new window |
+| `--reuse-window` | `-r` | Force open in an existing window |
+| `--add` | `-a` | Add folder to the last active window |
+| `--wait` | `-w` | Wait for the window to be closed before returning |
+
+<CodeGroup>
+```bash New Window
+code -n ~/projects/app
+```
+
+```bash Reuse Window
+code -r ~/projects/app
+```
+
+```bash Add to Workspace
+code --add ~/projects/library
+```
+
+```bash Wait for Close
+# Useful for git commit messages
+code --wait COMMIT_EDITMSG
+```
+</CodeGroup>
+
+## Comparing Files
+
+Compare two files side-by-side in diff mode:
+
+```bash
+# Basic diff
+code --diff file1.txt file2.txt
+
+# Compare versions
+code --diff old-version.js new-version.js
+
+# Git diff helper
+git difftool -t code --diff
+```
+
+Alias example:
+```bash
+alias codediff="code --diff"
+codediff before.txt after.txt
+```
+
+## Extension Management
+
+Manage VS Code extensions from the command line.
+
+### Extension Commands
+
+| Command | Description |
+|---------|-------------|
+| `code ext list` | List installed extensions |
+| `code ext install <ext-id>` | Install an extension |
+| `code ext uninstall <ext-id>` | Uninstall an extension |
+| `code ext update` | Update all extensions |
+
+### List Extensions
+
+<CodeGroup>
+```bash Basic List
+code ext list
+```
+
+```bash With Versions
+code ext list --show-versions
+```
+
+```bash Filter by Category
+code ext list --category themes
+```
+
+```bash Save to File
+# Useful for backing up extensions
+code ext list > my-extensions.txt
+```
+</CodeGroup>
+
+### Install Extensions
+
+<CodeGroup>
+```bash By ID
+code ext install ms-python.python
+```
+
+```bash Specific Version
+code ext install ms-python.python@2023.10.0
+```
+
+```bash From VSIX File
+code ext install ./my-extension.vsix
+```
+
+```bash Pre-release Version
+code ext install ms-python.python --pre-release
+```
+
+```bash Multiple Extensions
+code ext install \
+  ms-python.python \
+  esbenp.prettier-vscode \
+  dbaeumer.vscode-eslint
+```
+
+```bash Force Reinstall
+# Updates to latest even if already installed
+code ext install ms-python.python --force
+```
+</CodeGroup>
+
+### Uninstall Extensions
+
+```bash
+# Uninstall single extension
+code ext uninstall ms-python.python
+
+# Uninstall multiple
+code ext uninstall publisher.ext1 publisher.ext2
+```
+
+### Update Extensions
+
+```bash
+# Update all extensions to latest
+code ext update
+```
+
+### Extension Options
+
+| Option | Description |
+|--------|-------------|
+| `--pre-release` | Install pre-release version |
+| `--force` | Force update to latest version |
+| `--show-versions` | Show extension versions in list |
+| `--category <category>` | Filter by category |
+
+## Version Management
+
+Switch between different VS Code installations.
+
+```bash
+# Show current version
+code version show
+
+# Use stable release
+code version use stable
+
+# Use insiders build
+code version use insiders
+
+# Use specific version
+code version use 1.85.1
+
+# Use custom installation
+code version use /opt/vscode-custom
+```
+
+When using a specific version for a single command:
+
+```bash
+code --use-version stable myfile.js
+code --use-version insiders myproject/
+```
+
+## Status and Diagnostics
+
+View running VS Code processes and diagnostics:
+
+```bash
+code status
+```
+
+Output includes:
+- Running VS Code instances
+- Memory usage
+- CPU usage
+- Extension host information
+- Opened workspaces
+
+## Editor Options
+
+Customize the editor behavior when launching:
+
+| Option | Description |
+|--------|-------------|
+| `--locale <locale>` | Set display language (e.g., en-US, zh-CN) |
+| `--user-data-dir <dir>` | Specify custom user data directory |
+| `--extensions-dir <dir>` | Set extensions directory |
+| `--enable-proposed-api <ext-id>` | Enable proposed API for extension |
+
+<CodeGroup>
+```bash Custom Locale
+code --locale zh-CN
+```
+
+```bash Isolated Instance
+# Useful for testing
+code --user-data-dir /tmp/vscode-test --extensions-dir /tmp/vscode-ext
+```
+
+```bash Proposed API
+code --enable-proposed-api publisher.extension-id
+```
+</CodeGroup>
+
+## Troubleshooting Options
+
+Debug and diagnose issues:
+
+| Option | Description |
+|--------|-------------|
+| `--verbose` | Print verbose output |
+| `--log <level>` | Set log level (trace, debug, info, warn, error, off) |
+| `--disable-extensions` | Disable all extensions |
+| `--disable-extension <ext-id>` | Disable specific extension |
+| `--disable-gpu` | Disable GPU hardware acceleration |
+| `--prof-startup` | Run CPU profiler during startup |
+| `--inspect-extensions <port>` | Allow debugging extensions |
+| `--inspect-brk-extensions <port>` | Debug extensions with breakpoint at start |
+
+<CodeGroup>
+```bash Verbose Logging
+code --verbose myproject/
+```
+
+```bash Debug Level
+code --log debug
+```
+
+```bash Disable All Extensions
+code --disable-extensions
+```
+
+```bash Disable Specific Extension
+code --disable-extension ms-python.python
+```
+
+```bash Profile Startup
+code --prof-startup
+```
+
+```bash Debug Extensions
+code --inspect-extensions=9333
+```
+</CodeGroup>
+
+## Global Options
+
+Options that apply across all commands:
+
+| Option | Description |
+|--------|-------------|
+| `--cli-data-dir <dir>` | CLI metadata storage location |
+| `--verbose` | Enable verbose output |
+| `--log <level>` | Set logging level |
+| `--disable-telemetry` | Disable telemetry |
+
+```bash
+# Custom CLI data directory
+code --cli-data-dir ~/custom-cli-data tunnel
+
+# Verbose mode
+code --verbose status
+```
+
+## Remote Development Commands
+
+See the [Server Mode documentation](/cli/server-mode) for detailed information on:
+
+- `code tunnel` - Create remote tunnels
+- `code serve-web` - Run local web server
+- `code tunnel service` - Manage tunnel as a system service
+
+Quick examples:
+
+<CodeGroup>
+```bash Start Tunnel
+code tunnel --name my-machine
+```
+
+```bash Web Server
+code serve-web --port 8000
+```
+
+```bash Tunnel Status
+code tunnel status
+```
+</CodeGroup>
+
+## Advanced Usage Examples
+
+### Script Integration
+
+<CodeGroup>
+```bash Bulk Extension Install
+#!/bin/bash
+# install-extensions.sh
+
+extensions=(
+  "ms-python.python"
+  "esbenp.prettier-vscode"
+  "dbaeumer.vscode-eslint"
+  "ms-vscode.cpptools"
+)
+
+for ext in "${extensions[@]}"; do
+  echo "Installing $ext..."
+  code ext install "$ext"
+done
+```
+
+```bash Backup Extensions
+#!/bin/bash
+# backup-extensions.sh
+
+code ext list --show-versions > vscode-extensions-$(date +%Y%m%d).txt
+echo "Extensions backed up!"
+```
+
+```bash Restore Extensions
+#!/bin/bash
+# restore-extensions.sh
+
+while read ext; do
+  code ext install "$ext"
+done < extensions-backup.txt
+```
+</CodeGroup>
+
+### Git Integration
+
+<CodeGroup>
+```bash Git Diff Tool
+# Add to ~/.gitconfig
+[diff]
+    tool = vscode
+[difftool "vscode"]
+    cmd = code --wait --diff $LOCAL $REMOTE
+
+# Usage
+git difftool
+```
+
+```bash Git Merge Tool
+# Add to ~/.gitconfig
+[merge]
+    tool = vscode
+[mergetool "vscode"]
+    cmd = code --wait $MERGED
+
+# Usage
+git mergetool
+```
+
+```bash Commit Message Editor
+git config --global core.editor "code --wait"
+```
+</CodeGroup>
+
+### Environment-Specific Configuration
+
+<CodeGroup>
+```bash Development Profile
+# Create isolated dev environment
+alias code-dev='code --user-data-dir ~/.vscode-dev --extensions-dir ~/.vscode-dev/extensions'
+
+code-dev ~/projects/new-feature
+```
+
+```bash Testing Profile
+# Clean environment for testing
+alias code-test='code --user-data-dir /tmp/vscode-test --disable-extensions'
+
+code-test
+```
+</CodeGroup>
+
+## Command Reference Table
+
+### Core Commands
+
+| Command | Subcommands | Description |
+|---------|-------------|-------------|
+| `code [paths...]` | - | Open files or folders |
+| `code ext` | `list`, `install`, `uninstall`, `update` | Manage extensions |
+| `code tunnel` | `status`, `kill`, `rename`, `user`, `service` | Remote tunneling |
+| `code serve-web` | - | Run web server |
+| `code version` | `show`, `use` | Manage versions |
+| `code status` | - | Show diagnostics |
+
+### Extension Subcommands
+
+| Subcommand | Options | Description |
+|------------|---------|-------------|
+| `list` | `--show-versions`, `--category` | List extensions |
+| `install <id>` | `--pre-release`, `--force` | Install extension |
+| `uninstall <id>` | - | Remove extension |
+| `update` | - | Update all extensions |
+
+### Tunnel Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `status` | Check tunnel status |
+| `kill` | Stop running tunnel |
+| `restart` | Restart tunnel |
+| `rename` | Change tunnel name |
+| `unregister` | Remove tunnel registration |
+| `user login` | Authenticate user |
+| `user logout` | Clear credentials |
+| `user show` | Show current user |
+| `service install` | Install as system service |
+| `service uninstall` | Remove service |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Server Mode" icon="server" href="/cli/server-mode">
+    Learn about remote development
+  </Card>
+  <Card title="Installation" icon="download" href="/cli/installation">
+    Installation and setup guide
+  </Card>
+</CardGroup>

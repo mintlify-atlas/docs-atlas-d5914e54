@@ -1,0 +1,660 @@
+---
+title: Service Implementation Guide
+description: Learn how to create, register, and test platform services in VS Code
+---
+
+Services are the foundation of VS Code's architecture. They provide reusable functionality through dependency injection, enabling loose coupling and testability.
+
+## Understanding Services
+
+Services in VS Code follow specific patterns:
+
+- **Interface definition** in `common/` layer (platform-agnostic)
+- **Implementation** in `browser/`, `electron-sandbox/`, or `node/` layers
+- **Registration** with the dependency injection container
+- **Consumption** through constructor injection
+
+<Note>
+Services live in `src/vs/platform/` for platform-level services or `src/vs/workbench/services/` for workbench-specific services.
+</Note>
+
+## Service Structure
+
+### Directory Organization
+
+```
+src/vs/platform/myService/
+├── common/
+│   ├── myService.ts              # Service interface
+│   └── myServiceUtils.ts          # Platform-agnostic utilities
+├── browser/
+│   └── myServiceImpl.ts          # Browser/desktop implementation
+├── electron-sandbox/
+│   └── myServiceElectronImpl.ts  # Electron-specific implementation (if needed)
+├── node/
+│   └── myServiceNodeImpl.ts      # Node.js implementation (if needed)
+└── test/
+    └── myService.test.ts         # Unit tests
+```
+
+## Creating a Platform Service
+
+### Step 1: Define the Service Interface
+
+Create the service interface in the `common/` layer:
+
+```typescript src/vs/platform/clipboard/common/clipboardService.ts
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { createDecorator } from '../../instantiation/common/instantiation.js';
+import { URI } from '../../../base/common/uri.js';
+
+// Create a service identifier
+export const IClipboardService = createDecorator<IClipboardService>('clipboardService');
+
+/**
+ * Service for interacting with the system clipboard.
+ */
+export interface IClipboardService {
+  
+  readonly _serviceBrand: undefined;  // Required service brand
+  
+  /**
+   * Writes text to the system clipboard.
+   */
+  writeText(text: string, type?: string): Promise<void>;
+  
+  /**
+   * Reads the content of the clipboard in plain text.
+   */
+  readText(type?: string): Promise<string>;
+  
+  /**
+   * Writes resources to the system clipboard.
+   */
+  writeResources(resources: URI[]): Promise<void>;
+  
+  /**
+   * Reads resources from the system clipboard.
+   */
+  readResources(): Promise<URI[]>;
+}
+```
+
+<Tip>
+Use `createDecorator()` to create a unique service identifier. The string parameter should match the interface name in camelCase.
+</Tip>
+
+### Step 2: Implement the Service
+
+Create the implementation in the appropriate layer:
+
+```typescript src/vs/platform/clipboard/browser/clipboardService.ts
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { IClipboardService } from '../common/clipboardService.js';
+import { URI } from '../../../base/common/uri.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
+import { ILayoutService } from '../../layout/browser/layoutService.js';
+
+export class BrowserClipboardService extends Disposable implements IClipboardService {
+  
+  declare readonly _serviceBrand: undefined;
+  
+  constructor(
+    @ILayoutService private readonly layoutService: ILayoutService
+  ) {
+    super();
+  }
+  
+  async writeText(text: string, type?: string): Promise<void> {
+    try {
+      return await navigator.clipboard.writeText(text);
+    } catch (error) {
+      console.error('Failed to write to clipboard', error);
+    }
+  }
+  
+  async readText(type?: string): Promise<string> {
+    try {
+      return await navigator.clipboard.readText();
+    } catch (error) {
+      console.error('Failed to read from clipboard', error);
+      return '';
+    }
+  }
+  
+  async writeResources(resources: URI[]): Promise<void> {
+    // Implementation for writing resources
+    const text = resources.map(r => r.toString()).join('\n');
+    await this.writeText(text);
+  }
+  
+  async readResources(): Promise<URI[]> {
+    // Implementation for reading resources
+    const text = await this.readText();
+    return text.split('\n').map(line => URI.parse(line));
+  }
+}
+```
+
+### Key Implementation Patterns
+
+<AccordionGroup>
+  <Accordion title="Service Brand">
+    Every service must declare the service brand:
+    
+    ```typescript
+    declare readonly _serviceBrand: undefined;
+    ```
+    
+    This provides compile-time type safety for dependency injection.
+  </Accordion>
+  
+  <Accordion title="Constructor Injection">
+    Inject dependencies through constructor parameters:
+    
+    ```typescript
+    constructor(
+      @ILayoutService private readonly layoutService: ILayoutService,
+      @IConfigurationService private readonly configService: IConfigurationService
+    ) {
+      super();
+    }
+    ```
+    
+    Service parameters use the `@IServiceName` decorator pattern.
+  </Accordion>
+  
+  <Accordion title="Extend Disposable">
+    Extend `Disposable` if your service manages resources:
+    
+    ```typescript
+    export class MyService extends Disposable implements IMyService {
+      constructor() {
+        super();
+        
+        // Register disposables for cleanup
+        this._register(someDisposable);
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Service Registration and Lifecycle
+
+### Registration Methods
+
+VS Code provides several ways to register services:
+
+```typescript src/vs/platform/myService/common/extensions.ts
+import { registerSingleton, InstantiationType } from '../../instantiation/common/extensions.js';
+import { IMyService } from './myService.js';
+import { MyServiceImpl } from '../browser/myServiceImpl.js';
+
+// Method 1: Singleton with delayed instantiation (most common)
+registerSingleton(
+  IMyService,
+  MyServiceImpl,
+  InstantiationType.Delayed
+);
+
+// Method 2: Singleton with eager instantiation
+registerSingleton(
+  IMyService,
+  MyServiceImpl,
+  InstantiationType.Eager
+);
+```
+
+### Instantiation Types
+
+<CardGroup cols={2}>
+  <Card title="Delayed" icon="clock">
+    **InstantiationType.Delayed**
+    
+    Service is created when first requested. Use for most services.
+  </Card>
+  
+  <Card title="Eager" icon="bolt">
+    **InstantiationType.Eager**
+    
+    Service is created immediately at startup. Use sparingly for critical services.
+  </Card>
+</CardGroup>
+
+<Warning>
+Avoid `InstantiationType.Eager` unless absolutely necessary. It increases startup time.
+</Warning>
+
+### Registration Example from VS Code
+
+The accessibility service registration:
+
+```typescript src/vs/platform/accessibility/browser/accessibilityService.ts (excerpt)
+import { Disposable } from '../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../base/common/event.js';
+import { AccessibilitySupport, IAccessibilityService } from '../common/accessibility.js';
+import { IConfigurationService } from '../../configuration/common/configuration.js';
+import { IContextKey, IContextKeyService } from '../../contextkey/common/contextkey.js';
+import { ILayoutService } from '../../layout/browser/layoutService.js';
+
+export class AccessibilityService extends Disposable implements IAccessibilityService {
+  
+  declare readonly _serviceBrand: undefined;
+  
+  private _accessibilityModeEnabledContext: IContextKey<boolean>;
+  protected _accessibilitySupport = AccessibilitySupport.Unknown;
+  protected readonly _onDidChangeScreenReaderOptimized = this._register(new Emitter<void>());
+  
+  constructor(
+    @IContextKeyService private readonly contextKeyService: IContextKeyService,
+    @ILayoutService private readonly layoutService: ILayoutService,
+    @IConfigurationService protected readonly configurationService: IConfigurationService
+  ) {
+    super();
+    
+    this._accessibilityModeEnabledContext = CONTEXT_ACCESSIBILITY_MODE_ENABLED
+      .bindTo(this.contextKeyService);
+    
+    // Listen to configuration changes
+    this._register(this.configurationService.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('editor.accessibilitySupport')) {
+        this._onDidChangeScreenReaderOptimized.fire();
+      }
+    }));
+  }
+  
+  get onDidChangeScreenReaderOptimized(): Event<void> {
+    return this._onDidChangeScreenReaderOptimized.event;
+  }
+  
+  isScreenReaderOptimized(): boolean {
+    const config = this.configurationService.getValue<'auto' | 'on' | 'off'>(
+      'editor.accessibilitySupport'
+    );
+    return config === 'on' || (config === 'auto' && this._accessibilitySupport === AccessibilitySupport.Enabled);
+  }
+}
+```
+
+## Service Patterns
+
+### Events Pattern
+
+Services commonly use events to notify consumers of changes:
+
+```typescript
+import { Emitter, Event } from '../../../base/common/event.js';
+
+export interface IMyService {
+  readonly onDidChange: Event<string>;
+  
+  setValue(value: string): void;
+}
+
+export class MyService extends Disposable implements IMyService {
+  
+  private readonly _onDidChange = this._register(new Emitter<string>());
+  readonly onDidChange = this._onDidChange.event;
+  
+  private _value: string = '';
+  
+  setValue(value: string): void {
+    this._value = value;
+    this._onDidChange.fire(value);
+  }
+}
+```
+
+<Tip>
+Always register event emitters with `this._register()` to ensure proper disposal.
+</Tip>
+
+### Async Initialization Pattern
+
+For services that need async initialization:
+
+```typescript
+export interface IMyService {
+  readonly ready: Promise<void>;
+}
+
+export class MyService extends Disposable implements IMyService {
+  
+  declare readonly _serviceBrand: undefined;
+  
+  private readonly _ready: Promise<void>;
+  get ready(): Promise<void> { return this._ready; }
+  
+  constructor() {
+    super();
+    this._ready = this.initialize();
+  }
+  
+  private async initialize(): Promise<void> {
+    // Perform async initialization
+    await this.loadConfiguration();
+    await this.setupWatchers();
+  }
+}
+```
+
+### Service with State Management
+
+```typescript
+import { Disposable } from '../../../base/common/lifecycle.js';
+import { Emitter } from '../../../base/common/event.js';
+
+interface MyServiceState {
+  items: string[];
+  selectedIndex: number;
+}
+
+export class MyService extends Disposable implements IMyService {
+  
+  declare readonly _serviceBrand: undefined;
+  
+  private readonly _onDidChangeState = this._register(new Emitter<MyServiceState>());
+  readonly onDidChangeState = this._onDidChangeState.event;
+  
+  private _state: MyServiceState = {
+    items: [],
+    selectedIndex: -1
+  };
+  
+  getState(): Readonly<MyServiceState> {
+    return this._state;
+  }
+  
+  addItem(item: string): void {
+    this._state = {
+      ...this._state,
+      items: [...this._state.items, item]
+    };
+    this._onDidChangeState.fire(this._state);
+  }
+}
+```
+
+## Dependency Injection Deep Dive
+
+### Service Identifier Creation
+
+The `createDecorator` function creates a unique service identifier:
+
+```typescript src/vs/platform/instantiation/common/instantiation.ts (excerpt)
+export function createDecorator<T>(serviceId: string): ServiceIdentifier<T> {
+  if (_util.serviceIds.has(serviceId)) {
+    return _util.serviceIds.get(serviceId)!;
+  }
+  
+  const id = function (target: Function, key: string, index: number) {
+    if (arguments.length !== 3) {
+      throw new Error('@IServiceName-decorator can only be used to decorate a parameter');
+    }
+    storeServiceDependency(id, target, index);
+  } as ServiceIdentifier<T>;
+  
+  id.toString = () => serviceId;
+  
+  _util.serviceIds.set(serviceId, id);
+  return id;
+}
+```
+
+### How Injection Works
+
+When you use `@IServiceName` in a constructor:
+
+```typescript
+constructor(
+  @IMyService private readonly myService: IMyService,
+  @IConfigurationService private readonly configService: IConfigurationService
+) { }
+```
+
+The DI container:
+1. Identifies required service identifiers from the constructor
+2. Resolves each service (creating if necessary)
+3. Injects instances in the correct order
+4. Handles circular dependencies
+
+### Manual Service Resolution
+
+When you can't use constructor injection:
+
+```typescript
+import { IInstantiationService } from '../../instantiation/common/instantiation.js';
+
+export class MyClass {
+  constructor(
+    @IInstantiationService private readonly instantiationService: IInstantiationService
+  ) { }
+  
+  doWork(): void {
+    const myService = this.instantiationService.get(IMyService);
+    myService.doSomething();
+  }
+}
+```
+
+<Warning>
+Prefer constructor injection over `instantiationService.get()`. Manual resolution should be rare.
+</Warning>
+
+## Testing Services
+
+### Creating Test Services
+
+```typescript src/vs/platform/myService/test/common/myService.test.ts
+import * as assert from 'assert';
+import { MyService } from '../../browser/myServiceImpl.js';
+import { TestInstantiationService } from '../../../instantiation/test/common/instantiationServiceMock.js';
+import { NullLogService } from '../../../log/common/log.js';
+
+suite('MyService', () => {
+  
+  let instantiationService: TestInstantiationService;
+  let myService: MyService;
+  
+  setup(() => {
+    instantiationService = new TestInstantiationService();
+    instantiationService.stub(ILogService, new NullLogService());
+    
+    myService = instantiationService.createInstance(MyService);
+  });
+  
+  teardown(() => {
+    myService.dispose();
+  });
+  
+  test('should initialize correctly', () => {
+    assert.ok(myService);
+  });
+  
+  test('should handle state changes', async () => {
+    let stateChanged = false;
+    myService.onDidChangeState(() => {
+      stateChanged = true;
+    });
+    
+    await myService.setValue('test');
+    
+    assert.strictEqual(stateChanged, true);
+  });
+});
+```
+
+### Mock Services
+
+Create mock implementations for testing:
+
+```typescript src/vs/platform/myService/test/common/testMyService.ts
+import { Event } from '../../../../base/common/event.js';
+import { IMyService } from '../../common/myService.js';
+
+export class TestMyService implements IMyService {
+  
+  declare readonly _serviceBrand: undefined;
+  
+  readonly onDidChange = Event.None;
+  
+  private _value: string = '';
+  
+  getValue(): string {
+    return this._value;
+  }
+  
+  setValue(value: string): void {
+    this._value = value;
+  }
+}
+```
+
+<Tip>
+Use `TestInstantiationService` for creating services in tests with mock dependencies.
+</Tip>
+
+## Service Examples in VS Code
+
+### Simple Service: Clipboard
+
+Located at `src/vs/platform/clipboard/`:
+
+- **Interface**: `common/clipboardService.ts` - Platform-agnostic clipboard operations
+- **Implementation**: `browser/clipboardService.ts` - Browser clipboard API implementation
+- **Registration**: Registered as singleton in workbench services
+
+### Complex Service: Configuration
+
+Located at `src/vs/platform/configuration/`:
+
+- Multiple implementations for different environments
+- Hierarchical configuration with defaults, user, workspace levels  
+- File watching for configuration changes
+- Event-driven updates to consumers
+
+### Service with UI: Accessibility
+
+Located at `src/vs/platform/accessibility/`:
+
+- Browser implementation with media query integration
+- Context key bindings for accessibility state
+- Configuration integration
+- Real-time accessibility mode detection
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Single Responsibility" icon="bullseye">
+    Each service should have one clear purpose. Split complex services into multiple services.
+  </Card>
+  
+  <Card title="Layered Design" icon="layer-group">
+    Keep interfaces in `common/`, implementations in platform-specific folders.
+  </Card>
+  
+  <Card title="Lifecycle Management" icon="recycle">
+    Extend `Disposable` and register all disposables with `this._register()`.
+  </Card>
+  
+  <Card title="Event-Driven" icon="bolt">
+    Use events to notify consumers of changes rather than polling or callbacks.
+  </Card>
+</CardGroup>
+
+### Service Design Checklist
+
+- [ ] Interface defined in `common/` layer
+- [ ] Implementation extends `Disposable` if managing resources
+- [ ] Service brand declared: `declare readonly _serviceBrand: undefined`
+- [ ] Dependencies injected via constructor with `@IServiceName`
+- [ ] Non-service parameters come before service parameters
+- [ ] Events used for state change notifications
+- [ ] Registered with appropriate `InstantiationType`
+- [ ] Unit tests created with mock dependencies
+- [ ] JSDoc comments for public APIs
+- [ ] Copyright header included
+
+## Common Pitfalls
+
+<Warning>
+**Don't access services globally**. Always inject them through constructors.
+
+**Bad**:
+```typescript
+const config = getConfigurationService().getValue('setting');
+```
+
+**Good**:
+```typescript
+constructor(@IConfigurationService private configService: IConfigurationService) {}
+const config = this.configService.getValue('setting');
+```
+</Warning>
+
+<Warning>
+**Don't forget to dispose**. Memory leaks are common if disposables aren't registered.
+
+**Bad**:
+```typescript
+const emitter = new Emitter();
+```
+
+**Good**:
+```typescript
+const emitter = this._register(new Emitter());
+```
+</Warning>
+
+<Warning>
+**Don't use circular dependencies**. If service A needs B and B needs A, refactor to use events or extract common functionality to a third service.
+</Warning>
+
+## Service vs. Extension API
+
+| Use Services When | Use Extension API When |
+|-------------------|------------------------|
+| Building VS Code core features | Building extensions for users |
+| Need low-level platform access | Need stable, supported APIs |
+| Contributing to the main repo | Distributing via marketplace |
+| Performance is critical | Stability is critical |
+
+<Note>
+Services are for VS Code core development. Extension authors should use the [Extension API](/guides/extension-development).
+</Note>
+
+## Next Steps
+
+- Explore services in `src/vs/platform/`
+- Review [dependency injection concepts](/concepts/dependency-injection)
+- Study [workbench contributions](/guides/workbench-contributions)
+- Learn about [testing](/development/testing) services
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Platform Layer" icon="layer-group" href="/architecture/platform-layer">
+    Understanding the platform layer
+  </Card>
+  
+  <Card title="Dependency Injection" icon="syringe" href="/concepts/dependency-injection">
+    Deep dive into DI system
+  </Card>
+  
+  <Card title="Coding Guidelines" icon="code" href="/development/coding-guidelines">
+    VS Code coding standards
+  </Card>
+  
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    VS Code architecture overview
+  </Card>
+</CardGroup>

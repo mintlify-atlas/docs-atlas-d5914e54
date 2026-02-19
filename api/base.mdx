@@ -1,0 +1,354 @@
+---
+title: Base Layer APIs
+description: Core utilities and foundational APIs in VS Code's base layer
+---
+
+# Base Layer APIs
+
+The base layer (`src/vs/base/`) provides fundamental utilities and abstractions that form the foundation of VS Code. These APIs are framework-agnostic and provide common functionality used throughout the codebase.
+
+## Event System
+
+The event system is a core pattern in VS Code, providing type-safe, disposable event subscriptions.
+
+### Event Interface
+
+```typescript
+// From src/vs/base/common/event.ts
+export interface Event<T> {
+  (listener: (e: T) => unknown, thisArgs?: any, disposables?: IDisposable[] | DisposableStore): IDisposable;
+}
+```
+
+### Using Events
+
+```typescript
+import { Event, Emitter } from 'vs/base/common/event';
+
+class MyService {
+  private readonly _onDidChange = new Emitter<string>();
+  readonly onDidChange: Event<string> = this._onDidChange.event;
+
+  changeValue(value: string): void {
+    this._onDidChange.fire(value);
+  }
+}
+
+// Subscribe to events
+const service = new MyService();
+const disposable = service.onDidChange(value => {
+  console.log('Value changed:', value);
+});
+
+// Clean up when done
+disposable.dispose();
+```
+
+### Event Utilities
+
+The event system provides many useful transformation utilities:
+
+```typescript
+import { Event } from 'vs/base/common/event';
+
+// Fire once and dispose
+const onceEvent = Event.once(event);
+
+// Debounce events
+const debouncedEvent = Event.debounce(event, (last, current) => current, 100);
+
+// Filter events
+const filteredEvent = Event.filter(event, value => value > 10);
+
+// Map event values
+const mappedEvent = Event.map(event, value => value.toString());
+
+// Chain events together
+const chainedEvent = Event.chain(event)
+  .filter(v => v > 0)
+  .map(v => v * 2)
+  .event;
+```
+
+## Disposables
+
+Disposables provide a consistent pattern for resource cleanup and lifecycle management.
+
+### IDisposable Interface
+
+```typescript
+// From src/vs/base/common/lifecycle.ts
+export interface IDisposable {
+  dispose(): void;
+}
+```
+
+### DisposableStore
+
+Collect and dispose multiple disposables together:
+
+```typescript
+import { DisposableStore } from 'vs/base/common/lifecycle';
+
+class MyClass {
+  private readonly _disposables = new DisposableStore();
+
+  constructor() {
+    // Add disposables to the store
+    this._disposables.add(service.onDidChange(() => { /* ... */ }));
+    this._disposables.add(anotherService.onSomething(() => { /* ... */ }));
+  }
+
+  dispose(): void {
+    // Dispose all at once
+    this._disposables.dispose();
+  }
+}
+```
+
+### Disposable Base Class
+
+```typescript
+import { Disposable } from 'vs/base/common/lifecycle';
+
+class MyService extends Disposable {
+  constructor() {
+    super();
+
+    // Register disposables that will be cleaned up automatically
+    this._register(someService.onEvent(() => { /* ... */ }));
+    this._register(anotherDisposable);
+  }
+
+  // No need to override dispose() - handled by base class
+}
+```
+
+### MutableDisposable
+
+For disposables that can be replaced:
+
+```typescript
+import { MutableDisposable } from 'vs/base/common/lifecycle';
+
+class ResourceManager {
+  private readonly _resource = new MutableDisposable();
+
+  setResource(resource: IDisposable): void {
+    // Automatically disposes previous value
+    this._resource.value = resource;
+  }
+
+  clear(): void {
+    this._resource.clear();
+  }
+}
+```
+
+## Async Utilities
+
+VS Code provides powerful utilities for working with asynchronous operations.
+
+### CancelablePromise
+
+```typescript
+// From src/vs/base/common/async.ts
+import { createCancelablePromise } from 'vs/base/common/async';
+import { CancellationToken } from 'vs/base/common/cancellation';
+
+const promise = createCancelablePromise(async (token: CancellationToken) => {
+  // Check cancellation
+  if (token.isCancellationRequested) {
+    return;
+  }
+
+  await longRunningOperation();
+
+  // Check again
+  if (token.isCancellationRequested) {
+    return;
+  }
+
+  return result;
+});
+
+// Cancel the operation
+promise.cancel();
+```
+
+### Throttle and Debounce
+
+```typescript
+import { Throttler, Delayer } from 'vs/base/common/async';
+
+// Throttler ensures operation runs at most once at a time
+const throttler = new Throttler();
+throttler.queue(async () => {
+  await expensiveOperation();
+});
+
+// Delayer waits before executing
+const delayer = new Delayer<void>(300);
+delayer.trigger(() => {
+  // Runs 300ms after last trigger
+  updateUI();
+});
+```
+
+### RunOnceScheduler
+
+```typescript
+import { RunOnceScheduler } from 'vs/base/common/async';
+
+const scheduler = new RunOnceScheduler(() => {
+  console.log('This runs once after delay');
+}, 1000);
+
+// Schedule execution
+scheduler.schedule();
+
+// Can cancel before it runs
+scheduler.cancel();
+
+// Can check if scheduled
+if (scheduler.isScheduled()) {
+  console.log('Will run soon');
+}
+```
+
+### Barrier and Promises
+
+```typescript
+import { Barrier, timeout, retry } from 'vs/base/common/async';
+
+// Barrier for coordination
+const barrier = new Barrier();
+
+// Wait for signal
+await barrier.wait();
+
+// Signal waiting code
+barrier.open();
+
+// Timeout a promise
+await timeout(promise, 5000); // 5 second timeout
+
+// Retry with backoff
+await retry(async () => {
+  return await unreliableOperation();
+}, 100, 3); // delay 100ms, 3 retries
+```
+
+## URI
+
+VS Code uses URIs extensively for resource identification.
+
+```typescript
+// From src/vs/base/common/uri.ts
+import { URI } from 'vs/base/common/uri';
+
+// Create from file path
+const fileUri = URI.file('/path/to/file.txt');
+
+// Create from string
+const uri = URI.parse('file:///path/to/file.txt');
+
+// Create with components
+const customUri = URI.from({
+  scheme: 'custom',
+  authority: 'authority',
+  path: '/path',
+  query: 'key=value',
+  fragment: 'section'
+});
+
+// URI manipulation
+const parent = uri.with({ path: paths.dirname(uri.path) });
+const renamed = uri.with({ path: '/new/path.txt' });
+
+// URI properties
+console.log(uri.scheme);    // 'file'
+console.log(uri.path);      // '/path/to/file.txt'
+console.log(uri.fsPath);    // Platform-specific file path
+console.log(uri.toString()); // Full URI string
+```
+
+## Common Utilities
+
+### Arrays
+
+```typescript
+import { distinct, flatten, groupBy } from 'vs/base/common/arrays';
+
+const unique = distinct([1, 2, 2, 3, 1]); // [1, 2, 3]
+const flat = flatten([[1, 2], [3, 4]]);   // [1, 2, 3, 4]
+
+const grouped = groupBy(['a1', 'b1', 'a2'], item => item[0]);
+// { 'a': ['a1', 'a2'], 'b': ['b1'] }
+```
+
+### Strings
+
+```typescript
+import { format, escape, startsWith } from 'vs/base/common/strings';
+
+const formatted = format('Hello {0}!', 'world');
+const escaped = escape('<div>');
+const matches = startsWith('hello', 'hel'); // true
+```
+
+### Objects
+
+```typescript
+import { deepClone, equals, mixin } from 'vs/base/common/objects';
+
+const clone = deepClone(obj);
+const same = equals(obj1, obj2);
+const merged = mixin(target, source);
+```
+
+## Resource Management
+
+```typescript
+import { ResourceMap, ResourceSet } from 'vs/base/common/map';
+import { URI } from 'vs/base/common/uri';
+
+// Map with URI keys (handles case sensitivity correctly)
+const map = new ResourceMap<string>();
+map.set(uri, 'value');
+const value = map.get(uri);
+
+// Set of URIs
+const set = new ResourceSet();
+set.add(uri);
+if (set.has(uri)) {
+  console.log('URI is in set');
+}
+```
+
+## Best Practices
+
+<Tip>
+  Always dispose of event subscriptions and resources to prevent memory leaks. Use `DisposableStore` or extend `Disposable` for automatic cleanup.
+</Tip>
+
+<Warning>
+  Events fire synchronously. Avoid heavy computations in event listeners, and be careful about firing events from within event handlers to avoid infinite loops.
+</Warning>
+
+<Info>
+  The base layer is platform-agnostic. Avoid using browser or Node.js-specific APIs here. Use the platform layer for platform-specific functionality.
+</Info>
+
+## Related Resources
+
+- [Platform Services](/api/platform-services) - Higher-level services built on base APIs
+- [Disposables Pattern](https://code.visualstudio.com/api/references/vscode-api#Disposable) - Extension API disposables
+- [Event Pattern](https://code.visualstudio.com/api/references/vscode-api#Event) - Extension API events
+
+## Source Code References
+
+- `src/vs/base/common/event.ts` - Event system implementation
+- `src/vs/base/common/lifecycle.ts` - Disposable utilities
+- `src/vs/base/common/async.ts` - Async utilities
+- `src/vs/base/common/uri.ts` - URI implementation

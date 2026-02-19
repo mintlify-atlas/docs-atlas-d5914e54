@@ -1,0 +1,426 @@
+---
+title: Base Layer
+description: Foundation utilities and cross-platform abstractions in VS Code's architecture
+---
+
+The **base layer** is the foundation of VS Code's architecture, providing core utilities, common types, and cross-platform abstractions that all other layers depend on. Located in `src/vs/base/`, this layer has no dependencies on other VS Code layers.
+
+## Architecture Overview
+
+The base layer is organized into three main directories:
+
+<CardGroup cols={3}>
+  <Card title="common" icon="code">
+    Platform-agnostic utilities used everywhere
+  </Card>
+  <Card title="browser" icon="window">
+    Browser-specific implementations
+  </Card>
+  <Card title="node" icon="server">
+    Node.js-specific implementations
+  </Card>
+</CardGroup>
+
+## Core Utilities
+
+### URI (`uri.ts`)
+
+The URI class is VS Code's implementation of RFC 3986, providing a robust way to handle resource identifiers across different schemes (file, http, untitled, etc.).
+
+<CodeGroup>
+```typescript Example Usage
+import { URI } from 'vs/base/common/uri';
+
+// Create URIs
+const fileUri = URI.file('/path/to/file.ts');
+const httpUri = URI.parse('https://example.com');
+const untitled = URI.parse('untitled:Untitled-1');
+
+// Manipulate URIs
+const parent = fileUri.with({ path: dirname(fileUri.path) });
+const renamed = fileUri.with({ path: 'newName.ts' });
+```
+
+```typescript URI Structure
+/**
+ * Uniform Resource Identifier (URI)
+ * foo://example.com:8042/over/there?name=ferret#nose
+ * \_/   \______________/\_________/ \_________/ \__/
+ *  |           |            |            |        |
+ * scheme   authority       path        query   fragment
+ */
+class URI {
+  scheme: string;    // e.g., 'file', 'http', 'untitled'
+  authority: string; // e.g., server name
+  path: string;      // resource path
+  query: string;     // query parameters
+  fragment: string;  // fragment identifier
+}
+```
+</CodeGroup>
+
+<Note>
+URIs are **immutable**. All modification methods return new URI instances.
+</Note>
+
+See the implementation in `src/vs/base/common/uri.ts:87-100`
+
+### Lifecycle Management (`lifecycle.ts`)
+
+The disposable pattern is fundamental to VS Code's resource management, preventing memory leaks by ensuring proper cleanup.
+
+<CodeGroup>
+```typescript IDisposable Interface
+export interface IDisposable {
+  dispose(): void;
+}
+
+// Dispose a single resource
+const disposable: IDisposable = {
+  dispose() {
+    // cleanup logic
+  }
+};
+disposable.dispose();
+```
+
+```typescript DisposableStore
+import { DisposableStore } from 'vs/base/common/lifecycle';
+
+class MyComponent {
+  private disposables = new DisposableStore();
+
+  constructor() {
+    // Add disposables
+    this.disposables.add(
+      eventEmitter.onDidChange(e => this.handleChange(e))
+    );
+  }
+
+  dispose() {
+    // Dispose all at once
+    this.disposables.dispose();
+  }
+}
+```
+
+```typescript Disposable Base Class
+import { Disposable } from 'vs/base/common/lifecycle';
+
+class MyService extends Disposable {
+  constructor() {
+    super();
+
+    // Register disposables
+    this._register(
+      timer.onTick(() => this.update())
+    );
+  }
+
+  // dispose() automatically called by base class
+}
+```
+</CodeGroup>
+
+<Warning>
+Always dispose of resources when done! VS Code includes leak detection to catch undisposed resources during development.
+</Warning>
+
+Key classes in `src/vs/base/common/lifecycle.ts:14-80`:
+- `IDisposable` - Base interface for disposable resources
+- `DisposableStore` - Collection of disposables
+- `Disposable` - Base class with `_register()` helper
+- `GCBasedDisposableTracker` - Development tool for leak detection
+
+### Event System (`event.ts`)
+
+VS Code's event system provides a typed, memory-safe pub/sub mechanism used throughout the codebase.
+
+<CodeGroup>
+```typescript Event Interface
+import { Event, Emitter } from 'vs/base/common/event';
+
+// Event is a function signature
+interface Event<T> {
+  (listener: (e: T) => void, 
+   thisArgs?: any, 
+   disposables?: IDisposable[]): IDisposable;
+}
+```
+
+```typescript Emitter Pattern
+class FileService {
+  private _onDidCreate = new Emitter<URI>();
+  
+  // Expose as Event (not Emitter)
+  readonly onDidCreate: Event<URI> = this._onDidCreate.event;
+
+  createFile(uri: URI) {
+    // ... create file ...
+    this._onDidCreate.fire(uri); // Notify listeners
+  }
+
+  dispose() {
+    this._onDidCreate.dispose();
+  }
+}
+```
+
+```typescript Consuming Events
+import { DisposableStore } from 'vs/base/common/lifecycle';
+
+const disposables = new DisposableStore();
+
+// Listen to events
+disposables.add(
+  fileService.onDidCreate(uri => {
+    console.log('File created:', uri.toString());
+  })
+);
+
+// Cleanup when done
+disposables.dispose();
+```
+</CodeGroup>
+
+Event operators in `src/vs/base/common/event.ts:34-80`:
+
+<Accordion title="Event Operators">
+  <AccordionItem title="Event.debounce">
+    Debounces event firing to reduce frequency
+  </AccordionItem>
+  <AccordionItem title="Event.once">
+    Fires only for the first event
+  </AccordionItem>
+  <AccordionItem title="Event.map">
+    Transforms event data
+  </AccordionItem>
+  <AccordionItem title="Event.filter">
+    Filters events based on predicate
+  </AccordionItem>
+  <AccordionItem title="Event.any">
+    Combines multiple events into one
+  </AccordionItem>
+</Accordion>
+
+### Async Utilities (`async.ts`)
+
+Common patterns for asynchronous operations, including promises, throttling, and sequential execution.
+
+<CodeGroup>
+```typescript Timeout
+import { timeout } from 'vs/base/common/async';
+
+// Create cancellable delays
+const delay = timeout(1000);
+await delay;
+
+// Cancel if needed
+delay.cancel();
+```
+
+```typescript Throttle
+import { Throttler } from 'vs/base/common/async';
+
+const throttler = new Throttler();
+
+// Only runs one at a time, queues others
+await throttler.queue(async () => {
+  return heavyOperation();
+});
+```
+
+```typescript Sequential Execution
+import { sequence } from 'vs/base/common/async';
+
+const results = await sequence([
+  () => asyncOp1(),
+  () => asyncOp2(),
+  () => asyncOp3()
+]);
+```
+</CodeGroup>
+
+### Cancellation (`cancellation.ts`)
+
+Cooperative cancellation mechanism using cancellation tokens.
+
+<CodeGroup>
+```typescript CancellationToken
+import { 
+  CancellationToken,
+  CancellationTokenSource 
+} from 'vs/base/common/cancellation';
+
+async function search(
+  query: string,
+  token: CancellationToken
+): Promise<Result[]> {
+  // Check if cancelled
+  if (token.isCancellationRequested) {
+    return [];
+  }
+
+  // Listen for cancellation
+  token.onCancellationRequested(() => {
+    cleanup();
+  });
+
+  return await performSearch(query);
+}
+```
+
+```typescript Using CancellationTokenSource
+const source = new CancellationTokenSource();
+
+// Start operation
+const promise = search('query', source.token);
+
+// Cancel after 5 seconds
+setTimeout(() => source.cancel(), 5000);
+
+try {
+  const results = await promise;
+} finally {
+  source.dispose();
+}
+```
+</CodeGroup>
+
+## Additional Utilities
+
+### Collections & Data Structures
+
+<CardGroup cols={2}>
+  <Card title="arrays.ts" icon="list">
+    Array manipulation utilities: `binarySearch`, `coalesce`, `distinct`, `groupBy`
+  </Card>
+  <Card title="map.ts" icon="hashtag">
+    Specialized maps: `ResourceMap`, `LinkedMap`, `SetMap`, `TernarySearchTree`
+  </Card>
+  <Card title="linkedList.ts" icon="link">
+    Doubly-linked list implementation with O(1) insertions
+  </Card>
+  <Card title="iterator.ts" icon="arrow-right">
+    Iterator utilities and combinators
+  </Card>
+</CardGroup>
+
+### String & Text Processing
+
+<CardGroup cols={2}>
+  <Card title="strings.ts" icon="text">
+    String utilities: `compare`, `format`, `escape`, `trim`
+  </Card>
+  <Card title="charCode.ts" icon="keyboard">
+    Character code constants for efficient comparisons
+  </Card>
+  <Card title="buffer.ts" icon="binary">
+    Binary buffer handling for efficient I/O
+  </Card>
+</CardGroup>
+
+### Platform Abstractions
+
+<CodeGroup>
+```typescript Platform Detection
+import { 
+  isWindows, 
+  isMacintosh, 
+  isLinux,
+  isWeb,
+  isNative
+} from 'vs/base/common/platform';
+
+if (isWindows) {
+  // Windows-specific code
+}
+```
+
+```typescript Path Manipulation
+import * as path from 'vs/base/common/path';
+
+// Cross-platform path handling
+const joined = path.join('/foo', 'bar', 'baz.txt');
+const dirname = path.dirname('/foo/bar/baz.txt');
+const basename = path.basename('/foo/bar/baz.txt');
+const extname = path.extname('file.ts'); // '.ts'
+```
+</CodeGroup>
+
+### Browser Abstractions (`base/browser/`)
+
+<CardGroup cols={2}>
+  <Card title="dom.ts" icon="browser">
+    DOM manipulation utilities and helpers
+  </Card>
+  <Card title="keyboardEvent.ts" icon="keyboard">
+    Keyboard event handling and keybindings
+  </Card>
+  <Card title="mouseEvent.ts" icon="mouse-pointer">
+    Mouse event utilities
+  </Card>
+  <Card title="ui/" icon="paintbrush">
+    Reusable UI components (trees, lists, grids)
+  </Card>
+</CardGroup>
+
+### Node.js Abstractions (`base/node/`)
+
+<CardGroup cols={2}>
+  <Card title="pfs.ts" icon="file">
+    Promisified file system operations
+  </Card>
+  <Card title="process.ts" icon="terminal">
+    Process utilities and spawning
+  </Card>
+</CardGroup>
+
+## Design Principles
+
+<Steps>
+  <Step title="Zero Dependencies">
+    The base layer must not depend on any other VS Code layers. This ensures maximum reusability and prevents circular dependencies.
+  </Step>
+  
+  <Step title="Cross-Platform First">
+    Common utilities in `base/common/` must work across all platforms (web, desktop, server).
+  </Step>
+  
+  <Step title="Performance Critical">
+    Base layer code is heavily optimized since it's used everywhere. Many utilities avoid allocations and use efficient algorithms.
+  </Step>
+  
+  <Step title="Memory Safety">
+    Strong emphasis on lifecycle management and preventing memory leaks through disposables.
+  </Step>
+</Steps>
+
+## Key Files Reference
+
+| File | Description | Line Reference |
+|------|-------------|----------------|
+| `uri.ts` | URI implementation | 87-100 |
+| `lifecycle.ts` | Disposable pattern | 14-80 |
+| `event.ts` | Event system | 34-80 |
+| `async.ts` | Async utilities | - |
+| `cancellation.ts` | Cancellation tokens | - |
+| `arrays.ts` | Array utilities | - |
+| `map.ts` | Specialized maps | - |
+| `strings.ts` | String utilities | - |
+| `platform.ts` | Platform detection | - |
+
+<Tip>
+The base layer is a great place to start when learning VS Code's codebase. Understanding these patterns is essential for working with higher layers.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Platform Layer" icon="layer-group" href="/architecture/platform-layer">
+    Learn about services built on the base layer
+  </Card>
+  <Card title="Editor" icon="code" href="/architecture/editor">
+    Explore the Monaco Editor architecture
+  </Card>
+</CardGroup>

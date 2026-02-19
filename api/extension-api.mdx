@@ -1,0 +1,429 @@
+---
+title: 'Extension API Reference'
+description: 'Comprehensive reference for the VS Code Extension API with detailed documentation of all namespaces, classes, and interfaces'
+---
+
+# Extension API Reference
+
+The VS Code Extension API provides a rich set of JavaScript/TypeScript APIs defined in `vscode.d.ts`. This page documents the key namespaces, classes, and interfaces available to extension developers.
+
+## Core Namespaces
+
+The Extension API is organized into several key namespaces, each providing specific functionality:
+
+<CardGroup cols={2}>
+  <Card title="commands" icon="terminal" href="#commands-namespace">
+    Register and execute commands
+  </Card>
+  <Card title="window" icon="window" href="#window-namespace">
+    UI interactions and notifications
+  </Card>
+  <Card title="workspace" icon="folder-open" href="#workspace-namespace">
+    File and workspace management
+  </Card>
+  <Card title="languages" icon="code" href="#language-namespace">
+    Language features and IntelliSense
+  </Card>
+  <Card title="debug" icon="bug" href="#debug-namespace">
+    Debugging support
+  </Card>
+  <Card title="scm" icon="git" href="#scm-namespace">
+    Source control integration
+  </Card>
+  <Card title="tasks" icon="list-check" href="#tasks-namespace">
+    Task execution
+  </Card>
+  <Card title="extensions" icon="puzzle-piece" href="#extensions-namespace">
+    Extension management
+  </Card>
+</CardGroup>
+
+## commands Namespace
+
+The `commands` namespace provides APIs for registering and executing commands.
+
+### Key Functions
+
+<ParamField path="commands.registerCommand" type="function">
+  Registers a command that can be invoked via keyboard shortcut, menu, or programmatically.
+  
+  ```typescript
+  import * as vscode from 'vscode';
+  
+  const disposable = vscode.commands.registerCommand('myExtension.helloWorld', () => {
+    vscode.window.showInformationMessage('Hello World!');
+  });
+  ```
+</ParamField>
+
+<ParamField path="commands.executeCommand" type="function">
+  Executes a command. Returns a promise that resolves to the command's result.
+  
+  ```typescript
+  // Execute built-in command
+  await vscode.commands.executeCommand('workbench.action.files.save');
+  
+  // Execute with arguments
+  await vscode.commands.executeCommand('editor.action.insertSnippet', {
+    snippet: 'console.log($1);'
+  });
+  ```
+</ParamField>
+
+<ParamField path="commands.getCommands" type="function">
+  Retrieves a list of all available commands.
+  
+  ```typescript
+  const allCommands = await vscode.commands.getCommands();
+  console.log(allCommands); // ['workbench.action.files.save', ...]
+  ```
+</ParamField>
+
+## window Namespace
+
+The `window` namespace provides APIs for interacting with the VS Code UI.
+
+### Notifications
+
+<ParamField path="window.showInformationMessage" type="function">
+  Shows an information message to users.
+  
+  ```typescript
+  const result = await vscode.window.showInformationMessage(
+    'Do you want to continue?',
+    'Yes', 'No'
+  );
+  
+  if (result === 'Yes') {
+    // User clicked Yes
+  }
+  ```
+</ParamField>
+
+<ParamField path="window.showWarningMessage" type="function">
+  Shows a warning message with optional action buttons.
+</ParamField>
+
+<ParamField path="window.showErrorMessage" type="function">
+  Shows an error message with optional action buttons.
+</ParamField>
+
+### Quick Picks and Input
+
+<ParamField path="window.showQuickPick" type="function">
+  Shows a selection list allowing the user to select from several items.
+  
+  ```typescript
+  const items = ['Option 1', 'Option 2', 'Option 3'];
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select an option'
+  });
+  ```
+</ParamField>
+
+<ParamField path="window.showInputBox" type="function">
+  Opens an input box to ask the user for input.
+  
+  ```typescript
+  const name = await vscode.window.showInputBox({
+    prompt: 'Enter your name',
+    placeHolder: 'John Doe',
+    validateInput: (value) => {
+      return value.length < 3 ? 'Name must be at least 3 characters' : null;
+    }
+  });
+  ```
+</ParamField>
+
+### Editor Access
+
+<ParamField path="window.activeTextEditor" type="TextEditor | undefined">
+  The currently active text editor or undefined if none.
+  
+  ```typescript
+  const editor = vscode.window.activeTextEditor;
+  if (editor) {
+    const document = editor.document;
+    const selection = editor.selection;
+  }
+  ```
+</ParamField>
+
+<ParamField path="window.visibleTextEditors" type="readonly TextEditor[]">
+  All visible text editors.
+</ParamField>
+
+## workspace Namespace
+
+The `workspace` namespace provides APIs for working with files and workspace configuration.
+
+### File Operations
+
+<ParamField path="workspace.openTextDocument" type="function">
+  Opens a text document.
+  
+  ```typescript
+  // Open by URI
+  const doc = await vscode.workspace.openTextDocument(uri);
+  
+  // Open by file path
+  const doc = await vscode.workspace.openTextDocument('/path/to/file.ts');
+  
+  // Create untitled document
+  const doc = await vscode.workspace.openTextDocument({
+    content: 'Initial content',
+    language: 'typescript'
+  });
+  ```
+</ParamField>
+
+<ParamField path="workspace.fs" type="FileSystem">
+  A file system instance that allows reading and writing files.
+  
+  ```typescript
+  import * as vscode from 'vscode';
+  
+  // Read file
+  const content = await vscode.workspace.fs.readFile(uri);
+  const text = Buffer.from(content).toString('utf8');
+  
+  // Write file
+  const data = Buffer.from('Hello World', 'utf8');
+  await vscode.workspace.fs.writeFile(uri, data);
+  ```
+</ParamField>
+
+### Configuration
+
+<ParamField path="workspace.getConfiguration" type="function">
+  Get workspace configuration.
+  
+  ```typescript
+  const config = vscode.workspace.getConfiguration('myExtension');
+  const value = config.get<string>('someSetting');
+  
+  // Update configuration
+  await config.update('someSetting', 'newValue', vscode.ConfigurationTarget.Global);
+  ```
+</ParamField>
+
+### Workspace Properties
+
+<ParamField path="workspace.workspaceFolders" type="readonly WorkspaceFolder[] | undefined">
+  List of workspace folders.
+</ParamField>
+
+<ParamField path="workspace.name" type="string | undefined">
+  The name of the workspace.
+</ParamField>
+
+<ParamField path="workspace.rootPath" type="string | undefined" deprecated>
+  The root path of the workspace. Use `workspaceFolders` instead.
+</ParamField>
+
+## languages Namespace
+
+The `languages` namespace provides APIs for language features like IntelliSense.
+
+### Provider Registration
+
+<ParamField path="languages.registerCompletionItemProvider" type="function">
+  Register a completion item provider for IntelliSense.
+  
+  ```typescript
+  const provider = vscode.languages.registerCompletionItemProvider(
+    'typescript',
+    {
+      provideCompletionItems(document, position) {
+        const item = new vscode.CompletionItem('console.log');
+        item.kind = vscode.CompletionItemKind.Snippet;
+        item.insertText = new vscode.SnippetString('console.log($1);');
+        return [item];
+      }
+    },
+    '.' // Trigger character
+  );
+  ```
+</ParamField>
+
+<ParamField path="languages.registerHoverProvider" type="function">
+  Register a hover provider that shows information when hovering over code.
+</ParamField>
+
+<ParamField path="languages.registerDefinitionProvider" type="function">
+  Register a definition provider for "Go to Definition" functionality.
+</ParamField>
+
+<ParamField path="languages.registerCodeActionsProvider" type="function">
+  Register a code action provider for quick fixes and refactorings.
+</ParamField>
+
+### Diagnostics
+
+<ParamField path="languages.createDiagnosticCollection" type="function">
+  Create a diagnostic collection for reporting errors and warnings.
+  
+  ```typescript
+  const collection = vscode.languages.createDiagnosticCollection('myExtension');
+  
+  const diagnostic = new vscode.Diagnostic(
+    new vscode.Range(0, 0, 0, 10),
+    'Something is wrong here',
+    vscode.DiagnosticSeverity.Error
+  );
+  
+  collection.set(document.uri, [diagnostic]);
+  ```
+</ParamField>
+
+## Common Patterns
+
+### Event Handling
+
+Most VS Code APIs use events for notifications. Events follow the standard Node.js EventEmitter pattern:
+
+```typescript
+// Listen to document changes
+vscode.workspace.onDidChangeTextDocument((event) => {
+  console.log('Document changed:', event.document.uri);
+});
+
+// Listen to active editor changes
+vscode.window.onDidChangeActiveTextEditor((editor) => {
+  if (editor) {
+    console.log('Active editor:', editor.document.fileName);
+  }
+});
+```
+
+### Provider Pattern
+
+Many language features use the provider pattern where you implement an interface:
+
+```typescript
+class MyHoverProvider implements vscode.HoverProvider {
+  provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover {
+    const range = document.getWordRangeAtPosition(position);
+    const word = document.getText(range);
+    return new vscode.Hover(`Information about: ${word}`);
+  }
+}
+
+vscode.languages.registerHoverProvider('typescript', new MyHoverProvider());
+```
+
+### Thenable/Promise
+
+All asynchronous operations return Thenables (Promise-like objects):
+
+```typescript
+// Using async/await
+async function openAndEdit() {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const editor = await vscode.window.showTextDocument(doc);
+  await editor.edit((editBuilder) => {
+    editBuilder.insert(new vscode.Position(0, 0), 'Hello');
+  });
+}
+
+// Using .then()
+vscode.workspace.openTextDocument(uri)
+  .then(doc => vscode.window.showTextDocument(doc))
+  .then(editor => editor.edit(...));
+```
+
+### Disposable Pattern
+
+Resources should be disposed when no longer needed:
+
+```typescript
+const disposable = vscode.commands.registerCommand('myCmd', () => {});
+
+// Later, dispose the command registration
+disposable.dispose();
+
+// Or add to extension context for automatic disposal
+context.subscriptions.push(disposable);
+```
+
+## Core Types and Classes
+
+### Position
+
+Represents a line and character position in a text document.
+
+```typescript
+const position = new vscode.Position(line, character);
+```
+
+### Range
+
+Represents a range between two positions.
+
+```typescript
+const range = new vscode.Range(startPos, endPos);
+// or
+const range = new vscode.Range(startLine, startChar, endLine, endChar);
+```
+
+### Uri
+
+Represents a URI (file path, http URL, etc.).
+
+```typescript
+const fileUri = vscode.Uri.file('/path/to/file');
+const httpUri = vscode.Uri.parse('https://example.com');
+```
+
+### TextDocument
+
+Represents a text document like a source file.
+
+```typescript
+const document = vscode.window.activeTextEditor?.document;
+if (document) {
+  const text = document.getText();
+  const lineCount = document.lineCount;
+  const language = document.languageId;
+}
+```
+
+### TextEditor
+
+Represents an editor for a text document.
+
+```typescript
+const editor = vscode.window.activeTextEditor;
+if (editor) {
+  const selection = editor.selection;
+  const document = editor.document;
+  
+  // Make edits
+  await editor.edit((editBuilder) => {
+    editBuilder.insert(position, 'text');
+    editBuilder.delete(range);
+    editBuilder.replace(range, 'newText');
+  });
+}
+```
+
+<Info>
+For the complete API reference with all types and interfaces, see the [vscode.d.ts](https://github.com/microsoft/vscode/blob/main/src/vscode-dts/vscode.d.ts) file in the VS Code repository.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Proposed APIs" icon="flask" href="/api/proposed-apis">
+    Learn about experimental proposed APIs
+  </Card>
+  <Card title="Extension Guides" icon="book" href="/guides/extension-development">
+    Practical guides for building extensions
+  </Card>
+  <Card title="API Overview" icon="arrow-left" href="/api/overview">
+    Back to API overview
+  </Card>
+  <Card title="Your First Extension" icon="rocket" href="/api/your-first-extension">
+    Create your first extension
+  </Card>
+</CardGroup>

@@ -1,0 +1,435 @@
+---
+title: 'Proposed APIs'
+description: 'Guide to VS Code proposed APIs - experimental features and how to use them safely'
+---
+
+# Proposed APIs
+
+VS Code has a rich and stable Extension API, but occasionally new capabilities need to be tested and refined before becoming part of the stable API. These experimental APIs are called "proposed APIs."
+
+<Warning>
+Proposed APIs are **experimental** and can change or be removed at any time. Extensions using proposed APIs **cannot be published** to the VS Code Marketplace.
+</Warning>
+
+## What Are Proposed APIs?
+
+Proposed APIs are new extension APIs that are:
+- **Under development** - Still being designed and refined
+- **Not yet stable** - May change significantly or be removed
+- **Available for testing** - Allow extension authors to provide feedback
+- **Not allowed in published extensions** - Cannot be used in Marketplace extensions
+
+### Why Proposed APIs Exist
+
+The VS Code team uses proposed APIs to:
+
+1. **Test new features** with real-world extension developers
+2. **Gather feedback** before committing to a stable API
+3. **Iterate quickly** on API design without breaking existing extensions
+4. **Validate use cases** to ensure the API meets actual needs
+
+<Info>
+Once a proposed API is stable and proven, it "graduates" to the main `vscode.d.ts` stable API and can be used in published extensions.
+</Info>
+
+## How to Use Proposed APIs
+
+Using proposed APIs requires several steps and is only recommended for development and testing.
+
+<Steps>
+  <Step title="Enable Proposed API in package.json">
+    Add the `enabledApiProposals` field to your extension's `package.json`:
+    
+    ```json
+    {
+      "name": "my-extension",
+      "publisher": "myPublisher",
+      "enabledApiProposals": [
+        "chatParticipantAdditions",
+        "languageModelSystem"
+      ]
+    }
+    ```
+    
+    List only the specific proposed APIs you need.
+  </Step>
+  
+  <Step title="Copy Proposed API Type Definitions">
+    Copy the `.d.ts` files for the APIs you need from the VS Code repository:
+    
+    ```bash
+    # From vscode repository
+    cp src/vscode-dts/vscode.proposed.chatParticipantAdditions.d.ts \
+       path/to/your/extension/vscode.proposed.chatParticipantAdditions.d.ts
+    ```
+    
+    These files must be in your extension's root directory or include path.
+  </Step>
+  
+  <Step title="Reference in TypeScript">
+    Add triple-slash directives at the top of your TypeScript files:
+    
+    ```typescript
+    /// <reference types="vscode" />
+    /// <reference path="./vscode.proposed.chatParticipantAdditions.d.ts" />
+    
+    import * as vscode from 'vscode';
+    
+    // Now you can use the proposed API
+    ```
+  </Step>
+  
+  <Step title="Test Locally">
+    Test your extension locally. It will work in your development VS Code instance but cannot be published to the Marketplace.
+  </Step>
+</Steps>
+
+## Major Proposed APIs
+
+VS Code has 80+ proposed APIs covering various features. Here are some of the most significant:
+
+### AI and Language Models
+
+<Accordion title="languageModelSystem">
+  Provides access to language models for AI-powered features.
+  
+  ```typescript
+  /// <reference path="./vscode.proposed.languageModelSystem.d.ts" />
+  
+  const models = await vscode.lm.selectLanguageModels({
+    vendor: 'copilot',
+    family: 'gpt-4'
+  });
+  
+  const model = models[0];
+  const response = await model.sendRequest([
+    vscode.LanguageModelChatMessage.User('Explain this code')
+  ]);
+  ```
+  
+  **Use cases**: Building AI assistants, code explanation, code generation
+</Accordion>
+
+<Accordion title="chatParticipantAdditions">
+  Extends chat participant capabilities with additional features.
+  
+  **Use cases**: Custom chat commands, specialized AI agents
+</Accordion>
+
+<Accordion title="embeddings">
+  Access to text embedding models for semantic search and similarity.
+  
+  **Use cases**: Semantic code search, similarity detection
+</Accordion>
+
+### Chat and Collaboration
+
+<Accordion title="chatProvider">
+  Allows extensions to provide their own chat interfaces.
+  
+  **Use cases**: Custom chat UI, specialized collaboration tools
+</Accordion>
+
+<Accordion title="chatContextProvider">
+  Provides context information to chat participants.
+  
+  **Use cases**: Adding workspace context, file references
+</Accordion>
+
+### Editor and Language Features
+
+<Accordion title="inlineCompletionsAdditions">
+  Additional capabilities for inline completions (like GitHub Copilot).
+  
+  **Use cases**: Advanced code completion, AI-powered suggestions
+</Accordion>
+
+<Accordion title="mappedEditsProvider">
+  Provides mapped edits across multiple files.
+  
+  **Use cases**: Multi-file refactoring, code transformations
+</Accordion>
+
+<Accordion title="multiDocumentHighlightProvider">
+  Highlights occurrences across multiple documents.
+  
+  **Use cases**: Cross-file symbol highlighting
+</Accordion>
+
+### Debugging and Visualization
+
+<Accordion title="debugVisualization">
+  Custom visualizations for debug values.
+  
+  ```typescript
+  /// <reference path="./vscode.proposed.debugVisualization.d.ts" />
+  
+  class MyVisualizationProvider implements vscode.DebugVisualizationProvider {
+    provideDebugVisualization(value: vscode.DebugProtocolVariable): vscode.DebugVisualization {
+      return {
+        visualization: 'custom',
+        iconPath: new vscode.ThemeIcon('symbol-array')
+      };
+    }
+  }
+  ```
+  
+  **Use cases**: Custom data visualizers, debug value formatters
+</Accordion>
+
+### Terminal and Shell
+
+<Accordion title="terminalQuickFixProvider">
+  Provides quick fixes for terminal errors.
+  
+  **Use cases**: Suggesting fixes for command errors
+</Accordion>
+
+<Accordion title="terminalShellEnv">
+  Access and modify terminal shell environment.
+  
+  **Use cases**: Environment variable management
+</Accordion>
+
+### Source Control
+
+<Accordion title="scmHistoryProvider">
+  Provides commit history for source control.
+  
+  **Use cases**: Custom SCM providers with history support
+</Accordion>
+
+<Accordion title="scmActionButton">
+  Adds action buttons to source control view.
+  
+  **Use cases**: Quick actions for SCM operations
+</Accordion>
+
+### Notebooks
+
+<Accordion title="notebookVariableProvider">
+  Provides variable inspection for notebooks.
+  
+  **Use cases**: Variable explorer for notebooks
+</Accordion>
+
+<Accordion title="notebookKernelSource">
+  Provides notebook kernel sources.
+  
+  **Use cases**: Custom notebook kernel providers
+</Accordion>
+
+### Testing
+
+<Accordion title="testObserver">
+  Observes test execution and results.
+  
+  **Use cases**: Custom test result processing
+</Accordion>
+
+<Accordion title="testRelatedCode">
+  Links tests to related code.
+  
+  **Use cases**: Navigate between tests and implementation
+</Accordion>
+
+## Full List of Proposed APIs
+
+Here's a categorized list of all proposed APIs (80+ total):
+
+<AccordionGroup>
+  <Accordion title="AI & Language Models (8)">
+    - `languageModelSystem`
+    - `languageModelProxy`
+    - `languageModelCapabilities`
+    - `languageModelThinkingPart`
+    - `languageModelToolSupportsModel`
+    - `languageModelToolResultAudience`
+    - `embeddings`
+    - `aiTextSearchProvider`
+  </Accordion>
+  
+  <Accordion title="Chat & Copilot (14)">
+    - `chatProvider`
+    - `chatContextProvider`
+    - `chatParticipantAdditions`
+    - `chatParticipantPrivate`
+    - `chatHooks`
+    - `chatOutputRenderer`
+    - `chatPromptFiles`
+    - `chatReferenceBinaryData`
+    - `chatReferenceDiagnostic`
+    - `chatSessionsProvider`
+    - `chatStatusItem`
+    - `chatTab`
+    - `defaultChatParticipant`
+    - `remoteCodingAgents`
+  </Accordion>
+  
+  <Accordion title="Editor & Language (15)">
+    - `inlineCompletionsAdditions`
+    - `mappedEditsProvider`
+    - `multiDocumentHighlightProvider`
+    - `newSymbolNamesProvider`
+    - `editorInsets`
+    - `editorHoverVerbosityLevel`
+    - `textEditorDiffInformation`
+    - `diffCommand`
+    - `diffContentOptions`
+    - `codeActionAI`
+    - `codeActionRanges`
+    - `languageStatusText`
+    - `tokenInformation`
+    - `findTextInFiles`
+    - `findTextInFiles2`
+  </Accordion>
+  
+  <Accordion title="Debugging (3)">
+    - `debugVisualization`
+    - `contribDebugCreateConfiguration`
+    - `taskExecutionTerminal`
+  </Accordion>
+  
+  <Accordion title="Terminal (7)">
+    - `terminalQuickFixProvider`
+    - `terminalShellEnv`
+    - `terminalCompletionProvider`
+    - `terminalDataWriteEvent`
+    - `terminalDimensions`
+    - `terminalExecuteCommandEvent`
+    - `terminalSelection`
+  </Accordion>
+  
+  <Accordion title="Source Control (8)">
+    - `scmHistoryProvider`
+    - `scmActionButton`
+    - `scmArtifactProvider`
+    - `scmMultiDiffEditor`
+    - `scmProviderOptions`
+    - `scmSelectedProvider`
+    - `scmTextDocument`
+    - `scmValidation`
+  </Accordion>
+  
+  <Accordion title="Notebooks (8)">
+    - `notebookVariableProvider`
+    - `notebookKernelSource`
+    - `notebookCellExecution`
+    - `notebookExecution`
+    - `notebookMessaging`
+    - `notebookMime`
+    - `notebookReplDocument`
+    - `notebookLiveShare`
+  </Accordion>
+  
+  <Accordion title="Testing (3)">
+    - `testObserver`
+    - `testRelatedCode`
+    - `taskProblemMatcherStatus`
+  </Accordion>
+  
+  <Accordion title="Authentication (6)">
+    - `authenticationChallenges`
+    - `authIssuers`
+    - `authLearnMore`
+    - `authProviderSpecific`
+    - `authSession`
+    - `workspaceTrust`
+  </Accordion>
+  
+  <Accordion title="UI Contributions (20+)">
+    - `contribAccessibilityHelpContent`
+    - `contribChatEditorInlineGutterMenu`
+    - `contribCommentEditorActionsMenu`
+    - `contribCommentPeekContext`
+    - `contribCommentThreadAdditionalMenu`
+    - `contribCommentsViewThreadMenus`
+    - `contribDiffEditorGutterToolBarMenus`
+    - `contribEditSessions`
+    - `contribEditorContentMenu`
+    - `contribMenuBarHome`
+    - `contribMergeEditorMenus`
+    - `contribMultiDiffEditorMenus`
+    - `contribRemoteHelp`
+    - `contribShareMenu`
+    - `contribSourceControlTitleMenu`
+    - `contribStatusBarItems`
+    - `contribViewContainerTitle`
+    - `contribViewsRemote`
+    - `contribViewsWelcome`
+    - And more...
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Tip>
+**Keep proposed API usage minimal** - Only use proposed APIs when absolutely necessary. Prefer stable APIs whenever possible.
+</Tip>
+
+### Development Guidelines
+
+1. **Track API changes** - Monitor the VS Code repository for changes to proposed APIs you're using
+2. **Have a migration plan** - Be prepared to update when APIs change or stabilize
+3. **Document dependencies** - Clearly document which proposed APIs your extension uses
+4. **Test frequently** - Proposed APIs can break between VS Code versions
+
+### When to Use Proposed APIs
+
+✅ **Good use cases:**
+- Internal tools and extensions for your team
+- Prototyping new extension ideas
+- Testing VS Code features before they stabilize
+- Contributing feedback on API design
+
+❌ **Avoid for:**
+- Extensions intended for public distribution
+- Production tools that need stability
+- Extensions where users expect reliability
+
+## Migration Path
+
+When a proposed API graduates to stable:
+
+<Steps>
+  <Step title="Remove Proposed API Reference">
+    Remove the triple-slash directive and `.d.ts` file from your extension.
+  </Step>
+  
+  <Step title="Remove from package.json">
+    Remove the API from `enabledApiProposals` array.
+  </Step>
+  
+  <Step title="Update Code">
+    Update your code for any API changes that occurred during stabilization.
+  </Step>
+  
+  <Step title="Test Thoroughly">
+    Test your extension to ensure it works with the stable API.
+  </Step>
+  
+  <Step title="Publish">
+    Now you can publish your extension to the Marketplace!
+  </Step>
+</Steps>
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="VS Code Repository" icon="github" href="https://github.com/microsoft/vscode">
+    Check proposed API definitions in src/vscode-dts/
+  </Card>
+  <Card title="Extension API Issues" icon="bug" href="https://github.com/microsoft/vscode/issues?q=is%3Aissue+label%3Aapi">
+    Report issues or request API changes
+  </Card>
+  <Card title="Discussions" icon="comments" href="https://github.com/microsoft/vscode-discussions">
+    Discuss proposed APIs with the community
+  </Card>
+  <Card title="API Overview" icon="arrow-left" href="/api/overview">
+    Back to stable API documentation
+  </Card>
+</CardGroup>
+
+<Warning>
+**Remember**: Extensions using proposed APIs cannot be published to the VS Code Marketplace. Use them only for development, testing, and internal tools.
+</Warning>

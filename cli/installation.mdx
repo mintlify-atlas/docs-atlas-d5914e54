@@ -1,0 +1,385 @@
+---
+title: CLI Installation
+description: Installing and configuring the Visual Studio Code CLI
+---
+
+The VS Code CLI can be accessed in multiple ways depending on your needs. This guide covers installation methods, PATH configuration, and the different CLI executables available.
+
+## Accessing the CLI
+
+### Option 1: Install with VS Code Desktop
+
+The easiest way to get the CLI is by installing Visual Studio Code desktop application. The CLI is automatically bundled and added to your PATH during installation.
+
+<Tabs>
+  <Tab title="macOS">
+    After installing VS Code:
+
+    1. Launch VS Code
+    2. Open the Command Palette (`Cmd+Shift+P`)
+    3. Type **Shell Command: Install 'code' command in PATH**
+    4. Select the command to install the CLI
+
+    The `code` command will be available at:
+    ```bash
+    /usr/local/bin/code
+    ```
+
+    Verify installation:
+    ```bash
+    code --version
+    ```
+  </Tab>
+  <Tab title="Linux">
+    The CLI is automatically available after installing VS Code via:
+
+    - **Debian/Ubuntu**: `.deb` package
+    - **Red Hat/Fedora**: `.rpm` package
+    - **Snap**: `snap install code --classic`
+
+    The binary is typically located at:
+    ```bash
+    /usr/bin/code
+    ```
+
+    Verify installation:
+    ```bash
+    code --version
+    ```
+  </Tab>
+  <Tab title="Windows">
+    During installation, ensure "Add to PATH" is checked. The CLI will be available at:
+
+    ```powershell
+    C:\Program Files\Microsoft VS Code\bin\code.cmd
+    ```
+
+    For portable installations:
+    ```powershell
+    C:\Users\<username>\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd
+    ```
+
+    Verify installation:
+    ```powershell
+    code --version
+    ```
+  </Tab>
+</Tabs>
+
+### Option 2: Standalone CLI Download
+
+For server environments or CI/CD pipelines, download the standalone CLI binary:
+
+<Steps>
+  <Step title="Download the CLI">
+    Visit the [VS Code CLI releases page](https://code.visualstudio.com/#alt-downloads) and download the appropriate binary for your platform:
+
+    - **Linux x64**: `vscode_cli_linux_x64.tar.gz`
+    - **Linux ARM**: `vscode_cli_linux_arm.tar.gz`
+    - **macOS**: `vscode_cli_darwin_x64.zip`
+    - **Windows**: `vscode_cli_win32_x64.zip`
+  </Step>
+  <Step title="Extract the Archive">
+    Extract the downloaded archive:
+
+    ```bash
+    # Linux/macOS
+    tar -xzf vscode_cli_*.tar.gz
+
+    # Or for zip files
+    unzip vscode_cli_*.zip
+    ```
+  </Step>
+  <Step title="Move to PATH">
+    Move the binary to a directory in your PATH:
+
+    ```bash
+    # Linux/macOS
+    sudo mv code /usr/local/bin/
+
+    # Make it executable
+    chmod +x /usr/local/bin/code
+    ```
+  </Step>
+  <Step title="Verify Installation">
+    Check that the CLI is working:
+
+    ```bash
+    code --version
+    ```
+  </Step>
+</Steps>
+
+## PATH Configuration
+
+If the `code` command isn't recognized, you may need to manually add it to your PATH.
+
+<Tabs>
+  <Tab title="Bash/Zsh">
+    Add to `~/.bashrc`, `~/.zshrc`, or `~/.profile`:
+
+    ```bash
+    # For VS Code desktop installation
+    export PATH="$PATH:/Applications/Visual Studio Code.app/Contents/Resources/app/bin"
+
+    # For standalone CLI
+    export PATH="$PATH:/path/to/vscode-cli"
+    ```
+
+    Reload your shell:
+    ```bash
+    source ~/.bashrc  # or ~/.zshrc
+    ```
+  </Tab>
+  <Tab title="Fish">
+    Add to `~/.config/fish/config.fish`:
+
+    ```fish
+    set -gx PATH $PATH /Applications/Visual\ Studio\ Code.app/Contents/Resources/app/bin
+    ```
+
+    Reload configuration:
+    ```fish
+    source ~/.config/fish/config.fish
+    ```
+  </Tab>
+  <Tab title="Windows PowerShell">
+    Add to your PowerShell profile (`$PROFILE`):
+
+    ```powershell
+    $env:Path += ";C:\Program Files\Microsoft VS Code\bin"
+    ```
+
+    Or use System Environment Variables:
+    1. Search for "Environment Variables" in Windows
+    2. Edit the "Path" variable
+    3. Add: `C:\Program Files\Microsoft VS Code\bin`
+  </Tab>
+</Tabs>
+
+## CLI Executables
+
+The VS Code CLI ecosystem includes several specialized executables:
+
+### `code` - Main CLI
+
+The primary executable for most operations.
+
+```bash
+# Open a file
+code index.js
+
+# Open folder
+code ~/projects/my-app
+
+# Compare files
+code --diff old.txt new.txt
+
+# Extension management
+code ext install ms-python.python
+```
+
+### `code tunnel` - Tunneling Mode
+
+Create secure remote tunnels to your development environment.
+
+```bash
+# Start a tunnel
+code tunnel
+
+# With custom name
+code tunnel --name my-dev-box
+
+# Check status
+code tunnel status
+
+# Stop tunnel
+code tunnel kill
+```
+
+### `code serve-web` - Web Server Mode
+
+Run a local web-based instance of VS Code.
+
+```bash
+# Basic web server
+code serve-web
+
+# Custom port
+code serve-web --port 3000
+
+# With authentication token
+code serve-web --connection-token mysecrettoken
+
+# Custom host binding
+code serve-web --host 0.0.0.0 --port 8080
+```
+
+## Data Directories
+
+The CLI stores data in platform-specific locations:
+
+<CodeGroup>
+```bash macOS
+# CLI data directory
+~/Library/Application Support/Code/CLI
+
+# User data directory
+~/Library/Application Support/Code
+
+# Extensions directory
+~/.vscode/extensions
+```
+
+```bash Linux
+# CLI data directory
+~/.config/Code/CLI
+
+# User data directory
+~/.config/Code
+
+# Extensions directory
+~/.vscode/extensions
+```
+
+```powershell Windows
+# CLI data directory
+%APPDATA%\Code\CLI
+
+# User data directory
+%APPDATA%\Code
+
+# Extensions directory
+%USERPROFILE%\.vscode\extensions
+```
+</CodeGroup>
+
+You can override these with CLI options:
+
+```bash
+# Custom user data directory
+code --user-data-dir /path/to/data
+
+# Custom extensions directory
+code --extensions-dir /path/to/extensions
+
+# Custom CLI data directory
+code --cli-data-dir /path/to/cli-data
+```
+
+## Version Management
+
+The CLI can manage and switch between different VS Code versions:
+
+```bash
+# Show current version
+code version show
+
+# Use stable version
+code version use stable
+
+# Use insiders version
+code version use insiders
+
+# Use specific version
+code version use 1.85.0
+
+# Use local installation
+code version use /path/to/vscode
+```
+
+<Note>
+Version switching requires the VS Code desktop integration. The standalone CLI has a fixed version.
+</Note>
+
+## Building from Source
+
+To build the CLI from source (requires Rust toolchain):
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode/cli
+    ```
+  </Step>
+  <Step title="Install Dependencies">
+    ```bash
+    # Install Rust (if not already installed)
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+    # On Windows, also install OpenSSL
+    # vcpkg install openssl:x64-windows-static-md
+    ```
+  </Step>
+  <Step title="Build">
+    ```bash
+    cargo build --release
+    ```
+
+    The binary will be located at `target/release/code`
+  </Step>
+  <Step title="Install">
+    ```bash
+    sudo cp target/release/code /usr/local/bin/
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Command not found: code">
+    The CLI isn't in your PATH. Follow the PATH configuration steps above, or use the full path to the executable:
+
+    ```bash
+    # macOS
+    /Applications/Visual\ Studio\ Code.app/Contents/Resources/app/bin/code
+
+    # Linux
+    /usr/bin/code
+
+    # Windows
+    "C:\Program Files\Microsoft VS Code\bin\code.cmd"
+    ```
+  </Accordion>
+
+  <Accordion title="Permission denied">
+    Make the binary executable:
+
+    ```bash
+    chmod +x /path/to/code
+    ```
+  </Accordion>
+
+  <Accordion title="Multiple versions installed">
+    Check which version is being used:
+
+    ```bash
+    which code
+    code --version
+    ```
+
+    Adjust your PATH to prioritize the desired installation.
+  </Accordion>
+
+  <Accordion title="Windows OpenSSL issues (building from source)">
+    When building on Windows, you need OpenSSL. Follow the steps in `cli/CONTRIBUTING.md`:
+
+    ```powershell
+    # Install vcpkg and then
+    vcpkg install openssl:x64-windows-static-md
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands Reference" icon="terminal" href="/cli/commands">
+    Explore all available CLI commands
+  </Card>
+  <Card title="Server Mode" icon="server" href="/cli/server-mode">
+    Set up remote tunneling
+  </Card>
+</CardGroup>

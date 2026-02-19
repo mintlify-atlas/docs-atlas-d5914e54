@@ -1,0 +1,493 @@
+---
+title: Extension Development Guide
+description: Learn how to develop, test, and publish VS Code extensions using the Extension API
+---
+
+VS Code extensions let you add features, themes, debuggers, and language support to the editor. This guide covers the complete extension development workflow.
+
+## Extension Structure
+
+### Basic Extension Anatomy
+
+Every VS Code extension requires a `package.json` manifest file:
+
+```json package.json
+{
+  "name": "my-extension",
+  "displayName": "My Extension",
+  "description": "A sample extension",
+  "version": "1.0.0",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onCommand:myExtension.helloWorld"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [{
+      "command": "myExtension.helloWorld",
+      "title": "Hello World"
+    }]
+  }
+}
+```
+
+<Note>
+The `engines.vscode` field specifies the minimum VS Code version required for your extension.
+</Note>
+
+### Key Package.json Fields
+
+<AccordionGroup>
+  <Accordion title="activationEvents">
+    Controls when your extension is loaded:
+    
+    ```json
+    "activationEvents": [
+      "onLanguage:typescript",        // When opening a TypeScript file
+      "onCommand:extension.command",   // When running a command
+      "onView:myView",                 // When a view is visible
+      "onUri",                         // When opening a URI
+      "onStartupFinished",             // After startup (use sparingly)
+      "*"                              // Immediately (avoid if possible)
+    ]
+    ```
+    
+    <Warning>
+    Avoid using `*` or early activation events. They impact VS Code startup performance.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="contributes">
+    Declares what your extension adds to VS Code:
+    
+    - `commands` - New commands
+    - `keybindings` - Keyboard shortcuts
+    - `languages` - Language definitions
+    - `grammars` - Syntax highlighting
+    - `themes` - Color themes
+    - `viewsContainers` - Custom sidebar containers
+    - `views` - Tree views in containers
+    - `configuration` - Settings
+    - `menus` - Menu items
+  </Accordion>
+  
+  <Accordion title="capabilities">
+    Declares extension capabilities:
+    
+    ```json
+    "capabilities": {
+      "virtualWorkspaces": true,
+      "untrustedWorkspaces": {
+        "supported": "limited",
+        "description": "Extension requires workspace trust",
+        "restrictedConfigurations": [
+          "myExtension.executablePath"
+        ]
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Extension Examples from VS Code
+
+### Language Extension
+
+The built-in Bat language extension demonstrates a minimal language extension:
+
+```json extensions/bat/package.json
+{
+  "name": "bat",
+  "displayName": "Batch",
+  "description": "Batch language support",
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [{
+      "id": "bat",
+      "extensions": [".bat", ".cmd"],
+      "aliases": ["Batch", "bat"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "bat",
+      "scopeName": "source.batchfile",
+      "path": "./syntaxes/batchfile.tmLanguage.json"
+    }],
+    "snippets": [{
+      "language": "bat",
+      "path": "./snippets/batchfile.code-snippets"
+    }]
+  }
+}
+```
+
+<Tip>
+Explore `~/workspace/source/extensions/` for real-world examples of language support, themes, and feature extensions.
+</Tip>
+
+### Rich Language Features
+
+For advanced language support (IntelliSense, Go to Definition), see the markdown extension:
+
+```json extensions/markdown-language-features/package.json
+{
+  "name": "markdown-language-features",
+  "main": "./out/extension",
+  "browser": "./dist/browser/extension",
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onCommand:markdown.api.render",
+    "onWebviewPanel:markdown.preview"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "markdown",
+      "extensions": [".md", ".markdown"],
+      "aliases": ["Markdown", "markdown"]
+    }]
+  }
+}
+```
+
+<Steps>
+  <Step title="Declare the language">
+    Register your language in the `contributes.languages` section
+  </Step>
+  
+  <Step title="Activate on language">
+    Use `onLanguage:languageId` activation event
+  </Step>
+  
+  <Step title="Implement language features">
+    Register providers in your extension's `activate()` function
+  </Step>
+</Steps>
+
+## Using the Extension API
+
+### Extension Entry Point
+
+Your extension's main file exports `activate` and `deactivate` functions:
+
+```typescript src/extension.ts
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext) {
+  console.log('Extension activated');
+  
+  // Register a command
+  const disposable = vscode.commands.registerCommand(
+    'myExtension.helloWorld',
+    () => {
+      vscode.window.showInformationMessage('Hello World!');
+    }
+  );
+  
+  // Add to subscriptions for cleanup
+  context.subscriptions.push(disposable);
+}
+
+export function deactivate() {
+  // Cleanup code here
+}
+```
+
+### Common API Patterns
+
+<CardGroup cols={2}>
+  <Card title="Commands" icon="terminal">
+    Register and execute commands
+    
+    ```typescript
+    vscode.commands.registerCommand(
+      'ext.cmd',
+      () => { /* ... */ }
+    );
+    
+    vscode.commands.executeCommand('workbench.action.files.save');
+    ```
+  </Card>
+  
+  <Card title="Language Features" icon="code">
+    Provide IntelliSense and navigation
+    
+    ```typescript
+    vscode.languages.registerCompletionItemProvider(
+      'typescript',
+      provider,
+      '.'
+    );
+    ```
+  </Card>
+  
+  <Card title="Editor Interaction" icon="file-code">
+    Work with editors and documents
+    
+    ```typescript
+    const editor = vscode.window.activeTextEditor;
+    const document = editor?.document;
+    const selection = editor?.selection;
+    ```
+  </Card>
+  
+  <Card title="File System" icon="folder">
+    Read and write files
+    
+    ```typescript
+    const uri = vscode.Uri.file('/path/to/file');
+    const content = await vscode.workspace.fs.readFile(uri);
+    ```
+  </Card>
+</CardGroup>
+
+### Registering Language Providers
+
+```typescript
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext) {
+  // Hover provider
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider('markdown', {
+      provideHover(document, position) {
+        return new vscode.Hover('Hover text');
+      }
+    })
+  );
+  
+  // Completion provider
+  context.subscriptions.push(
+    vscode.languages.registerCompletionItemProvider('markdown', {
+      provideCompletionItems(document, position) {
+        const item = new vscode.CompletionItem('Hello');
+        item.kind = vscode.CompletionItemKind.Text;
+        return [item];
+      }
+    }, '.')
+  );
+  
+  // Definition provider
+  context.subscriptions.push(
+    vscode.languages.registerDefinitionProvider('markdown', {
+      provideDefinition(document, position) {
+        const range = document.getWordRangeAtPosition(position);
+        return new vscode.Location(
+          document.uri,
+          new vscode.Position(0, 0)
+        );
+      }
+    })
+  );
+}
+```
+
+<Note>
+Always add disposables to `context.subscriptions` for proper cleanup when the extension deactivates.
+</Note>
+
+## Testing Extensions
+
+### Setting Up Tests
+
+Create a test folder structure:
+
+```
+my-extension/
+├── src/
+│   ├── extension.ts
+│   └── test/
+│       ├── suite/
+│       │   ├── extension.test.ts
+│       │   └── index.ts
+│       └── runTest.ts
+```
+
+### Writing Extension Tests
+
+```typescript src/test/suite/extension.test.ts
+import * as assert from 'assert';
+import * as vscode from 'vscode';
+
+suite('Extension Test Suite', () => {
+  vscode.window.showInformationMessage('Start all tests.');
+  
+  test('Sample test', () => {
+    assert.strictEqual(-1, [1, 2, 3].indexOf(5));
+    assert.strictEqual(-1, [1, 2, 3].indexOf(0));
+  });
+  
+  test('Extension should be present', () => {
+    assert.ok(vscode.extensions.getExtension('publisher.my-extension'));
+  });
+  
+  test('Should register command', async () => {
+    const commands = await vscode.commands.getCommands();
+    assert.ok(commands.includes('myExtension.helloWorld'));
+  });
+});
+```
+
+### Running Tests
+
+```bash
+# Install test dependencies
+npm install --save-dev @vscode/test-electron mocha @types/mocha
+
+# Run tests
+npm test
+```
+
+<Tip>
+Use the VS Code extension test runner for integration tests that need a full VS Code instance.
+</Tip>
+
+## Publishing to Marketplace
+
+### Preparing for Publication
+
+<Steps>
+  <Step title="Create Publisher Account">
+    Sign up at the [Visual Studio Marketplace](https://marketplace.visualstudio.com/)
+  </Step>
+  
+  <Step title="Install vsce">
+    ```bash
+    npm install -g @vscode/vsce
+    ```
+  </Step>
+  
+  <Step title="Update Package.json">
+    Ensure all required fields are set:
+    - `name`, `displayName`, `description`
+    - `version`, `publisher`
+    - `repository`, `icon`, `categories`
+    - `keywords` for discoverability
+  </Step>
+  
+  <Step title="Create README">
+    Write a comprehensive README.md with:
+    - Features and screenshots
+    - Installation instructions
+    - Usage examples
+    - Configuration options
+  </Step>
+  
+  <Step title="Add License">
+    Include a LICENSE file (MIT recommended)
+  </Step>
+</Steps>
+
+### Publishing Your Extension
+
+```bash
+# Login to the marketplace
+vsce login your-publisher-name
+
+# Package your extension
+vsce package
+# Creates my-extension-1.0.0.vsix
+
+# Publish to marketplace
+vsce publish
+
+# Or publish a new version
+vsce publish minor  # Increments version
+vsce publish patch
+vsce publish major
+```
+
+<Warning>
+Test your packaged extension locally before publishing:
+```bash
+code --install-extension my-extension-1.0.0.vsix
+```
+</Warning>
+
+### Updating Your Extension
+
+```bash
+# Update version in package.json
+npm version patch
+
+# Publish update
+vsce publish
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Performance" icon="gauge-high">
+    - Use lazy activation events
+    - Avoid expensive operations in `activate()`
+    - Load large dependencies asynchronously
+    - Dispose resources properly
+  </Card>
+  
+  <Card title="User Experience" icon="user">
+    - Provide clear command titles
+    - Show progress for long operations
+    - Handle errors gracefully
+    - Add useful error messages
+  </Card>
+  
+  <Card title="Configuration" icon="gear">
+    - Use contribution points over code
+    - Make features configurable
+    - Provide sensible defaults
+    - Document all settings
+  </Card>
+  
+  <Card title="Quality" icon="shield-check">
+    - Write tests for core functionality
+    - Test on multiple platforms
+    - Handle edge cases
+    - Keep bundle size small
+  </Card>
+</CardGroup>
+
+## Example Extensions in VS Code Source
+
+Explore these built-in extensions for reference:
+
+| Extension | Location | Purpose |
+|-----------|----------|---------|
+| Bat | `extensions/bat/` | Simple language support |
+| Markdown | `extensions/markdown-language-features/` | Rich language features |
+| Git | `extensions/git/` | Source control integration |
+| Debug Auto-launch | `extensions/debug-auto-launch/` | Workbench contribution |
+| Emmet | `extensions/emmet/` | Editing enhancements |
+
+<Tip>
+Clone the VS Code repository and explore `extensions/` for production-quality examples of every extension type.
+</Tip>
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Extension API Docs" icon="book" href="https://code.visualstudio.com/api">
+    Official VS Code extension documentation
+  </Card>
+  
+  <Card title="Extension Samples" icon="code" href="https://github.com/microsoft/vscode-extension-samples">
+    Example extensions for common scenarios
+  </Card>
+  
+  <Card title="Publishing Guide" icon="upload" href="https://code.visualstudio.com/api/working-with-extensions/publishing-extension">
+    Detailed publishing instructions
+  </Card>
+  
+  <Card title="Extension Guidelines" icon="list-check" href="https://code.visualstudio.com/api/references/extension-guidelines">
+    UX guidelines for extensions
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+- Review the [Extension API reference](/api/extension-api)
+- Learn about [Proposed APIs](/api/proposed-apis)
+- Explore [workbench contributions](/guides/workbench-contributions) for deeper integration

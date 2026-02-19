@@ -1,467 +1,303 @@
 ---
 title: "Quickstart Guide"
-description: "Build and run Visual Studio Code from source in under 10 minutes"
+description: "Get VS Code running quickly from source for contributors"
 ---
+
+# Quickstart Guide
+
+This guide will help you get Visual Studio Code running from source quickly so you can start contributing to the project.
+
+<Note>
+  This quickstart is for contributors who want to build and run VS Code from source. If you just want to use VS Code, download it from [code.visualstudio.com](https://code.visualstudio.com).
+</Note>
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
+Before you begin, make sure you have:
 
-<AccordionGroup>
-  <Accordion icon="node-js" title="Node.js">
-    **Version Required:** Node.js 20.x or later
-    
-    Download from [nodejs.org](https://nodejs.org). Verify installation:
-    
-    ```bash
-    node --version  # Should output v20.x.x or higher
-    npm --version   # Should output 10.x.x or higher
-    ```
-  </Accordion>
-  
-  <Accordion icon="git-alt" title="Git">
-    **Version Required:** Git 2.x or later
-    
-    Download from [git-scm.com](https://git-scm.com). Verify installation:
-    
-    ```bash
-    git --version  # Should output 2.x.x or higher
-    ```
-  </Accordion>
-  
-  <Accordion icon="code" title="C/C++ Compiler Toolchain">
-    **Platform-specific requirements:**
-    
-    - **Windows:** Visual Studio 2022 with "Desktop development with C++" workload
-    - **macOS:** Xcode Command Line Tools (`xcode-select --install`)
-    - **Linux:** GCC/G++ 9.x or later, make, and Python 3
-    
-    ```bash
-    # Linux verification
-    gcc --version   # Should output 9.x.x or higher
-    g++ --version   # Should output 9.x.x or higher
-    python3 --version  # Should output 3.x.x
-    ```
-  </Accordion>
-  
-  <Accordion icon="memory" title="System Requirements">
-    **Recommended specifications:**
-    
-    - **RAM:** 8 GB minimum (16 GB recommended)
-    - **Disk Space:** 15 GB free space
-    - **CPU:** 4 cores minimum (8 cores recommended for faster builds)
-  </Accordion>
-</AccordionGroup>
+- **Git** installed on your system
+- **Node.js** (version specified in package.json)
+- **npm** (comes with Node.js)
+- At least **4 GB RAM** (8 GB recommended for full builds)
 
-## Quick Setup (3 Steps)
+<Warning>
+  Docker containers and Codespaces need at least **4 Cores and 6 GB of RAM** (8 GB recommended) to run a full build.
+</Warning>
 
-Get VS Code running from source in minutes:
+## Quick Start Steps
 
 <Steps>
   <Step title="Clone the Repository">
-    Clone the VS Code repository and initialize submodules:
+    Clone the VS Code repository from GitHub:
     
     ```bash
     git clone https://github.com/microsoft/vscode.git
     cd vscode
-    git submodule update --init --recursive
     ```
     
     <Tip>
-      The repository is approximately 500 MB. Use `--depth 1` for a shallow clone if you don't need the full history:
-      ```bash
-      git clone --depth 1 https://github.com/microsoft/vscode.git
-      ```
+      On macOS and Windows, using a Docker volume or WSL filesystem provides better disk I/O performance than the native filesystem.
     </Tip>
   </Step>
   
   <Step title="Install Dependencies">
-    Install all required npm packages:
+    Install all required dependencies using npm:
     
     ```bash
     npm install
     ```
     
-    This process takes 5-10 minutes and:
-    - Installs ~500 npm packages
-    - Downloads Electron binaries
-    - Compiles native Node.js modules
-    - Sets up built-in extensions
+    This command runs the `postinstall` script automatically, which sets up additional build dependencies and downloads required binaries.
     
     <Note>
-      On Windows, you may need to run this command in a terminal with administrator privileges.
+      The first install may take several minutes depending on your internet connection and system performance.
     </Note>
   </Step>
   
-  <Step title="Build and Run">
-    Start VS Code from source:
+  <Step title="Run VS Code from Source">
+    Start VS Code in development mode using the provided script:
     
-    <Tabs>
-      <Tab title="macOS / Linux">
-        ```bash
-        ./scripts/code.sh
-        ```
-      </Tab>
-      <Tab title="Windows">
-        ```bash
-        .\scripts\code.bat
-        ```
-      </Tab>
-    </Tabs>
-    
-    <Success>
-      VS Code should launch within 30 seconds! You're now running a development build.
-    </Success>
-  </Step>
-</Steps>
-
-## Development Workflow
-
-### Watch Mode for Live Reloading
-
-Enable automatic compilation on file changes:
-
-```bash
-npm run watch
-```
-
-This starts multiple watch tasks:
-- **Core - Build:** Compiles TypeScript sources in `src/`
-- **Ext - Build:** Compiles built-in extensions in `extensions/`
-- **Watch Extensions:** Monitors extension changes
-
-<CodeGroup>
-
-```typescript src/vs/workbench/workbench.ts
-/**
- * Example: Core workbench initialization
- * Changes to this file are detected by watch mode
- */
-import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
-import { IWorkbenchContributionsRegistry, Extensions } from 'vs/workbench/common/contributions';
-import { Registry } from 'vs/platform/registry/common/platform';
-
-export class Workbench {
-  constructor(
-    @IInstantiationService private readonly instantiationService: IInstantiationService
-  ) {
-    this.registerContributions();
-  }
-
-  private registerContributions(): void {
-    const registry = Registry.as<IWorkbenchContributionsRegistry>(
-      Extensions.Workbench
-    );
-    // Register workbench contributions
-  }
-}
-```
-
-```json .vscode/tasks.json
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "type": "npm",
-      "script": "watch",
-      "label": "VS Code - Build",
-      "group": "build",
-      "isBackground": true,
-      "presentation": {
-        "reveal": "never"
-      },
-      "problemMatcher": "$tsc-watch"
-    }
-  ]
-}
-```
-
-</CodeGroup>
-
-### Running Tests
-
-VS Code has comprehensive test suites:
-
-<Tabs>
-  <Tab title="Unit Tests">
+    **On Linux/macOS:**
     ```bash
-    # Run all unit tests
-    ./scripts/test.sh
-    
-    # Run specific test suite
-    ./scripts/test.sh --grep "workbench"
-    
-    # Run tests for a specific file
-    ./scripts/test.sh --grep "editor.test"
+    ./scripts/code.sh
     ```
-  </Tab>
-  
-  <Tab title="Integration Tests">
+    
+    **On Windows:**
     ```bash
-    # Run integration tests
-    ./scripts/test-integration.sh
+    .\scripts\code.bat
+    ```
     
-    # Run specific integration test
-    ./scripts/test-integration.sh --grep "editor"
-    ```
-  </Tab>
-  
-  <Tab title="Extension Tests">
-    ```bash
-    # Test built-in extensions
-    npm run test-extension
-    
-    # Test specific extension
-    cd extensions/typescript-language-features
-    npm test
-    ```
-  </Tab>
-</Tabs>
-
-<Note>
-  Tests require a successful build. Run `npm run compile` first if you encounter errors.
-</Note>
-
-### Debugging VS Code
-
-Debug VS Code using VS Code itself:
-
-<Steps>
-  <Step title="Open in VS Code">
-    Open the cloned repository in VS Code:
-    ```bash
-    code .
-    ```
+    This will compile the necessary files and launch VS Code with Electron.
   </Step>
   
-  <Step title="Start Watch Mode">
-    Run the build task:
-    - Press `Ctrl/Cmd + Shift + B`
-    - Select **"VS Code - Build"**
+  <Step title="Start Watching for Changes (Optional)">
+    For active development, start the watch mode to automatically recompile on file changes:
     
-    Or run from terminal:
     ```bash
     npm run watch
     ```
-  </Step>
-  
-  <Step title="Launch Debugger">
-    Start debugging:
-    - Press `F5` or go to **Run and Debug**
-    - Select **"VS Code"** configuration
-    - A new VS Code window launches with debugger attached
+    
+    This runs multiple watch tasks in parallel:
+    - `watch-client-transpile` - Transpiles TypeScript files
+    - `watch-client` - Watches client code changes
+    - `watch-extensions` - Watches built-in extensions
     
     <Tip>
-      Set breakpoints in TypeScript files under `src/`. They work directly without source maps!
+      You can also use `npm run watchd` to run the watch tasks as a daemon that persists across terminal sessions.
     </Tip>
   </Step>
 </Steps>
 
-<CodeGroup>
+## Available Build Scripts
 
-```json .vscode/launch.json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "type": "node",
-      "request": "launch",
-      "name": "VS Code",
-      "runtimeExecutable": "${execPath}",
-      "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}"
-      ],
-      "outFiles": [
-        "${workspaceFolder}/out/**/*.js"
-      ],
-      "presentation": {
-        "group": "1_vscode",
-        "order": 1
-      }
-    }
-  ]
-}
+Here are the most commonly used npm scripts for development:
+
+### Compilation
+
+```bash
+# Compile the entire project
+npm run compile
+
+# Compile just the CLI
+npm run compile-cli
+
+# Compile web version
+npm run compile-web
 ```
 
-```typescript Example: Setting Breakpoints
-// src/vs/workbench/browser/parts/editor/editorPart.ts
-export class EditorPart extends Part {
-  
-  async openEditor(editor: EditorInput, options?: IEditorOptions): Promise<IEditor> {
-    // Set breakpoint here to debug editor opening
-    const group = this.getGroup(options?.group);
-    return group.openEditor(editor, options);
-  }
-}
+### Running VS Code
+
+```bash
+# Launch VS Code (desktop)
+./scripts/code.sh          # Linux/macOS
+.\scripts\code.bat          # Windows
+
+# Launch VS Code Server
+./scripts/code-server.sh   # Linux/macOS
+.\scripts\code-server.bat   # Windows
+
+# Launch VS Code Web
+./scripts/code-web.sh      # Linux/macOS
+.\scripts\code-web.bat      # Windows
 ```
 
-</CodeGroup>
+<Note>
+  The web version runs VS Code in your browser at `http://localhost:8080` by default.
+</Note>
+
+### Testing
+
+```bash
+# Run unit tests (browser)
+npm run test-browser
+
+# Run unit tests (Node.js)
+npm run test-node
+
+# Run extension tests
+npm run test-extension
+
+# Run integration tests
+./scripts/test-integration.sh   # Linux/macOS
+.\scripts\test-integration.bat   # Windows
+```
+
+### Code Quality
+
+```bash
+# Run ESLint
+npm run eslint
+
+# Run hygiene checks
+npm run hygiene
+
+# Check for cyclic dependencies
+npm run check-cyclic-dependencies
+
+# Validate layering architecture
+npm run valid-layers-check
+```
 
 ## Development Container
 
-Use a pre-configured development environment with Docker:
+VS Code includes a development container configuration for easier setup using Docker or GitHub Codespaces.
+
+### Using Dev Containers (Local)
 
 <Steps>
-  <Step title="Prerequisites">
-    Install:
-    - [Docker Desktop](https://www.docker.com/products/docker-desktop)
-    - [VS Code](https://code.visualstudio.com/)
-    - [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+  <Step title="Install Prerequisites">
+    - Install [Docker Desktop](https://www.docker.com/products/docker-desktop)
+    - Install [VS Code](https://code.visualstudio.com/)
+    - Install the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
   </Step>
   
-  <Step title="Open in Container">
+  <Step title="Clone in Container">
     Press `Ctrl/Cmd + Shift + P` and select:
-    **"Dev Containers: Clone Repository in Container Volume..."**
     
-    Enter: `https://github.com/microsoft/vscode`
+    **Dev Containers: Clone Repository in Container Volume...**
+    
+    Enter the repository URL:
+    ```
+    https://github.com/microsoft/vscode
+    ```
   </Step>
   
-  <Step title="Build Inside Container">
-    Once the container starts:
+  <Step title="Build and Run">
+    Once the container is ready, open a terminal and run:
+    
     ```bash
     npm install
     ./scripts/code.sh
     ```
+  </Step>
+</Steps>
+
+### Using GitHub Codespaces
+
+<Steps>
+  <Step title="Create a Codespace">
+    1. Go to the [VS Code repository](https://github.com/microsoft/vscode)
+    2. Click the **Code** dropdown
+    3. Select **Open with Codespaces**
+    4. Click **New codespace**
+    5. Choose **Standard** machine size (4-core, 8GB RAM)
+  </Step>
+  
+  <Step title="Build in Codespace">
+    The Codespace will automatically set up the environment. Once ready:
     
-    Access the desktop environment at:
-    - **Web:** http://localhost:6080
-    - **VNC:** localhost:5901 (password: `vscode`)
+    ```bash
+    npm install
+    ./scripts/code.sh
+    ```
   </Step>
 </Steps>
 
 <Tip>
-  The development container includes all required tools and dependencies pre-installed. Recommended specs: 4 CPU cores and 8 GB RAM.
+  The dev container includes a VNC server for running the graphical VS Code instance. Connect to `localhost:6080` in your browser or use a VNC client on port `5901` with password `vscode`.
 </Tip>
 
-## Build Scripts Reference
+## Debugging VS Code
 
-<AccordionGroup>
-  <Accordion icon="hammer" title="Compilation Scripts">
-    ```bash
-    npm run compile              # Compile all TypeScript sources
-    npm run compile-check-ts     # Type check without emitting
-    npm run compile-web          # Compile for web deployment
-    npm run compile-cli          # Compile CLI separately
-    ```
-  </Accordion>
-  
-  <Accordion icon="rotate" title="Watch Scripts">
-    ```bash
-    npm run watch                # Watch all (recommended)
-    npm run watch-client         # Watch client code only
-    npm run watch-extensions     # Watch extensions only
-    npm run watch-web            # Watch web build
-    ```
-  </Accordion>
-  
-  <Accordion icon="check" title="Validation Scripts">
-    ```bash
-    npm run eslint               # Run ESLint
-    npm run valid-layers-check   # Check architecture layers
-    npm run monaco-compile-check # Validate Monaco editor types
-    npm run hygiene              # Run all code quality checks
-    ```
-  </Accordion>
-  
-  <Accordion icon="vial" title="Test Scripts">
-    ```bash
-    npm run test-node            # Run Node.js unit tests
-    npm run test-browser         # Run browser unit tests
-    npm run test-extension       # Test extensions
-    npm run smoketest            # Run smoke tests
-    ```
-  </Accordion>
-</AccordionGroup>
+VS Code includes launch configurations for debugging:
 
-## Troubleshooting
+1. Open the **Run and Debug** view (`Ctrl/Cmd + Shift + D`)
+2. Select the **VS Code** launch configuration from the dropdown
+3. Press `F5` to start debugging
 
-<AccordionGroup>
-  <Accordion icon="circle-exclamation" title="Build Fails with Node/Python Errors">
-    **Problem:** Native module compilation fails
-    
-    **Solution:**
-    ```bash
-    # Clear node modules and rebuild
-    rm -rf node_modules
-    npm cache clean --force
-    npm install
-    ```
-    
-    Ensure you have the correct toolchain installed (see Prerequisites).
-  </Accordion>
-  
-  <Accordion icon="circle-exclamation" title="VS Code Won't Launch">
-    **Problem:** Application hangs or crashes on startup
-    
-    **Solution:**
-    ```bash
-    # Run with verbose logging
-    ./scripts/code.sh --verbose
-    
-    # Clear user data
-    ./scripts/code.sh --user-data-dir /tmp/vscode-dev
-    ```
-  </Accordion>
-  
-  <Accordion icon="circle-exclamation" title="Watch Mode Not Detecting Changes">
-    **Problem:** Changes don't trigger recompilation
-    
-    **Solution:**
-    ```bash
-    # Restart watch tasks
-    npm run kill-watchd
-    npm run watchd
-    
-    # Or use the daemon manager
-    npm run restart-watchd
-    ```
-  </Accordion>
-  
-  <Accordion icon="circle-exclamation" title="Out of Memory During Build">
-    **Problem:** Build process crashes with heap errors
-    
-    **Solution:**
-    ```bash
-    # Increase Node.js memory limit
-    export NODE_OPTIONS="--max-old-space-size=8192"
-    npm install
-    ```
-  </Accordion>
-</AccordionGroup>
+This will:
+- Compile the source code
+- Launch VS Code with the debugger attached
+- Allow you to set breakpoints and inspect the code
+
+<Warning>
+  If launching times out, you can increase the `timeout` value in the launch configurations found in `.vscode/launch.json`. Running `./scripts/code.sh` first usually resolves timeout issues.
+</Warning>
 
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card
-    title="Architecture Deep Dive"
-    icon="sitemap"
-    href="/architecture/overview"
-  >
-    Learn about VS Code's layered architecture and design patterns
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Learn about platform-specific prerequisites and advanced setup
   </Card>
-  <Card
-    title="Contributing Guidelines"
-    icon="code-pull-request"
-    href="/contributing/guidelines"
-  >
-    Read the guidelines before submitting your first contribution
+  
+  <Card title="Contributing Guide" icon="code-pull-request" href="https://github.com/microsoft/vscode/wiki/How-to-Contribute">
+    Read the full guide on contributing to VS Code
   </Card>
-  <Card
-    title="Build Your Extension"
-    icon="puzzle-piece"
-    href="/api/your-first-extension"
-  >
-    Create your first VS Code extension with the Extension API
+  
+  <Card title="Coding Guidelines" icon="book" href="https://github.com/microsoft/vscode/wiki/Coding-Guidelines">
+    Follow VS Code's coding standards and best practices
   </Card>
-  <Card
-    title="Debugging Guide"
-    icon="bug"
-    href="/building/debugging"
-  >
-    Master debugging techniques for VS Code development
+  
+  <Card title="Architecture Overview" icon="sitemap" href="/introduction#architecture-overview">
+    Understand the layered architecture and codebase structure
   </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** Ask questions on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode) with the `vscode` tag or join the [GitHub Discussions](https://github.com/microsoft/vscode/discussions).
-</Note>
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="npm install fails">
+    Make sure you have the correct Node.js version installed. Check the `engines` field in `package.json` for the required version.
+    
+    Try clearing npm cache:
+    ```bash
+    npm cache clean --force
+    npm install
+    ```
+  </Accordion>
+  
+  <Accordion title="Out of memory errors during build">
+    Increase Node.js memory limit:
+    ```bash
+    export NODE_OPTIONS="--max-old-space-size=8192"
+    npm run compile
+    ```
+  </Accordion>
+  
+  <Accordion title="Electron download fails">
+    The build script automatically downloads Electron. If it fails, check your network connection and proxy settings.
+    
+    You can manually download Electron:
+    ```bash
+    npm run electron
+    ```
+  </Accordion>
+  
+  <Accordion title="scripts/code.sh won't launch">
+    Make sure the script is executable:
+    ```bash
+    chmod +x scripts/code.sh
+    ./scripts/code.sh
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Getting Help
+
+If you encounter issues:
+
+- Check the [FAQ](https://github.com/microsoft/vscode/wiki/FAQ)
+- Search [existing issues](https://github.com/microsoft/vscode/issues)
+- Ask on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode) with the `vscode` tag
+- Join the [VS Code Dev Slack](https://aka.ms/vscode-dev-community)

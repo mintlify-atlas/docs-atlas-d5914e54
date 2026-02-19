@@ -1,0 +1,814 @@
+---
+title: Contribution Model
+description: Understanding how features plug into VS Code through contributions and registries
+icon: 'plug'
+---
+
+## Overview
+
+VS Code uses a **contribution model** where features register themselves in **registries** and **extension points** rather than being hard-coded into the application. This architectural pattern enables:
+
+- Plugin-like architecture for built-in features
+- Dynamic feature loading
+- Clean separation between core and features
+- Consistent API for extensions and built-in features
+
+<Info>
+  Both **built-in features** and **extensions** use the same contribution model, ensuring API consistency.
+</Info>
+
+## Core Concepts
+
+<CardGroup cols={3}>
+  <Card title="Registries" icon="database">
+    Central repositories that collect contributions from different features
+  </Card>
+  <Card title="Contribution Points" icon="map-pin">
+    Specific places where features can contribute functionality
+  </Card>
+  <Card title="Workbench Contributions" icon="briefcase">
+    Lifecycle-aware components that initialize features
+  </Card>
+</CardGroup>
+
+## Workbench Contributions
+
+Workbench contributions are the primary way features integrate into VS Code. They are classes that get instantiated at specific lifecycle phases.
+
+### Registering a Workbench Contribution
+
+```typescript
+// From src/vs/workbench/common/contributions.ts
+import { registerWorkbenchContribution2, WorkbenchPhase } from 'vs/workbench/common/contributions';
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+
+// Define your contribution
+class MyFeatureContribution implements IWorkbenchContribution {
+  constructor(
+    @ILogService private readonly logService: ILogService,
+    @IEditorService private readonly editorService: IEditorService
+  ) {
+    this.initialize();
+  }
+  
+  private initialize(): void {
+    this.logService.info('MyFeature initialized');
+    // Set up listeners, register commands, etc.
+  }
+}
+
+// Register the contribution
+registerWorkbenchContribution2(
+  'workbench.contrib.myfeature',  // Unique ID
+  MyFeatureContribution,           // Class
+  WorkbenchPhase.AfterRestored     // When to instantiate
+);
+```
+
+### Lifecycle Phases
+
+<Tabs>
+  <Tab title="BlockStartup">
+    ```typescript
+    WorkbenchPhase.BlockStartup = LifecyclePhase.Starting
+    ```
+    
+    **Use sparingly!** This phase **blocks** the editor from showing.
+    
+    - Application is starting up
+    - Services are being initialized
+    - No UI is rendered yet
+    
+    <Warning>
+      Contributions in this phase delay the editor from appearing. Only use for truly essential initialization.
+    </Warning>
+  </Tab>
+  
+  <Tab title="BlockRestore">
+    ```typescript
+    WorkbenchPhase.BlockRestore = LifecyclePhase.Ready
+    ```
+    
+    **Use carefully!** This phase **blocks** UI restoration.
+    
+    - Services are ready
+    - Window is about to restore its UI state
+    - Still blocks editor visibility
+    
+    <Warning>
+      Still blocks the editor. Prefer `AfterRestored` or `Eventually` when possible.
+    </Warning>
+  </Tab>
+  
+  <Tab title="AfterRestored">
+    ```typescript
+    WorkbenchPhase.AfterRestored = LifecyclePhase.Restored
+    ```
+    
+    **Recommended for most features!**
+    
+    - UI has been restored
+    - Editor is visible to the user
+    - Views and panels are restored
+    - Instantiated during idle time
+    
+    <Check>
+      This is the default choice for most contributions. The UI is ready and the user can start working.
+    </Check>
+  </Tab>
+  
+  <Tab title="Eventually">
+    ```typescript
+    WorkbenchPhase.Eventually = LifecyclePhase.Eventually
+    ```
+    
+    **Best for non-critical features.**
+    
+    - UI fully restored
+    - 2-5 seconds have passed
+    - Lowest priority initialization
+    - Instantiated during idle time
+    
+    <Check>
+      Perfect for telemetry, analytics, or features that aren't immediately needed.
+    </Check>
+  </Tab>
+</Tabs>
+
+### Real Example: Git Contribution
+
+```typescript
+// From extensions/git/src/main.ts (conceptual)
+import { registerWorkbenchContribution2, WorkbenchPhase } from 'vs/workbench/common/contributions';
+
+class GitContribution implements IWorkbenchContribution {
+  constructor(
+    @IFileService private readonly fileService: IFileService,
+    @IActivityBarService private readonly activityBarService: IActivityBarService,
+    @ISCMService private readonly scmService: ISCMService
+  ) {
+    this.registerGitProvider();
+    this.createGitView();
+  }
+  
+  private registerGitProvider(): void {
+    // Register Git as a source control provider
+    const provider = this.scmService.registerSCMProvider({
+      id: 'git',
+      label: 'Git',
+      // ...
+    });
+  }
+  
+  private createGitView(): void {
+    // Add Git icon to activity bar
+    this.activityBarService.registerActivity({
+      id: 'workbench.view.scm',
+      name: 'Source Control',
+      icon: gitIcon
+    });
+  }
+}
+
+registerWorkbenchContribution2(
+  'workbench.contrib.git',
+  GitContribution,
+  WorkbenchPhase.AfterRestored
+);
+```
+
+## Lazy Contributions
+
+For features that should only load when explicitly requested:
+
+```typescript
+import { ILazyWorkbenchContributionInstantiation } from 'vs/workbench/common/contributions';
+
+class LazyFeatureContribution implements IWorkbenchContribution {
+  constructor(
+    @ILogService private readonly logService: ILogService
+  ) {
+    this.logService.info('LazyFeature loaded!');
+  }
+}
+
+// Register as lazy
+registerWorkbenchContribution2(
+  'workbench.contrib.lazyfeature',
+  LazyFeatureContribution,
+  { lazy: true } as ILazyWorkbenchContributionInstantiation
+);
+
+// Later, explicitly load it:
+import { getWorkbenchContribution } from 'vs/workbench/common/contributions';
+
+const contribution = getWorkbenchContribution<LazyFeatureContribution>(
+  'workbench.contrib.lazyfeature'
+);
+```
+
+## Registry System
+
+Registries are global singletons that collect contributions.
+
+### Using the Registry
+
+```typescript
+// From src/vs/platform/registry/common/platform.ts
+import { Registry } from 'vs/platform/registry/common/platform';
+
+// 1. Define a registry interface
+interface IMyRegistry {
+  registerItem(item: IMyItem): void;
+  getItems(): IMyItem[];
+}
+
+// 2. Create registry implementation
+class MyRegistryImpl implements IMyRegistry {
+  private items: IMyItem[] = [];
+  
+  registerItem(item: IMyItem): void {
+    this.items.push(item);
+  }
+  
+  getItems(): IMyItem[] {
+    return this.items;
+  }
+}
+
+// 3. Define registry extension point
+namespace Extensions {
+  export const MyRegistry = 'my.registry';
+}
+
+// 4. Register the registry
+Registry.add(Extensions.MyRegistry, new MyRegistryImpl());
+
+// 5. Use the registry from anywhere
+const registry = Registry.as<IMyRegistry>(Extensions.MyRegistry);
+registry.registerItem({ name: 'Item 1' });
+```
+
+## Real-World Registry Examples
+
+### Example 1: Action Registry
+
+<Accordion title="Command/Action Registration">
+  ```typescript
+  // From src/vs/platform/actions/common/actions.ts
+  import { MenuRegistry, MenuId } from 'vs/platform/actions/common/actions';
+  
+  // Register a command
+  CommandsRegistry.registerCommand({
+    id: 'myextension.myCommand',
+    handler: (accessor: ServicesAccessor, ...args: any[]) => {
+      const logService = accessor.get(ILogService);
+      logService.info('Command executed!');
+    }
+  });
+  
+  // Add command to a menu
+  MenuRegistry.appendMenuItem(MenuId.EditorContext, {
+    command: {
+      id: 'myextension.myCommand',
+      title: 'My Command'
+    },
+    when: ContextKeyExpr.equals('resourceExtname', '.js'),
+    group: 'navigation'
+  });
+  ```
+</Accordion>
+
+### Example 2: View Container Registry
+
+<Accordion title="View Container Contribution">
+  ```typescript
+  // From src/vs/workbench/common/views.ts
+  import { Registry } from 'vs/platform/registry/common/platform';
+  import { IViewContainersRegistry, Extensions, ViewContainerLocation } from 'vs/workbench/common/views';
+  
+  const viewContainerRegistry = Registry.as<IViewContainersRegistry>(Extensions.ViewContainersRegistry);
+  
+  // Register a new view container (sidebar)
+  const myViewContainer = viewContainerRegistry.registerViewContainer({
+    id: 'myViewContainer',
+    title: 'My View',
+    icon: myIcon,
+    order: 5,
+    ctorDescriptor: new SyncDescriptor(MyViewPaneContainer),
+    storageId: 'myViewContainerState',
+    hideIfEmpty: true
+  }, ViewContainerLocation.Sidebar);
+  
+  // Register views within the container
+  const viewsRegistry = Registry.as<IViewsRegistry>(Extensions.ViewsRegistry);
+  viewsRegistry.registerViews([{
+    id: 'myView',
+    name: 'My View',
+    ctorDescriptor: new SyncDescriptor(MyViewPane),
+    canToggleVisibility: true,
+    canMoveView: true,
+    containerIcon: myIcon
+  }], myViewContainer);
+  ```
+</Accordion>
+
+### Example 3: Configuration Registry
+
+<Accordion title="Settings Contribution">
+  ```typescript
+  // From src/vs/platform/configuration/common/configurationRegistry.ts
+  import { Registry } from 'vs/platform/registry/common/platform';
+  import { IConfigurationRegistry, Extensions } from 'vs/platform/configuration/common/configurationRegistry';
+  
+  const configurationRegistry = Registry.as<IConfigurationRegistry>(Extensions.Configuration);
+  
+  // Register configuration settings
+  configurationRegistry.registerConfiguration({
+    id: 'myextension',
+    order: 20,
+    title: 'My Extension',
+    properties: {
+      'myextension.enabled': {
+        type: 'boolean',
+        default: true,
+        description: 'Enable my extension'
+      },
+      'myextension.timeout': {
+        type: 'number',
+        default: 5000,
+        minimum: 0,
+        description: 'Timeout in milliseconds'
+      },
+      'myextension.mode': {
+        type: 'string',
+        enum: ['auto', 'manual'],
+        default: 'auto',
+        description: 'Operation mode'
+      }
+    }
+  });
+  ```
+</Accordion>
+
+### Example 4: Editor Actions
+
+<Accordion title="Editor Action Contribution">
+  ```typescript
+  // From src/vs/editor/browser/editorExtensions.ts
+  import { registerEditorAction, EditorAction } from 'vs/editor/browser/editorExtensions';
+  import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
+  
+  class MyEditorAction extends EditorAction {
+    constructor() {
+      super({
+        id: 'editor.action.myAction',
+        label: 'My Action',
+        alias: 'My Action',
+        precondition: undefined,
+        kbOpts: {
+          kbExpr: EditorContextKeys.editorTextFocus,
+          primary: KeyMod.CtrlCmd | KeyCode.KEY_M,
+          weight: KeybindingWeight.EditorContrib
+        }
+      });
+    }
+    
+    async run(accessor: ServicesAccessor, editor: ICodeEditor): Promise<void> {
+      const model = editor.getModel();
+      if (!model) {
+        return;
+      }
+      
+      const selection = editor.getSelection();
+      const text = model.getValueInRange(selection);
+      
+      // Do something with the text
+      const logService = accessor.get(ILogService);
+      logService.info('Selected text:', text);
+    }
+  }
+  
+  registerEditorAction(MyEditorAction);
+  ```
+</Accordion>
+
+## Extension Contribution Points
+
+Extensions contribute through `package.json` contribution points:
+
+```json
+// From extensions/git/package.json
+{
+  "name": "git",
+  "contributes": {
+    "commands": [
+      {
+        "command": "git.clone",
+        "title": "Clone",
+        "category": "Git",
+        "icon": "$(repo-clone)"
+      },
+      {
+        "command": "git.commit",
+        "title": "Commit",
+        "category": "Git",
+        "icon": "$(check)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "git.clone",
+          "when": "config.git.enabled"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "git.commit",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ]
+    },
+    "views": {
+      "scm": [
+        {
+          "id": "git.changes",
+          "name": "Changes",
+          "when": "scmProvider == git"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "git.changes",
+        "contents": "No changes found.\n[Initialize Repository](command:git.init)"
+      }
+    ],
+    "configuration": {
+      "title": "Git",
+      "properties": {
+        "git.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Git integration"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "git.commit",
+        "key": "ctrl+shift+g c",
+        "when": "scmProvider == git"
+      }
+    ]
+  }
+}
+```
+
+## How Extension Contributions are Processed
+
+<Steps>
+  <Step title="Extension Activation">
+    When an extension activates, VS Code reads its `package.json`:
+    
+    ```typescript
+    // VS Code reads the extension manifest
+    const manifest = await readExtensionManifest(extensionPath);
+    const contributions = manifest.contributes;
+    ```
+  </Step>
+  
+  <Step title="Register Contributions">
+    Each contribution point is processed and registered:
+    
+    ```typescript
+    // Commands
+    if (contributions.commands) {
+      contributions.commands.forEach(command => {
+        CommandsRegistry.registerCommand({
+          id: command.command,
+          handler: createExtensionCommandHandler(extension, command)
+        });
+      });
+    }
+    
+    // Menus
+    if (contributions.menus) {
+      Object.keys(contributions.menus).forEach(menuId => {
+        contributions.menus[menuId].forEach(menuItem => {
+          MenuRegistry.appendMenuItem(
+            getMenuId(menuId),
+            menuItem
+          );
+        });
+      });
+    }
+    ```
+  </Step>
+  
+  <Step title="Activate Extension Code">
+    The extension's `activate()` function is called:
+    
+    ```typescript
+    // In extension code (extensions/git/src/main.ts)
+    export function activate(context: vscode.ExtensionContext) {
+      // Set up command handlers
+      context.subscriptions.push(
+        vscode.commands.registerCommand('git.clone', async () => {
+          // Implementation
+        })
+      );
+      
+      // Create views
+      const provider = new GitContentProvider();
+      context.subscriptions.push(
+        vscode.window.registerTreeDataProvider('git.changes', provider)
+      );
+    }
+    ```
+  </Step>
+  
+  <Step title="Integration Complete">
+    The extension is now fully integrated:
+    - Commands appear in Command Palette
+    - Menu items appear in context menus
+    - Views appear in activity bar
+    - Keybindings are active
+    - Settings are available
+  </Step>
+</Steps>
+
+## Context Keys & When Clauses
+
+Contributions can be conditionally shown using **when clauses** with context keys:
+
+<Tabs>
+  <Tab title="Built-in Context Keys">
+    ```typescript
+    // Editor state
+    editorFocus
+    editorTextFocus
+    editorReadonly
+    editorHasSelection
+    editorLangId == 'typescript'
+    
+    // Resource state
+    resourceExtname == '.js'
+    resourceScheme == 'file'
+    resourceDirname
+    
+    // View state
+    view == 'explorer'
+    viewItem == 'file'
+    
+    // Configuration
+    config.editor.fontSize > 14
+    config.git.enabled
+    ```
+  </Tab>
+  
+  <Tab title="Custom Context Keys">
+    ```typescript
+    import { IContextKeyService, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
+    
+    // Define a custom context key
+    const MY_CONTEXT_KEY = new RawContextKey<boolean>('myextension.active', false);
+    
+    class MyFeature {
+      constructor(
+        @IContextKeyService private readonly contextKeyService: IContextKeyService
+      ) {
+        // Set the context key
+        const contextKey = MY_CONTEXT_KEY.bindTo(this.contextKeyService);
+        contextKey.set(true);
+      }
+    }
+    
+    // Use in contribution
+    MenuRegistry.appendMenuItem(MenuId.EditorContext, {
+      command: { id: 'mycommand', title: 'My Command' },
+      when: ContextKeyExpr.equals('myextension.active', true)
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Complex Expressions">
+    ```typescript
+    import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
+    
+    // AND
+    ContextKeyExpr.and(
+      ContextKeyExpr.equals('editorLangId', 'typescript'),
+      ContextKeyExpr.has('editorTextFocus')
+    )
+    
+    // OR
+    ContextKeyExpr.or(
+      ContextKeyExpr.equals('resourceExtname', '.js'),
+      ContextKeyExpr.equals('resourceExtname', '.ts')
+    )
+    
+    // NOT
+    ContextKeyExpr.not('editorReadonly')
+    
+    // GREATER THAN
+    ContextKeyExpr.greater('config.editor.fontSize', 14)
+    
+    // Complex
+    ContextKeyExpr.and(
+      ContextKeyExpr.equals('view', 'explorer'),
+      ContextKeyExpr.or(
+        ContextKeyExpr.equals('viewItem', 'file'),
+        ContextKeyExpr.equals('viewItem', 'folder')
+      ),
+      ContextKeyExpr.not('resourceReadonly')
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Choose the Right Phase" icon="clock">
+    Use `AfterRestored` or `Eventually` for most features. Avoid blocking phases unless absolutely necessary.
+  </Card>
+  
+  <Card title="Lazy Load When Possible" icon="bolt">
+    Use lazy contributions or late activation to minimize startup time.
+  </Card>
+  
+  <Card title="Use Context Keys" icon="key">
+    Make contributions contextual using `when` clauses to reduce clutter.
+  </Card>
+  
+  <Card title="Dispose Properly" icon="trash">
+    Always dispose listeners and registrations to prevent memory leaks.
+  </Card>
+  
+  <Card title="Follow Conventions" icon="list-check">
+    Use consistent naming: `workbench.contrib.<feature>` for contribution IDs.
+  </Card>
+  
+  <Card title="Test Contribution Lifecycle" icon="flask">
+    Ensure your contribution works across all lifecycle phases.
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+<AccordionGroup>
+  <Accordion title="Feature with Commands & Views">
+    ```typescript
+    class MyFeatureContribution implements IWorkbenchContribution {
+      constructor(
+        @ICommandService private readonly commandService: ICommandService,
+        @IViewsService private readonly viewsService: IViewsService
+      ) {
+        this.registerCommands();
+        this.registerViews();
+      }
+      
+      private registerCommands(): void {
+        CommandsRegistry.registerCommand('myfeature.action', () => {
+          // Command implementation
+        });
+      }
+      
+      private registerViews(): void {
+        const viewDescriptor = {
+          id: 'myfeature.view',
+          name: 'My Feature',
+          ctorDescriptor: new SyncDescriptor(MyViewPane)
+        };
+        
+        Registry.as<IViewsRegistry>(Extensions.ViewsRegistry)
+          .registerViews([viewDescriptor], myViewContainer);
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Feature with Configuration">
+    ```typescript
+    class ConfigurableFeature implements IWorkbenchContribution {
+      constructor(
+        @IConfigurationService private readonly configService: IConfigurationService
+      ) {
+        // Register configuration
+        this.registerConfiguration();
+        
+        // Listen for changes
+        this.configService.onDidChangeConfiguration(e => {
+          if (e.affectsConfiguration('myfeature')) {
+            this.reloadConfiguration();
+          }
+        });
+        
+        this.initialize();
+      }
+      
+      private registerConfiguration(): void {
+        Registry.as<IConfigurationRegistry>(ConfigExtensions.Configuration)
+          .registerConfiguration({
+            id: 'myfeature',
+            properties: {
+              'myfeature.enabled': {
+                type: 'boolean',
+                default: true
+              }
+            }
+          });
+      }
+      
+      private initialize(): void {
+        const enabled = this.configService.getValue<boolean>('myfeature.enabled');
+        if (enabled) {
+          this.start();
+        }
+      }
+      
+      private reloadConfiguration(): void {
+        // Handle configuration changes
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Feature with Activity Bar">
+    ```typescript
+    class SidebarFeature extends Disposable implements IWorkbenchContribution {
+      constructor(
+        @IActivityBarService private readonly activityBarService: IActivityBarService,
+        @IPaneCompositePartService private readonly paneCompositeService: IPaneCompositePartService
+      ) {
+        super();
+        this.createActivityBarItem();
+      }
+      
+      private createActivityBarItem(): void {
+        const disposable = this.activityBarService.registerActivity({
+          id: 'workbench.view.myfeature',
+          name: 'My Feature',
+          icon: myIcon,
+          keybindingId: 'workbench.view.myfeature.focus'
+        });
+        
+        this._register(disposable);
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Debugging Contributions
+
+<Steps>
+  <Step title="Check Registration">
+    Verify your contribution is registered:
+    
+    ```typescript
+    // In browser console
+    Registry.as(Extensions.Workbench).instancesById.has('workbench.contrib.myfeature')
+    ```
+  </Step>
+  
+  <Step title="Check Lifecycle Phase">
+    Ensure the lifecycle phase has been reached:
+    
+    ```typescript
+    // Check current phase
+    accessor.get(ILifecycleService).phase >= LifecyclePhase.Restored
+    ```
+  </Step>
+  
+  <Step title="Check Context Keys">
+    Debug when clauses:
+    
+    ```typescript
+    // Evaluate context key
+    accessor.get(IContextKeyService).getContextKeyValue('mykey')
+    ```
+  </Step>
+  
+  <Step title="Enable Tracing">
+    Use VS Code's tracing for contribution loading:
+    
+    ```bash
+    code --trace-startup
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture Overview" icon="building" href="./architecture">
+    Back to architecture overview
+  </Card>
+  <Card title="Dependency Injection" icon="syringe" href="./dependency-injection">
+    Learn about the DI system
+  </Card>
+</CardGroup>

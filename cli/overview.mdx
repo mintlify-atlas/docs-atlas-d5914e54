@@ -1,0 +1,154 @@
+---
+title: CLI Overview
+description: Understanding the Visual Studio Code command-line interface
+---
+
+The Visual Studio Code CLI is a powerful command-line interface that provides programmatic access to VS Code functionality, enabling developers to automate workflows, manage extensions, and set up remote development environments.
+
+## What is the VS Code CLI?
+
+The VS Code CLI is a standalone tool built in Rust (located in the `cli/` directory of the source code) that provides a fast, efficient interface to VS Code features. It's designed to be both a standalone executable and an integrated component of the VS Code desktop application.
+
+### Key Characteristics
+
+- **Built in Rust**: The CLI is implemented in Rust for performance and reliability
+- **Dual Mode**: Operates as both an integrated CLI (shipped with VS Code) and a standalone binary
+- **Cross-Platform**: Supports Windows, macOS, and Linux with platform-specific optimizations
+- **Modern Architecture**: Uses async/await with Tokio for efficient I/O operations
+
+## Main Use Cases
+
+The VS Code CLI serves several primary purposes:
+
+### 1. Opening Files and Folders
+
+Quickly open files, folders, or workspaces directly from the command line.
+
+```bash
+# Open a file
+code myfile.txt
+
+# Open a folder
+code /path/to/project
+
+# Open multiple files
+code file1.js file2.js
+
+# Compare two files
+code --diff file1.txt file2.txt
+```
+
+### 2. Extension Management
+
+Install, uninstall, update, and manage VS Code extensions without opening the GUI.
+
+```bash
+# Install an extension
+code ext install ms-python.python
+
+# List installed extensions
+code ext list
+
+# Uninstall an extension
+code ext uninstall publisher.extension-name
+
+# Update all extensions
+code ext update
+```
+
+### 3. Server Mode
+
+Run VS Code as a server for remote development scenarios, enabling browser-based access to your development environment.
+
+```bash
+# Start a local web server
+code serve-web --port 8000
+
+# Run the server with authentication
+code serve-web --connection-token mytoken
+```
+
+### 4. Remote Tunneling
+
+Create secure tunnels to access your VS Code instance from anywhere, enabling truly remote development through vscode.dev.
+
+```bash
+# Start a tunnel
+code tunnel
+
+# Name your tunnel for easy identification
+code tunnel --name my-dev-machine
+
+# Check tunnel status
+code tunnel status
+```
+
+## CLI Modes
+
+The VS Code CLI operates in two distinct modes:
+
+<Tabs>
+  <Tab title="Integrated CLI">
+    The integrated CLI is bundled with VS Code installations and includes full desktop editor capabilities. It can launch the VS Code GUI and access all editor features.
+
+    ```bash
+    # Typical installation path
+    # macOS: /Applications/Visual Studio Code.app/Contents/Resources/app/bin/code
+    # Linux: /usr/bin/code
+    # Windows: C:\Program Files\Microsoft VS Code\bin\code.cmd
+    ```
+  </Tab>
+  <Tab title="Standalone CLI">
+    The standalone CLI is a lightweight binary that can be downloaded independently. It's ideal for server environments and CI/CD pipelines where the full desktop application isn't needed.
+
+    Key differences:
+    - No GUI dependencies
+    - Smaller footprint
+    - Optimized for headless environments
+    - Can still manage tunnels and servers
+  </Tab>
+</Tabs>
+
+## Architecture
+
+The CLI is structured around several core components:
+
+- **Command Router** (`src/bin/code/main.rs`): Entry point that dispatches commands
+- **Commands Module** (`src/commands/`): Implementation of all CLI commands
+- **Tunnels Module** (`src/tunnels/`): Remote development and tunneling functionality
+- **Desktop Module** (`src/desktop/`): Integration with the desktop VS Code application
+- **Auth Module** (`src/auth.rs`): Authentication for remote services
+
+## Common Workflows
+
+<CardGroup cols={2}>
+  <Card title="Quick Editing" icon="pen-to-square">
+    Open files instantly for editing from your terminal
+  </Card>
+  <Card title="Remote Development" icon="cloud">
+    Connect to remote machines and develop from anywhere
+  </Card>
+  <Card title="Extension Automation" icon="puzzle-piece">
+    Automate extension management in CI/CD pipelines
+  </Card>
+  <Card title="Version Control" icon="code-branch">
+    Integrate with git workflows and diff files easily
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/cli/installation">
+    Learn how to install and configure the CLI
+  </Card>
+  <Card title="Commands Reference" icon="terminal" href="/cli/commands">
+    Explore all available CLI commands
+  </Card>
+  <Card title="Server Mode" icon="server" href="/cli/server-mode">
+    Set up remote development with tunnels
+  </Card>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/microsoft/vscode">
+    View the source code on GitHub
+  </Card>
+</CardGroup>

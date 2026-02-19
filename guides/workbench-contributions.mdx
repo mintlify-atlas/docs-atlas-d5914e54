@@ -1,0 +1,514 @@
+---
+title: Workbench Contributions
+description: Learn how to add features to the VS Code workbench by creating contributions
+---
+
+Workbench contributions are the primary way to add features to VS Code's core. They integrate deeply with the workbench, going beyond what the Extension API provides.
+
+## Understanding Contributions
+
+Contributions in VS Code follow a registration pattern where features register themselves with the workbench during startup.
+
+<Note>
+Workbench contributions are for VS Code core development. If you're building an extension, use the [Extension API](/guides/extension-development) instead.
+</Note>
+
+## Contribution Structure
+
+### Location and Organization
+
+Contributions live in `src/vs/workbench/contrib/`:
+
+```
+src/vs/workbench/contrib/
+├── accessibility/          # Accessibility features
+├── authentication/         # Authentication providers
+├── debug/                  # Debug functionality
+├── files/                  # File explorer and file operations
+├── search/                 # Search functionality
+├── terminal/              # Integrated terminal
+├── git/                   # Git integration (now mostly an extension)
+└── ...
+```
+
+Each contribution typically contains:
+
+```
+myFeature/
+├── browser/
+│   ├── myFeature.ts                    # Main feature implementation
+│   ├── myFeature.contribution.ts       # Registration and wiring
+│   └── myFeatureCommands.ts           # Command implementations
+├── common/
+│   ├── myFeature.ts                    # Platform-agnostic code
+│   └── myFeatureService.ts            # Service interface
+└── test/
+    └── myFeature.test.ts              # Unit tests
+```
+
+<Tip>
+Follow the layered architecture: `common/` for platform-agnostic code, `browser/` for browser/desktop code, `electron-sandbox/` for Electron-specific code.
+</Tip>
+
+## Creating a Contribution
+
+### Step 1: Create the Contribution File
+
+The `.contribution.ts` file is the entry point:
+
+```typescript src/vs/workbench/contrib/myFeature/browser/myFeature.contribution.ts
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { 
+  IWorkbenchContributionsRegistry, 
+  Extensions as WorkbenchExtensions,
+  registerWorkbenchContribution2,
+  WorkbenchPhase
+} from '../../../common/contributions.js';
+import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
+import { MyFeatureContribution } from './myFeature.js';
+import { registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { MyFeatureAction } from './myFeatureActions.js';
+
+// Register the workbench contribution
+const workbenchRegistry = Registry.as<IWorkbenchContributionsRegistry>(
+  WorkbenchExtensions.Workbench
+);
+
+workbenchRegistry.registerWorkbenchContribution(
+  MyFeatureContribution,
+  LifecyclePhase.Restored  // When to instantiate
+);
+
+// Or use the newer API with WorkbenchPhase
+registerWorkbenchContribution2(
+  MyFeatureContribution.ID,
+  MyFeatureContribution,
+  WorkbenchPhase.AfterRestored
+);
+
+// Register actions
+registerAction2(MyFeatureAction);
+```
+
+### Step 2: Implement the Contribution
+
+```typescript src/vs/workbench/contrib/myFeature/browser/myFeature.ts
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import { IWorkbenchContribution } from '../../../common/contributions.js';
+import { IMyService } from '../../../../platform/myService/common/myService.js';
+
+export class MyFeatureContribution extends Disposable implements IWorkbenchContribution {
+  
+  static readonly ID = 'workbench.contrib.myFeature';
+  
+  constructor(
+    @IMyService private readonly myService: IMyService
+  ) {
+    super();
+    
+    // Initialize your contribution
+    this._register(this.myService.onDidChange(() => {
+      // React to service changes
+    }));
+  }
+}
+```
+
+<Warning>
+Always extend `Disposable` and use `this._register()` to register disposables. This prevents memory leaks.
+</Warning>
+
+## Registering Actions and Commands
+
+### Registering Actions
+
+Actions are the primary way to add commands with keybindings and menu items:
+
+```typescript src/vs/workbench/contrib/myFeature/browser/myFeatureActions.ts
+import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
+import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
+import * as nls from '../../../../nls.js';
+
+export class MyFeatureAction extends Action2 {
+  
+  static readonly ID = 'workbench.action.myFeature';
+  
+  constructor() {
+    super({
+      id: MyFeatureAction.ID,
+      title: nls.localize2('myFeature', "My Feature"),
+      category: nls.localize2('myCategory', "My Category"),
+      f1: true,  // Show in command palette
+      keybinding: {
+        weight: KeybindingWeight.WorkbenchContrib,
+        primary: KeyMod.CtrlCmd | KeyCode.KeyM
+      },
+      menu: {
+        id: MenuId.CommandPalette,
+        when: ContextKeyExpr.equals('resourceScheme', 'file')
+      }
+    });
+  }
+  
+  async run(accessor: ServicesAccessor): Promise<void> {
+    const myService = accessor.get(IMyService);
+    await myService.doSomething();
+  }
+}
+
+// Register the action
+registerAction2(MyFeatureAction);
+```
+
+### Action Properties
+
+<AccordionGroup>
+  <Accordion title="Basic Properties">
+    ```typescript
+    {
+      id: 'workbench.action.myAction',
+      title: nls.localize2('title', "My Action"),
+      category: nls.localize2('category', "Category"),
+      f1: true,  // Show in Command Palette
+      icon: Codicon.symbolField,  // Icon for menus
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Keybindings">
+    ```typescript
+    {
+      keybinding: {
+        weight: KeybindingWeight.WorkbenchContrib,
+        primary: KeyMod.CtrlCmd | KeyCode.KeyS,
+        secondary: [KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyS],
+        mac: {
+          primary: KeyMod.WinCtrl | KeyCode.KeyS
+        },
+        when: ContextKeyExpr.and(
+          EditorContextKeys.textFocus,
+          EditorContextKeys.writable
+        )
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Menu Placement">
+    ```typescript
+    {
+      menu: [
+        {
+          id: MenuId.CommandPalette,
+          when: ContextKeyExpr.equals('view', 'explorer')
+        },
+        {
+          id: MenuId.EditorContext,
+          group: 'navigation',
+          order: 1
+        },
+        {
+          id: MenuId.ExplorerContext,
+          group: 'myGroup@1'
+        }
+      ]
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Using Commands Registry
+
+For simpler commands without all the action features:
+
+```typescript
+import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
+import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+
+CommandsRegistry.registerCommand(
+  'myFeature.command',
+  async (accessor: ServicesAccessor, ...args: any[]) => {
+    const myService = accessor.get(IMyService);
+    return myService.execute(args);
+  }
+);
+```
+
+<Tip>
+Use `Action2` when you need keybindings, menus, or Command Palette integration. Use `CommandsRegistry` for internal commands.
+</Tip>
+
+## Adding UI Elements
+
+### Creating a View Container
+
+Add a new sidebar icon:
+
+```typescript
+import { 
+  ViewContainer, 
+  IViewContainersRegistry, 
+  Extensions as ViewContainerExtensions,
+  ViewContainerLocation 
+} from '../../../common/views.js';
+import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
+import { MyViewPane } from './myViewPane.js';
+
+const VIEW_CONTAINER: ViewContainer = Registry.as<IViewContainersRegistry>(
+  ViewContainerExtensions.ViewContainersRegistry
+).registerViewContainer({
+  id: 'myFeature',
+  title: nls.localize2('myFeature', "My Feature"),
+  icon: Codicon.symbolField,
+  order: 2,
+  ctorDescriptor: new SyncDescriptor(MyViewPaneContainer),
+  storageId: 'myFeatureViewState'
+}, ViewContainerLocation.Sidebar);
+```
+
+### Registering a Tree View
+
+```typescript
+import { 
+  IViewsRegistry, 
+  Extensions as ViewExtensions 
+} from '../../../common/views.js';
+import { ITreeViewDescriptor } from '../../../browser/parts/views/views.js';
+
+const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+viewsRegistry.registerViews([{
+  id: 'myFeature.view',
+  name: nls.localize2('myView', "My View"),
+  canToggleVisibility: true,
+  ctorDescriptor: new SyncDescriptor(MyTreeView),
+  canMoveView: true,
+  containerIcon: Codicon.symbolField,
+  order: 1
+}], VIEW_CONTAINER);
+```
+
+### Creating a Custom View
+
+```typescript src/vs/workbench/contrib/myFeature/browser/myTreeView.ts
+import { IViewPaneOptions, ViewPane } from '../../../browser/parts/views/viewPane.js';
+import { ITreeView, ITreeViewDataProvider } from '../../../common/views.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+
+export class MyTreeView extends ViewPane {
+  
+  constructor(
+    options: IViewPaneOptions,
+    @IKeybindingService keybindingService: IKeybindingService,
+    @IContextMenuService contextMenuService: IContextMenuService,
+    @IConfigurationService configurationService: IConfigurationService,
+    @IContextKeyService contextKeyService: IContextKeyService,
+    @IInstantiationService instantiationService: IInstantiationService
+  ) {
+    super(options, keybindingService, contextMenuService, configurationService, contextKeyService);
+  }
+  
+  protected renderBody(container: HTMLElement): void {
+    // Render your view content
+    container.innerText = 'My custom view';
+  }
+  
+  protected layoutBody(height: number, width: number): void {
+    // Handle layout changes
+  }
+}
+```
+
+## Real-World Examples
+
+### File Explorer Contribution
+
+The Files contribution demonstrates command registration:
+
+```typescript src/vs/workbench/contrib/files/browser/fileActions.contribution.ts (excerpt)
+import { registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
+
+// Register global actions
+registerAction2(FocusFilesExplorer);
+registerAction2(ShowActiveFileInExplorer);
+
+// Register keyboard shortcuts with handlers
+const RENAME_ID = 'renameFile';
+KeybindingsRegistry.registerCommandAndKeybindingRule({
+  id: RENAME_ID,
+  weight: KeybindingWeight.WorkbenchContrib,
+  when: ContextKeyExpr.and(
+    FilesExplorerFocusCondition,
+    ExplorerRootContext.toNegated()
+  ),
+  primary: KeyCode.F2,
+  mac: { primary: KeyCode.Enter },
+  handler: renameHandler
+});
+```
+
+### Accessibility Contribution
+
+The Accessibility contribution shows service registration:
+
+```typescript src/vs/workbench/contrib/accessibility/browser/accessibility.contribution.ts (excerpt)
+import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
+import { Registry } from '../../../../platform/registry/common/platform.js';
+import { 
+  IWorkbenchContributionsRegistry, 
+  Extensions as WorkbenchExtensions 
+} from '../../../common/contributions.js';
+
+// Register singleton services
+registerSingleton(
+  IAccessibleViewService,
+  AccessibleViewService,
+  InstantiationType.Delayed
+);
+
+// Register multiple contributions with different lifecycle phases
+const workbenchRegistry = Registry.as<IWorkbenchContributionsRegistry>(
+  WorkbenchExtensions.Workbench
+);
+
+workbenchRegistry.registerWorkbenchContribution(
+  EditorAccessibilityHelpContribution,
+  LifecyclePhase.Eventually
+);
+
+workbenchRegistry.registerWorkbenchContribution(
+  UnfocusedViewDimmingContribution,
+  LifecyclePhase.Restored
+);
+
+// Use newer registration API
+registerWorkbenchContribution2(
+  AccessibilityStatus.ID,
+  AccessibilityStatus,
+  WorkbenchPhase.BlockRestore
+);
+```
+
+<Note>
+The accessibility contribution demonstrates both the older (`registerWorkbenchContribution`) and newer (`registerWorkbenchContribution2`) APIs.
+</Note>
+
+## Lifecycle Phases
+
+Choose the right phase for your contribution:
+
+| Phase | When | Use For |
+|-------|------|---------|
+| `BlockStartup` | Very early, blocks startup | Critical infrastructure |
+| `BlockRestore` | Before window restore | Essential UI components |
+| `AfterRestored` | After restore complete | Most features |
+| `Eventually` | When idle | Non-critical features |
+
+```typescript
+// Old API
+LifecyclePhase.Starting       // Very early
+LifecyclePhase.Ready          // Workbench created
+LifecyclePhase.Restored       // Window restored
+LifecyclePhase.Eventually     // When idle
+
+// New API
+WorkbenchPhase.BlockStartup
+WorkbenchPhase.BlockRestore
+WorkbenchPhase.AfterRestored
+WorkbenchPhase.Eventually
+```
+
+<Warning>
+Use later phases when possible. Early-phase contributions slow down VS Code startup.
+</Warning>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Dispose Resources" icon="trash">
+    Always register disposables with `this._register()` to prevent memory leaks
+  </Card>
+  
+  <Card title="Use Services" icon="gears">
+    Inject services via constructor parameters rather than accessing globals
+  </Card>
+  
+  <Card title="Localize Strings" icon="language">
+    Use `nls.localize()` for all user-facing strings
+  </Card>
+  
+  <Card title="Context Keys" icon="key">
+    Use context keys to conditionally enable commands and UI
+  </Card>
+</CardGroup>
+
+### Code Quality Checklist
+
+- [ ] Extends `Disposable` and uses `this._register()`
+- [ ] All user-facing strings localized with `nls.localize2()`
+- [ ] Services injected via constructor (not accessed globally)
+- [ ] Context keys used for conditional behavior
+- [ ] Appropriate lifecycle phase selected
+- [ ] Copyright header included
+- [ ] Follows coding guidelines (tabs, naming conventions)
+
+## Exploring Contributions
+
+Study these contributions in the VS Code source:
+
+<AccordionGroup>
+  <Accordion title="Simple Contributions">
+    - `accessibility/` - Service registration and UI contributions
+    - `bracketPairColorizer2Telemetry/` - Minimal contribution with telemetry
+  </Accordion>
+  
+  <Accordion title="Complex Contributions">
+    - `debug/` - Full debug functionality with UI, commands, and services
+    - `search/` - Search functionality with custom views
+    - `terminal/` - Integrated terminal with process management
+    - `files/` - File explorer, file operations, and commands
+  </Accordion>
+  
+  <Accordion title="Learning Resources">
+    Look at the `.contribution.ts` files first to understand how features are wired up, then explore the implementation files.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+- Learn about [service implementation](/guides/service-implementation) to create reusable services
+- Review the [dependency injection](/concepts/dependency-injection) system
+- Explore [contribution points](/concepts/contribution-model) in detail
+- Study real contributions in `src/vs/workbench/contrib/`
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Architecture Overview" icon="sitemap" href="/concepts/architecture">
+    Understand VS Code's architecture
+  </Card>
+  
+  <Card title="Workbench Layer" icon="layer-group" href="/architecture/workbench">
+    Deep dive into the workbench
+  </Card>
+  
+  <Card title="Coding Guidelines" icon="code" href="/development/coding-guidelines">
+    VS Code coding standards
+  </Card>
+  
+  <Card title="Service Implementation" icon="gears" href="/guides/service-implementation">
+    Create platform services
+  </Card>
+</CardGroup>

@@ -1,675 +1,683 @@
 ---
 title: "Installation Guide"
-description: "Complete installation instructions for building VS Code from source on Windows, macOS, and Linux"
+description: "Comprehensive installation guide for building VS Code from source on Windows, macOS, and Linux"
 ---
 
-## Overview
+# Installation Guide
 
-This guide covers installing prerequisites and building Visual Studio Code from source on all supported platforms. For end-user installation of the pre-built VS Code application, visit [code.visualstudio.com](https://code.visualstudio.com/download).
+This guide covers the prerequisites and platform-specific setup required to build Visual Studio Code from source.
 
-<Note>
-  Building from source is primarily for contributors, extension developers, and those who want to understand VS Code's internals. Most users should download the pre-built binaries.
-</Note>
-
-## Platform-Specific Instructions
-
-Choose your operating system:
-
-<Tabs>
-  <Tab title="Windows">
-    
-### Windows Installation
-
-<Steps>
-  <Step title="Install Node.js and npm">
-    Download and install Node.js 20.x or later from [nodejs.org](https://nodejs.org).
-    
-    ```powershell
-    # Verify installation
-    node --version  # Should output v20.x.x or higher
-    npm --version   # Should output 10.x.x or higher
-    ```
-  </Step>
-  
-  <Step title="Install Git">
-    Download and install Git from [git-scm.com](https://git-scm.com).
-    
-    ```powershell
-    # Verify installation
-    git --version  # Should output 2.x.x or higher
-    ```
-    
-    <Tip>
-      During installation, select **"Git from the command line and also from 3rd-party software"** to ensure Git is in your PATH.
-    </Tip>
-  </Step>
-  
-  <Step title="Install Visual Studio 2022">
-    Install **Visual Studio 2022** (Community, Professional, or Enterprise) with:
-    - **"Desktop development with C++"** workload
-    - Windows 10 SDK (10.0.17763.0 or higher)
-    
-    Download from [visualstudio.microsoft.com](https://visualstudio.microsoft.com/downloads/)
-    
-    <Note>
-      Visual Studio Code is different from Visual Studio. You need Visual Studio (the IDE) to compile native Node.js modules.
-    </Note>
-  </Step>
-  
-  <Step title="Install Python">
-    Download and install Python 3.11 or later from [python.org](https://www.python.org/downloads/).
-    
-    ```powershell
-    # Verify installation
-    python --version  # Should output 3.11.x or higher
-    ```
-    
-    <Warning>
-      Check **"Add Python to PATH"** during installation.
-    </Warning>
-  </Step>
-  
-  <Step title="Clone and Build">
-    Open PowerShell or Command Prompt:
-    
-    ```powershell
-    # Clone repository
-    git clone https://github.com/microsoft/vscode.git
-    cd vscode
-    
-    # Initialize submodules
-    git submodule update --init --recursive
-    
-    # Install dependencies (15-20 minutes)
-    npm install
-    
-    # Run VS Code
-    .\scripts\code.bat
-    ```
-  </Step>
-</Steps>
-
-### Windows-Specific Build Options
-
-<CodeGroup>
-
-```powershell Build for Windows
-# Standard build
-npm run compile
-
-# Build with gulp
-npm run gulp compile-build
-
-# Create Windows installer
-npm run gulp vscode-win32-x64
-```
-
-```powershell Environment Variables
-# Set Node.js memory limit
-$env:NODE_OPTIONS = "--max-old-space-size=8192"
-
-# Set Python path explicitly
-$env:PYTHON = "C:\Python311\python.exe"
-
-# Use specific MSBuild version
-$env:MSBUILD_PATH = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
-```
-
-</CodeGroup>
-
-### Troubleshooting Windows Builds
-
-<AccordionGroup>
-  <Accordion icon="exclamation-triangle" title="MSBuild Not Found">
-    **Error:** `Cannot find MSBuild.exe`
-    
-    **Solution:** Add MSBuild to PATH or set explicitly:
-    ```powershell
-    $env:PATH += ";C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin"
-    ```
-  </Accordion>
-  
-  <Accordion icon="exclamation-triangle" title="Native Module Build Failures">
-    **Error:** `node-gyp rebuild failed`
-    
-    **Solution:** Configure node-gyp with Visual Studio:
-    ```powershell
-    npm config set msvs_version 2022
-    npm config set python C:\Python311\python.exe
-    npm install --global windows-build-tools
-    ```
-  </Accordion>
-</AccordionGroup>
-
-  </Tab>
-  
-  <Tab title="macOS">
-    
-### macOS Installation
-
-<Steps>
-  <Step title="Install Xcode Command Line Tools">
-    Install the Xcode Command Line Tools (includes Git and compilers):
-    
-    ```bash
-    xcode-select --install
-    ```
-    
-    Verify installation:
-    ```bash
-    xcode-select -p  # Should output /Library/Developer/CommandLineTools
-    git --version    # Should output 2.x.x or higher
-    ```
-  </Step>
-  
-  <Step title="Install Homebrew (Optional)">
-    Install Homebrew package manager:
-    
-    ```bash
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    ```
-    
-    <Tip>
-      Homebrew makes installing Node.js and other tools easier.
-    </Tip>
-  </Step>
-  
-  <Step title="Install Node.js">
-    Install Node.js 20.x or later:
-    
-    <Tabs>
-      <Tab title="Using Homebrew">
-        ```bash
-        brew install node@20
-        ```
-      </Tab>
-      <Tab title="Using Official Installer">
-        Download from [nodejs.org](https://nodejs.org) and run the installer.
-      </Tab>
-      <Tab title="Using nvm">
-        ```bash
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-        nvm install 20
-        nvm use 20
-        ```
-      </Tab>
-    </Tabs>
-    
-    Verify:
-    ```bash
-    node --version  # Should output v20.x.x or higher
-    npm --version   # Should output 10.x.x or higher
-    ```
-  </Step>
-  
-  <Step title="Clone and Build">
-    Open Terminal:
-    
-    ```bash
-    # Clone repository
-    git clone https://github.com/microsoft/vscode.git
-    cd vscode
-    
-    # Initialize submodules
-    git submodule update --init --recursive
-    
-    # Install dependencies (10-15 minutes)
-    npm install
-    
-    # Run VS Code
-    ./scripts/code.sh
-    ```
-  </Step>
-</Steps>
-
-### macOS-Specific Build Options
-
-<CodeGroup>
-
-```bash Build for macOS
-# Standard build
-npm run compile
-
-# Build with gulp
-npm run gulp compile-build
-
-# Create macOS .app bundle
-npm run gulp vscode-darwin-x64
-
-# Create Universal binary (Intel + Apple Silicon)
-npm run gulp vscode-darwin-universal
-```
-
-```bash Apple Silicon Considerations
-# Check architecture
-uname -m  # arm64 for Apple Silicon, x86_64 for Intel
-
-# Build for specific architecture
-npm run gulp vscode-darwin-arm64  # Apple Silicon
-npm run gulp vscode-darwin-x64    # Intel
-
-# Install Rosetta 2 for x64 compatibility (if needed)
-softwareupdate --install-rosetta
-```
-
-</CodeGroup>
-
-### Troubleshooting macOS Builds
-
-<AccordionGroup>
-  <Accordion icon="exclamation-triangle" title="Permission Denied Errors">
-    **Error:** `EACCES: permission denied`
-    
-    **Solution:** Don't use sudo with npm. Fix permissions:
-    ```bash
-    sudo chown -R $(whoami) ~/.npm
-    sudo chown -R $(whoami) /usr/local/lib/node_modules
-    ```
-  </Accordion>
-  
-  <Accordion icon="exclamation-triangle" title="Code Signing Issues">
-    **Error:** `code signature invalid`
-    
-    **Solution:** Remove extended attributes:
-    ```bash
-    xattr -cr vscode/.build/electron/Electron.app
-    ```
-  </Accordion>
-  
-  <Accordion icon="exclamation-triangle" title="Keychain Access Prompts">
-    **Problem:** Constant keychain password prompts
-    
-    **Solution:** Allow access once:
-    ```bash
-    security unlock-keychain ~/Library/Keychains/login.keychain-db
-    ```
-  </Accordion>
-</AccordionGroup>
-
-  </Tab>
-  
-  <Tab title="Linux">
-    
-### Linux Installation
-
-<Steps>
-  <Step title="Install Build Dependencies">
-    Install required packages:
-    
-    <Tabs>
-      <Tab title="Debian/Ubuntu">
-        ```bash
-        sudo apt-get update
-        sudo apt-get install -y \
-          git \
-          curl \
-          build-essential \
-          pkg-config \
-          libx11-dev \
-          libxkbfile-dev \
-          libsecret-1-dev \
-          libkrb5-dev \
-          python3 \
-          python3-pip
-        ```
-      </Tab>
-      <Tab title="Fedora/RHEL">
-        ```bash
-        sudo dnf install -y \
-          git \
-          curl \
-          gcc \
-          gcc-c++ \
-          make \
-          pkg-config \
-          libX11-devel \
-          libxkbfile-devel \
-          libsecret-devel \
-          krb5-devel \
-          python3 \
-          python3-pip
-        ```
-      </Tab>
-      <Tab title="Arch Linux">
-        ```bash
-        sudo pacman -S --needed \
-          git \
-          curl \
-          base-devel \
-          libx11 \
-          libxkbfile \
-          libsecret \
-          krb5 \
-          python
-        ```
-      </Tab>
-    </Tabs>
-  </Step>
-  
-  <Step title="Install Node.js">
-    Install Node.js 20.x or later:
-    
-    <Tabs>
-      <Tab title="Using Package Manager">
-        ```bash
-        # Debian/Ubuntu
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-        
-        # Fedora
-        sudo dnf install -y nodejs npm
-        ```
-      </Tab>
-      <Tab title="Using nvm">
-        ```bash
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-        source ~/.bashrc
-        nvm install 20
-        nvm use 20
-        ```
-      </Tab>
-    </Tabs>
-    
-    Verify:
-    ```bash
-    node --version  # Should output v20.x.x or higher
-    npm --version   # Should output 10.x.x or higher
-    ```
-  </Step>
-  
-  <Step title="Clone and Build">
-    Open a terminal:
-    
-    ```bash
-    # Clone repository
-    git clone https://github.com/microsoft/vscode.git
-    cd vscode
-    
-    # Initialize submodules
-    git submodule update --init --recursive
-    
-    # Install dependencies (10-15 minutes)
-    npm install
-    
-    # Run VS Code
-    ./scripts/code.sh
-    ```
-  </Step>
-</Steps>
-
-### Linux-Specific Build Options
-
-<CodeGroup>
-
-```bash Build for Linux
-# Standard build
-npm run compile
-
-# Build with gulp
-npm run gulp compile-build
-
-# Create .deb package
-npm run gulp vscode-linux-x64-build-deb
-
-# Create .rpm package
-npm run gulp vscode-linux-x64-build-rpm
-
-# Create .tar.gz archive
-npm run gulp vscode-linux-x64
-```
-
-```bash Platform-Specific Builds
-# Build for x64
-npm run gulp vscode-linux-x64
-
-# Build for ARM64
-npm run gulp vscode-linux-arm64
-
-# Build for ARMv7 (32-bit)
-npm run gulp vscode-linux-armhf
-```
-
-</CodeGroup>
-
-### Troubleshooting Linux Builds
-
-<AccordionGroup>
-  <Accordion icon="exclamation-triangle" title="Missing libsecret">
-    **Error:** `Cannot find libsecret-1`
-    
-    **Solution:** Install libsecret development package:
-    ```bash
-    # Debian/Ubuntu
-    sudo apt-get install libsecret-1-dev
-    
-    # Fedora/RHEL
-    sudo dnf install libsecret-devel
-    ```
-  </Accordion>
-  
-  <Accordion icon="exclamation-triangle" title="Display Issues">
-    **Error:** `cannot open display`
-    
-    **Solution:** Set DISPLAY environment variable:
-    ```bash
-    export DISPLAY=:0
-    ./scripts/code.sh
-    ```
-  </Accordion>
-  
-  <Accordion icon="exclamation-triangle" title="Electron Sandbox Issues">
-    **Error:** Electron crashes or won't start
-    
-    **Solution:** Disable sandbox as workaround:
-    ```bash
-    ./scripts/code.sh --no-sandbox
-    ```
-  </Accordion>
-</AccordionGroup>
-
-  </Tab>
-</Tabs>
-
-## Development Container Setup
-
-Use a pre-configured Docker container with all dependencies:
-
-<Steps>
-  <Step title="Install Prerequisites">
-    Install:
-    - [Docker Desktop](https://www.docker.com/products/docker-desktop) or Docker Engine
-    - [VS Code](https://code.visualstudio.com/)
-    - [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-  </Step>
-  
-  <Step title="Open Repository in Container">
-    Option 1: Clone in Container Volume (recommended)
-    ```
-    1. Press Ctrl/Cmd + Shift + P
-    2. Select "Dev Containers: Clone Repository in Container Volume..."
-    3. Enter: https://github.com/microsoft/vscode
-    4. Wait for container to build (10-15 minutes first time)
-    ```
-    
-    Option 2: Open Local Folder
-    ```
-    1. Clone repository locally
-    2. Open folder in VS Code
-    3. Press Ctrl/Cmd + Shift + P
-    4. Select "Dev Containers: Reopen in Container"
-    ```
-  </Step>
-  
-  <Step title="Build Inside Container">
-    Once the container is running:
-    ```bash
-    npm install
-    ./scripts/code.sh
-    ```
-    
-    Access the desktop environment:
-    - **Web:** [http://localhost:6080](http://localhost:6080)
-    - **VNC:** localhost:5901 (password: `vscode`)
-  </Step>
-</Steps>
-
-<Note>
-  **Container Requirements:** Docker needs at least 4 CPU cores and 8 GB of RAM (9 GB recommended) to run a full build.
-</Note>
+<Warning>
+  This guide is for building VS Code from source. If you want to use VS Code as an editor, download the pre-built binaries from [code.visualstudio.com](https://code.visualstudio.com/Download).
+</Warning>
 
 ## System Requirements
 
 ### Minimum Requirements
 
-<CardGroup cols={2}>
-  <Card title="Processor">
-    - **x64:** Intel/AMD 64-bit processor
-    - **ARM64:** Apple Silicon, ARM64v8
-    - **ARMv7:** 32-bit ARM (Raspberry Pi)
+- **RAM:** 4 GB minimum, 8-9 GB recommended for full builds
+- **CPU:** 4 cores recommended for reasonable build times
+- **Disk Space:** At least 5 GB for source code and build artifacts
+- **Internet Connection:** Required for downloading dependencies
+
+### Software Prerequisites
+
+All platforms require:
+
+<CardGroup cols={3}>
+  <Card title="Git" icon="code-branch">
+    Version control system for cloning the repository
   </Card>
-  <Card title="Memory">
-    - **Minimum:** 4 GB RAM
-    - **Recommended:** 8 GB RAM
-    - **Build:** 16 GB RAM for comfortable development
+  
+  <Card title="Node.js" icon="node-js">
+    JavaScript runtime (version 22.x or later)
   </Card>
-  <Card title="Storage">
-    - **Source:** ~2 GB for repository
-    - **node_modules:** ~3 GB for dependencies
-    - **Build artifacts:** ~5 GB
-    - **Total:** ~15 GB free space recommended
-  </Card>
-  <Card title="Operating System">
-    - **Windows:** Windows 10/11 (64-bit)
-    - **macOS:** macOS 10.15 Catalina or later
-    - **Linux:** Recent distributions with glibc 2.28+
+  
+  <Card title="npm" icon="npm">
+    Package manager (comes with Node.js)
   </Card>
 </CardGroup>
 
-### Build Time Expectations
-
 <Tabs>
-  <Tab title="First Build">
-    | Step | Time | Notes |
-    |------|------|-------|
-    | Clone repository | 2-5 min | Depends on internet speed |
-    | npm install | 10-20 min | Downloads ~500 packages |
-    | Initial compilation | 5-10 min | Compiles TypeScript sources |
-    | **Total** | **~20-35 min** | First build is slowest |
+  <Tab title="Windows">
+    ## Windows Prerequisites
+    
+    ### Required Tools
+    
+    <Steps>
+      <Step title="Install Node.js">
+        Download and install Node.js from [nodejs.org](https://nodejs.org). Use the LTS version (22.x or later).
+        
+        Verify installation:
+        ```powershell
+        node --version
+        npm --version
+        ```
+      </Step>
+      
+      <Step title="Install Python">
+        Download and install Python 3.11 or later from [python.org](https://www.python.org/downloads/).
+        
+        <Warning>
+          Make sure to check "Add Python to PATH" during installation.
+        </Warning>
+        
+        Verify installation:
+        ```powershell
+        python --version
+        ```
+      </Step>
+      
+      <Step title="Install C++ Build Tools">
+        Install Visual Studio 2022 Build Tools with the "Desktop development with C++" workload:
+        
+        1. Download from [Visual Studio Downloads](https://visualstudio.microsoft.com/downloads/)
+        2. Select **Build Tools for Visual Studio 2022**
+        3. In the installer, select **Desktop development with C++**
+        4. Install the following individual components:
+           - MSVC v143 - VS 2022 C++ x64/x86 build tools
+           - Windows 11 SDK
+           - C++ CMake tools for Windows
+        
+        <Note>
+          The full Visual Studio IDE is not required, only the Build Tools.
+        </Note>
+      </Step>
+      
+      <Step title="Install Git">
+        Download and install Git from [git-scm.com](https://git-scm.com/download/win).
+        
+        Verify installation:
+        ```powershell
+        git --version
+        ```
+      </Step>
+    </Steps>
+    
+    ### Additional Tools (Optional)
+    
+    - **Windows Terminal** - Modern terminal with better support for development workflows
+    - **PowerShell 7+** - Updated PowerShell with improved performance
+    
+    ### Building on Windows
+    
+    Once prerequisites are installed:
+    
+    ```powershell
+    # Clone the repository
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode
+    
+    # Install dependencies
+    npm install
+    
+    # Run VS Code
+    .\scripts\code.bat
+    ```
+    
+    ### Windows-Specific Scripts
+    
+    ```powershell
+    # Launch VS Code
+    .\scripts\code.bat
+    
+    # Launch VS Code Server
+    .\scripts\code-server.bat
+    
+    # Launch VS Code Web
+    .\scripts\code-web.bat
+    
+    # Run CLI
+    .\scripts\code-cli.bat
+    ```
+    
+    ### Troubleshooting Windows
+    
+    <AccordionGroup>
+      <Accordion title="node-gyp errors">
+        Make sure Visual Studio Build Tools are properly installed with the C++ workload:
+        
+        ```powershell
+        npm config set msvs_version 2022
+        npm install
+        ```
+      </Accordion>
+      
+      <Accordion title="Python not found">
+        Set the Python path explicitly:
+        
+        ```powershell
+        npm config set python C:\Python311\python.exe
+        ```
+      </Accordion>
+      
+      <Accordion title="Long path issues">
+        Enable long paths in Windows:
+        
+        1. Open Registry Editor
+        2. Navigate to `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem`
+        3. Set `LongPathsEnabled` to `1`
+        
+        Or use PowerShell (requires admin):
+        ```powershell
+        New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+        ```
+      </Accordion>
+    </AccordionGroup>
   </Tab>
   
-  <Tab title="Incremental Builds">
-    | Change Type | Time | Notes |
-    |-------------|------|-------|
-    | Single file edit | 1-5 sec | With watch mode |
-    | Multiple files | 5-15 sec | Depends on scope |
-    | Extension changes | 2-10 sec | Faster than core |
-    | Clean rebuild | 5-10 min | Recompiles everything |
+  <Tab title="macOS">
+    ## macOS Prerequisites
+    
+    ### Required Tools
+    
+    <Steps>
+      <Step title="Install Xcode Command Line Tools">
+        Install the Xcode Command Line Tools, which include essential build tools:
+        
+        ```bash
+        xcode-select --install
+        ```
+        
+        Verify installation:
+        ```bash
+        xcode-select -p
+        # Should output: /Library/Developer/CommandLineTools
+        ```
+      </Step>
+      
+      <Step title="Install Homebrew (Recommended)">
+        Install Homebrew for easy package management:
+        
+        ```bash
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        ```
+        
+        <Tip>
+          Follow the on-screen instructions to add Homebrew to your PATH.
+        </Tip>
+      </Step>
+      
+      <Step title="Install Node.js">
+        Using Homebrew:
+        ```bash
+        brew install node
+        ```
+        
+        Or download from [nodejs.org](https://nodejs.org).
+        
+        Verify installation:
+        ```bash
+        node --version
+        npm --version
+        ```
+      </Step>
+      
+      <Step title="Install Git">
+        Git is usually pre-installed on macOS. If not:
+        
+        ```bash
+        brew install git
+        ```
+        
+        Verify installation:
+        ```bash
+        git --version
+        ```
+      </Step>
+      
+      <Step title="Install Python (if needed)">
+        macOS typically includes Python, but you may need to ensure Python 3 is available:
+        
+        ```bash
+        brew install python3
+        ```
+        
+        Verify installation:
+        ```bash
+        python3 --version
+        ```
+      </Step>
+    </Steps>
+    
+    ### Building on macOS
+    
+    Once prerequisites are installed:
+    
+    ```bash
+    # Clone the repository
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode
+    
+    # Install dependencies
+    npm install
+    
+    # Run VS Code
+    ./scripts/code.sh
+    ```
+    
+    ### macOS-Specific Scripts
+    
+    ```bash
+    # Launch VS Code
+    ./scripts/code.sh
+    
+    # Launch VS Code Server
+    ./scripts/code-server.sh
+    
+    # Launch VS Code Web
+    ./scripts/code-web.sh
+    
+    # Run CLI
+    ./scripts/code-cli.sh
+    ```
+    
+    ### Troubleshooting macOS
+    
+    <AccordionGroup>
+      <Accordion title="Permission denied errors">
+        Make scripts executable:
+        
+        ```bash
+        chmod +x scripts/code.sh
+        chmod +x scripts/code-server.sh
+        chmod +x scripts/code-web.sh
+        ```
+      </Accordion>
+      
+      <Accordion title="Native module build fails">
+        Ensure Xcode Command Line Tools are properly installed:
+        
+        ```bash
+        sudo xcode-select --reset
+        xcode-select --install
+        ```
+      </Accordion>
+      
+      <Accordion title="Slow npm install on macOS">
+        Use a Docker volume for better performance:
+        
+        ```bash
+        # Use Dev Containers instead
+        # Or clone to a case-sensitive volume
+        ```
+        
+        See the [Dev Container section](#using-dev-containers) for better performance.
+      </Accordion>
+    </AccordionGroup>
+  </Tab>
+  
+  <Tab title="Linux">
+    ## Linux Prerequisites
+    
+    ### Required Tools
+    
+    The following instructions are for Debian/Ubuntu-based distributions. Adjust package names for other distributions.
+    
+    <Steps>
+      <Step title="Update Package Manager">
+        ```bash
+        sudo apt update
+        sudo apt upgrade
+        ```
+      </Step>
+      
+      <Step title="Install Build Essentials">
+        ```bash
+        sudo apt install build-essential
+        ```
+        
+        This includes:
+        - gcc/g++ compilers
+        - make
+        - libc-dev
+      </Step>
+      
+      <Step title="Install Node.js and npm">
+        Install Node.js 22.x or later:
+        
+        ```bash
+        # Using NodeSource repository
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        sudo apt install -y nodejs
+        ```
+        
+        Verify installation:
+        ```bash
+        node --version
+        npm --version
+        ```
+      </Step>
+      
+      <Step title="Install Git">
+        ```bash
+        sudo apt install git
+        ```
+        
+        Verify installation:
+        ```bash
+        git --version
+        ```
+      </Step>
+      
+      <Step title="Install Additional Dependencies">
+        Install libraries required for building native modules:
+        
+        ```bash
+        sudo apt install -y \
+          libx11-dev \
+          libxkbfile-dev \
+          libsecret-1-dev \
+          libkrb5-dev \
+          python3 \
+          pkg-config
+        ```
+      </Step>
+    </Steps>
+    
+    ### Distribution-Specific Notes
+    
+    <Tabs>
+      <Tab title="Debian/Ubuntu">
+        ```bash
+        # Install all prerequisites
+        sudo apt install -y \
+          build-essential \
+          git \
+          nodejs \
+          npm \
+          python3 \
+          libx11-dev \
+          libxkbfile-dev \
+          libsecret-1-dev \
+          libkrb5-dev \
+          pkg-config
+        ```
+      </Tab>
+      
+      <Tab title="Fedora/RHEL">
+        ```bash
+        # Install all prerequisites
+        sudo dnf install -y \
+          @development-tools \
+          git \
+          nodejs \
+          npm \
+          python3 \
+          libX11-devel \
+          libxkbfile-devel \
+          libsecret-devel \
+          krb5-devel \
+          pkg-config
+        ```
+      </Tab>
+      
+      <Tab title="Arch Linux">
+        ```bash
+        # Install all prerequisites
+        sudo pacman -S \
+          base-devel \
+          git \
+          nodejs \
+          npm \
+          python \
+          libx11 \
+          libxkbfile \
+          libsecret \
+          krb5
+        ```
+      </Tab>
+    </Tabs>
+    
+    ### Building on Linux
+    
+    Once prerequisites are installed:
+    
+    ```bash
+    # Clone the repository
+    git clone https://github.com/microsoft/vscode.git
+    cd vscode
+    
+    # Install dependencies
+    npm install
+    
+    # Run VS Code
+    ./scripts/code.sh
+    ```
+    
+    ### Linux-Specific Scripts
+    
+    ```bash
+    # Launch VS Code
+    ./scripts/code.sh
+    
+    # Launch VS Code Server
+    ./scripts/code-server.sh
+    
+    # Launch VS Code Web
+    ./scripts/code-web.sh
+    
+    # Run CLI
+    ./scripts/code-cli.sh
+    ```
+    
+    ### Troubleshooting Linux
+    
+    <AccordionGroup>
+      <Accordion title="Permission denied errors">
+        Make scripts executable:
+        
+        ```bash
+        chmod +x scripts/code.sh
+        chmod +x scripts/code-server.sh
+        chmod +x scripts/code-web.sh
+        ```
+      </Accordion>
+      
+      <Accordion title="Missing libraries">
+        If you encounter missing library errors, install the development packages:
+        
+        ```bash
+        # For Ubuntu/Debian
+        sudo apt install -y libx11-dev libxkbfile-dev libsecret-1-dev
+        
+        # For Fedora
+        sudo dnf install -y libX11-devel libxkbfile-devel libsecret-devel
+        ```
+      </Accordion>
+      
+      <Accordion title="Display issues">
+        If running in a headless environment or container, you may need X11 forwarding or a virtual display:
+        
+        ```bash
+        # Install Xvfb for virtual display
+        sudo apt install xvfb
+        
+        # Run with virtual display
+        xvfb-run -a ./scripts/code.sh
+        ```
+      </Accordion>
+    </AccordionGroup>
   </Tab>
 </Tabs>
 
-## Verifying Installation
+## Using Dev Containers
 
-Confirm your build works correctly:
+For a consistent development environment across all platforms, use the included dev container configuration.
+
+### Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) (Windows/macOS) or Docker Engine (Linux)
+- [Visual Studio Code](https://code.visualstudio.com/)
+- [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+
+### System Requirements for Containers
+
+<Warning>
+  Docker needs at least **4 Cores and 8 GB of RAM** to run a full build, with **9 GB of RAM** recommended.
+</Warning>
+
+On macOS or Windows with Docker Desktop:
+1. Right-click the Docker icon in the system tray
+2. Go to **Settings > Resources > Advanced**
+3. Increase CPU cores to 4+ and memory to 8+ GB
+4. Click **Apply & Restart**
+
+### Using the Dev Container
 
 <Steps>
-  <Step title="Check Version">
-    ```bash
-    # In VS Code, open Command Palette (Ctrl/Cmd + Shift + P)
-    # Type: "Show About"
-    ```
-    
-    You should see:
-    - Version: 1.110.0 (or current version)
-    - Commit: [git commit hash]
-    - Electron: 39.6.0
+  <Step title="Open VS Code">
+    Launch Visual Studio Code on your machine.
   </Step>
   
-  <Step title="Run Sample Commands">
-    Test basic functionality:
-    ```bash
-    # Open Command Palette (Ctrl/Cmd + Shift + P)
-    # Try commands like:
-    - "Open File..."
-    - "Toggle Integrated Terminal"
-    - "Change Color Theme"
+  <Step title="Clone in Container">
+    Press `Ctrl/Cmd + Shift + P` and select:
+    
+    **Dev Containers: Clone Repository in Container Volume...**
+    
+    Enter the repository URL:
     ```
-  </Step>
-  
-  <Step title="Run Quick Tests">
-    ```bash
-    # Run a subset of unit tests
-    ./scripts/test.sh --grep "editor"
+    https://github.com/microsoft/vscode
     ```
     
-    <Success>
-      If tests pass, your build is working correctly!
-    </Success>
+    <Tip>
+      Using a container volume provides better performance than mounting your local filesystem.
+    </Tip>
+  </Step>
+  
+  <Step title="Wait for Container Setup">
+    The container will automatically:
+    - Pull the required Docker images
+    - Set up the development environment
+    - Install all dependencies
+    
+    This may take 10-20 minutes on first run.
+  </Step>
+  
+  <Step title="Build and Run">
+    Once the container is ready:
+    
+    ```bash
+    npm install
+    ./scripts/code.sh
+    ```
+    
+    The graphical VS Code will appear in the VNC viewer.
   </Step>
 </Steps>
 
-## Updating Your Build
+### Accessing the Desktop Environment
 
-Keep your local build up to date:
+The dev container includes a desktop environment accessible via:
+
+- **Web Browser:** Navigate to [http://localhost:6080](http://localhost:6080)
+- **VNC Client:** Connect to `localhost:5901` with password `vscode`
+
+<Note>
+  The Resource Monitor extension is included in the container to help you monitor CPU and memory usage in the status bar.
+</Note>
+
+## GitHub Codespaces
+
+GitHub Codespaces provides a cloud-based development environment.
+
+<Steps>
+  <Step title="Create Codespace">
+    1. Go to [github.com/microsoft/vscode](https://github.com/microsoft/vscode)
+    2. Click the **Code** dropdown
+    3. Select **Codespaces** tab
+    4. Click **Create codespace on main**
+    5. Choose **4-core** machine (or larger)
+  </Step>
+  
+  <Step title="Access Desktop">
+    Once the Codespace is running:
+    
+    1. Press `Ctrl/Cmd + Shift + P`
+    2. Select **Ports: Focus on Ports View**
+    3. Find port **6080** (VNC web client)
+    4. Click the globe icon to open in browser
+    5. Click **Connect** and enter password `vscode`
+  </Step>
+  
+  <Step title="Build and Run">
+    In the Codespace terminal:
+    
+    ```bash
+    npm install
+    ./scripts/code.sh
+    ```
+    
+    VS Code will appear in the VNC viewer.
+  </Step>
+</Steps>
+
+## Verifying Your Installation
+
+After installation, verify everything works:
 
 ```bash
-# Pull latest changes
-git pull origin main
+# Check Node.js
+node --version
 
-# Update submodules
-git submodule update --init --recursive
+# Check npm
+npm --version
 
-# Update dependencies
-npm install
+# Check Git
+git --version
 
-# Rebuild
-npm run compile
+# Check Python (Linux/macOS)
+python3 --version
 
-# Or just run (will compile automatically)
-./scripts/code.sh
+# Check Python (Windows)
+python --version
 ```
 
-<Tip>
-  Create a git alias for quick updates:
-  ```bash
-  git config alias.update '!git pull && git submodule update --init --recursive && npm install'
-  ```
-  
-  Then use: `git update`
-</Tip>
+### Test Build
+
+```bash
+# Clone repository
+git clone https://github.com/microsoft/vscode.git
+cd vscode
+
+# Install dependencies
+npm install
+
+# Compile code
+npm run compile
+
+# Run VS Code
+./scripts/code.sh      # Linux/macOS
+.\scripts\code.bat     # Windows
+```
+
+If VS Code launches successfully, your installation is complete!
 
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card
-    title="Quickstart Guide"
-    icon="rocket"
-    href="/quickstart"
-  >
-    Learn the development workflow and start making changes
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Learn the essential workflows for development
   </Card>
-  <Card
-    title="Architecture Overview"
-    icon="sitemap"
-    href="/architecture/overview"
-  >
-    Understand VS Code's architecture before diving into code
+  
+  <Card title="Contributing" icon="code-pull-request" href="https://github.com/microsoft/vscode/wiki/How-to-Contribute">
+    Start contributing to the VS Code project
   </Card>
-  <Card
-    title="Debugging Guide"
-    icon="bug"
-    href="/building/debugging"
-  >
-    Master debugging VS Code with VS Code itself
+  
+  <Card title="Coding Guidelines" icon="book" href="https://github.com/microsoft/vscode/wiki/Coding-Guidelines">
+    Follow VS Code's coding standards
   </Card>
-  <Card
-    title="Contributing Guide"
-    icon="code-pull-request"
-    href="/contributing/guidelines"
-  >
-    Read the guidelines before making your first contribution
+  
+  <Card title="Architecture" icon="sitemap" href="/introduction#architecture-overview">
+    Deep dive into the codebase structure
   </Card>
 </CardGroup>
 
-<Note>
-  **Having issues?** Check the [troubleshooting section](#troubleshooting) or ask on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode) with the `vscode` tag.
-</Note>
+## Getting Help
+
+If you encounter issues during installation:
+
+- Check the [Contributing Guide](https://github.com/microsoft/vscode/blob/main/CONTRIBUTING.md)
+- Search [GitHub Issues](https://github.com/microsoft/vscode/issues)
+- Ask on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode)
+- Join the [VS Code Dev Community](https://aka.ms/vscode-dev-community)

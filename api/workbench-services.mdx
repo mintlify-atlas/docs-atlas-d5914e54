@@ -1,0 +1,548 @@
+---
+title: Workbench Services
+description: Workbench-specific services for VS Code UI and editor management
+---
+
+# Workbench Services
+
+Workbench services (`src/vs/workbench/services/`) provide high-level functionality specific to the VS Code workbench UI. These services manage editors, views, panels, and other workbench-specific features.
+
+## Workbench vs Platform Services
+
+**Workbench Services:**
+- UI and editor-specific functionality
+- Depend on the workbench being initialized
+- Handle user-facing features (editors, views, panels)
+- Located in `src/vs/workbench/services/`
+- Can depend on platform services
+
+**Platform Services:**
+- Environment-agnostic fundamentals
+- Available in all contexts
+- Handle core operations (files, config, commands)
+- Located in `src/vs/platform/`
+- Cannot depend on workbench services
+
+See [Platform Services](/api/platform-services) for core platform APIs.
+
+## IEditorService
+
+The editor service manages editor instances and groups in the workbench.
+
+```typescript
+// From src/vs/workbench/services/editor/common/editorService.ts
+export const IEditorService = createDecorator<IEditorService>('editorService');
+
+export interface IEditorService {
+  readonly _serviceBrand: undefined;
+
+  // Editor Groups
+  readonly activeEditorPane: IVisibleEditorPane | undefined;
+  readonly activeEditor: EditorInput | undefined;
+  readonly activeTextEditorControl: ICodeEditor | IDiffEditor | undefined;
+  readonly editors: readonly EditorInput[];
+  readonly visibleEditorPanes: readonly IVisibleEditorPane[];
+  readonly visibleEditors: readonly EditorInput[];
+
+  // Events
+  readonly onDidActiveEditorChange: Event<void>;
+  readonly onDidVisibleEditorsChange: Event<void>;
+  readonly onWillOpenEditor: Event<IEditorWillOpenEvent>;
+  readonly onDidCloseEditor: Event<IEditorCloseEvent>;
+
+  // Open editors
+  openEditor(editor: EditorInput, options?: IEditorOptions, group?: PreferredGroup): Promise<IEditorPane | undefined>;
+  openEditor(editor: IResourceEditorInput, group?: PreferredGroup): Promise<IEditorPane | undefined>;
+  openEditors(editors: EditorInputWithOptions[], group?: PreferredGroup): Promise<IEditorPane[]>;
+
+  // Replace editors
+  replaceEditors(editors: IUntypedEditorReplacement[], group: IEditorGroup | GroupIdentifier): Promise<void>;
+
+  // Save/Revert
+  save(editors: IEditorIdentifier | IEditorIdentifier[], options?: ISaveEditorsOptions): Promise<ISaveEditorsResult>;
+  saveAll(options?: ISaveEditorsOptions): Promise<ISaveEditorsResult>;
+  revert(editors: IEditorIdentifier | IEditorIdentifier[], options?: IRevertOptions): Promise<boolean>;
+  revertAll(options?: IRevertOptions): Promise<boolean>;
+}
+
+// Constants for editor groups
+export const ACTIVE_GROUP = -1;  // Active editor group
+export const SIDE_GROUP = -2;    // Side-by-side group
+export const AUX_WINDOW_GROUP = -3; // Auxiliary window
+```
+
+### Using IEditorService
+
+```typescript
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { URI } from 'vs/base/common/uri';
+
+class EditorManager {
+  constructor(
+    @IEditorService private readonly editorService: IEditorService
+  ) {
+    // Listen to active editor changes
+    this.editorService.onDidActiveEditorChange(() => {
+      this.onActiveEditorChanged();
+    });
+  }
+
+  async openFile(uri: URI): Promise<void> {
+    // Open a file in the active editor group
+    await this.editorService.openEditor({
+      resource: uri,
+      options: {
+        pinned: true,
+        preserveFocus: false
+      }
+    });
+  }
+
+  async openInSplit(uri: URI): Promise<void> {
+    // Open file in a side-by-side editor
+    await this.editorService.openEditor(
+      { resource: uri },
+      SIDE_GROUP
+    );
+  }
+
+  async saveAll(): Promise<void> {
+    const result = await this.editorService.saveAll();
+    if (!result.success) {
+      console.error('Save all failed');
+    }
+  }
+
+  getActiveEditor(): ICodeEditor | undefined {
+    const control = this.editorService.activeTextEditorControl;
+    if (control && !isDiffEditor(control)) {
+      return control;
+    }
+    return undefined;
+  }
+
+  private onActiveEditorChanged(): void {
+    const editor = this.editorService.activeEditor;
+    if (editor) {
+      console.log('Active editor:', editor.getName());
+    }
+  }
+}
+```
+
+### Opening Different Editor Types
+
+```typescript
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+
+class EditorOpener {
+  constructor(
+    @IEditorService private readonly editorService: IEditorService
+  ) {}
+
+  async openTextFile(uri: URI): Promise<void> {
+    await this.editorService.openEditor({
+      resource: uri,
+      options: {
+        selection: { startLineNumber: 10, startColumn: 5 },
+        pinned: true
+      }
+    });
+  }
+
+  async openDiffEditor(original: URI, modified: URI): Promise<void> {
+    await this.editorService.openEditor({
+      original: { resource: original },
+      modified: { resource: modified },
+      options: { pinned: true }
+    });
+  }
+
+  async openUntitled(): Promise<void> {
+    await this.editorService.openEditor({
+      resource: undefined,
+      options: {
+        override: 'default'
+      }
+    });
+  }
+}
+```
+
+## IViewsService
+
+Manages views and view containers (sidebar, panel, auxiliary bar).
+
+```typescript
+// From src/vs/workbench/services/views/common/viewsService.ts
+export const IViewsService = createDecorator<IViewsService>('viewsService');
+
+export interface IViewsService {
+  readonly _serviceBrand: undefined;
+
+  // View Container APIs
+  readonly onDidChangeViewContainerVisibility: Event<{ id: string; visible: boolean; location: ViewContainerLocation }>;
+  isViewContainerVisible(id: string): boolean;
+  openViewContainer(id: string, focus?: boolean): Promise<IPaneComposite | null>;
+  closeViewContainer(id: string): void;
+  getVisibleViewContainer(location: ViewContainerLocation): ViewContainer | null;
+
+  // View APIs
+  readonly onDidChangeViewVisibility: Event<{ id: string; visible: boolean }>;
+  isViewVisible(id: string): boolean;
+  openView<T extends IView>(id: string, focus?: boolean): Promise<T | null>;
+  closeView(id: string): void;
+  getActiveViewWithId<T extends IView>(id: string): T | null;
+  getViewWithId<T extends IView>(id: string): T | null;
+}
+```
+
+### Using IViewsService
+
+```typescript
+import { IViewsService } from 'vs/workbench/services/views/common/viewsService';
+import { IViewDescriptorService, ViewContainerLocation } from 'vs/workbench/common/views';
+
+class ViewManager {
+  constructor(
+    @IViewsService private readonly viewsService: IViewsService,
+    @IViewDescriptorService private readonly viewDescriptorService: IViewDescriptorService
+  ) {}
+
+  async showExplorerView(): Promise<void> {
+    // Open the explorer view container
+    await this.viewsService.openViewContainer('workbench.view.explorer', true);
+
+    // Open a specific view within it
+    await this.viewsService.openView('workbench.explorer.fileView', true);
+  }
+
+  async togglePanel(): Promise<void> {
+    const panelContainer = this.viewsService.getVisibleViewContainer(
+      ViewContainerLocation.Panel
+    );
+
+    if (panelContainer) {
+      this.viewsService.closeViewContainer(panelContainer.id);
+    } else {
+      await this.viewsService.openViewContainer('workbench.panel.output', true);
+    }
+  }
+
+  isViewVisible(viewId: string): boolean {
+    return this.viewsService.isViewVisible(viewId);
+  }
+
+  listenToViewChanges(): void {
+    this.viewsService.onDidChangeViewVisibility(e => {
+      console.log(`View ${e.id} visibility: ${e.visible}`);
+    });
+  }
+}
+```
+
+## IActivityService
+
+Manages activity bar badges and indicators.
+
+```typescript
+// From src/vs/workbench/services/activity/common/activity.ts
+export const IActivityService = createDecorator<IActivityService>('activityService');
+
+export interface IActivityService {
+  readonly _serviceBrand: undefined;
+
+  readonly onDidChangeActivity: Event<string | ViewContainer>;
+
+  showViewContainerActivity(viewContainerId: string, badge: IActivity): IDisposable;
+  showViewActivity(viewId: string, badge: IActivity): IDisposable;
+  showAccountsActivity(activity: IActivity): IDisposable;
+  showGlobalActivity(activity: IActivity): IDisposable;
+}
+
+export interface IActivity {
+  readonly badge: IBadge;
+}
+```
+
+### Using IActivityService
+
+```typescript
+import { IActivityService, NumberBadge, ProgressBadge } from 'vs/workbench/services/activity/common/activity';
+import { IDisposable } from 'vs/base/common/lifecycle';
+
+class ActivityBadgeManager {
+  constructor(
+    @IActivityService private readonly activityService: IActivityService
+  ) {}
+
+  showNotificationBadge(count: number): IDisposable {
+    // Show a number badge on a view container
+    return this.activityService.showViewContainerActivity(
+      'workbench.view.extension.myView',
+      {
+        badge: new NumberBadge(count, () => `${count} notifications`)
+      }
+    );
+  }
+
+  showProgress(): IDisposable {
+    // Show progress indicator
+    return this.activityService.showViewContainerActivity(
+      'workbench.view.explorer',
+      {
+        badge: new ProgressBadge(() => 'Loading...')
+      }
+    );
+  }
+
+  showErrorBadge(): IDisposable {
+    return this.activityService.showViewActivity(
+      'workbench.view.extension.myView',
+      {
+        badge: new NumberBadge(1, () => 'Error')
+      }
+    );
+  }
+}
+```
+
+## IWorkingCopyService
+
+Manages working copies (dirty/unsaved files).
+
+```typescript
+import { IWorkingCopyService } from 'vs/workbench/services/workingCopy/common/workingCopyService';
+
+class WorkingCopyManager {
+  constructor(
+    @IWorkingCopyService private readonly workingCopyService: IWorkingCopyService
+  ) {
+    // Listen to dirty state changes
+    this.workingCopyService.onDidChangeDirty(workingCopy => {
+      console.log('Working copy dirty state changed:', workingCopy.resource);
+    });
+  }
+
+  getDirtyCount(): number {
+    return this.workingCopyService.dirtyCount;
+  }
+
+  hasDirtyFiles(): boolean {
+    return this.workingCopyService.hasDirty;
+  }
+
+  getDirtyWorkingCopies() {
+    return this.workingCopyService.dirtyWorkingCopies;
+  }
+}
+```
+
+## IEditorGroupsService
+
+Manages editor groups and their layout.
+
+```typescript
+import { IEditorGroupsService, GroupDirection, GroupOrientation } from 'vs/workbench/services/editor/common/editorGroupsService';
+
+class EditorGroupManager {
+  constructor(
+    @IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService
+  ) {}
+
+  splitEditor(): void {
+    const activeGroup = this.editorGroupsService.activeGroup;
+    this.editorGroupsService.addGroup(
+      activeGroup,
+      GroupDirection.RIGHT
+    );
+  }
+
+  getGroups() {
+    return this.editorGroupsService.groups;
+  }
+
+  setOrientation(orientation: GroupOrientation): void {
+    const activeGroup = this.editorGroupsService.activeGroup;
+    this.editorGroupsService.setGroupOrientation(
+      activeGroup,
+      orientation
+    );
+  }
+}
+```
+
+## IWorkspaceContextService
+
+Provides workspace context information.
+
+```typescript
+import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
+
+class WorkspaceManager {
+  constructor(
+    @IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService
+  ) {}
+
+  getWorkspaceState(): WorkbenchState {
+    return this.workspaceService.getWorkbenchState();
+  }
+
+  isInWorkspace(): boolean {
+    return this.workspaceService.getWorkbenchState() !== WorkbenchState.EMPTY;
+  }
+
+  getWorkspaceFolders() {
+    return this.workspaceService.getWorkspace().folders;
+  }
+
+  getWorkspaceFolder(uri: URI) {
+    return this.workspaceService.getWorkspaceFolder(uri);
+  }
+}
+```
+
+## ITextFileService
+
+Manages text file models and file operations.
+
+```typescript
+import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
+
+class TextFileManager {
+  constructor(
+    @ITextFileService private readonly textFileService: ITextFileService
+  ) {}
+
+  async readFile(uri: URI): Promise<string> {
+    const model = await this.textFileService.files.resolve(uri);
+    return model.textEditorModel?.getValue() || '';
+  }
+
+  async saveFile(uri: URI): Promise<void> {
+    const model = this.textFileService.files.get(uri);
+    if (model?.isDirty()) {
+      await model.save();
+    }
+  }
+
+  async createFile(uri: URI, content: string): Promise<void> {
+    await this.textFileService.create([{
+      resource: uri,
+      value: content
+    }]);
+  }
+}
+```
+
+## Best Practices
+
+<Tip>
+  Use workbench services when you need to interact with the VS Code UI. Use platform services for core functionality that doesn't require UI.
+</Tip>
+
+<Warning>
+  Workbench services are only available after the workbench is initialized. Don't try to access them during early startup phases.
+</Warning>
+
+<Info>
+  Many workbench services emit events when their state changes. Subscribe to these events to keep your UI in sync with the workbench.
+</Info>
+
+## Service Hierarchy
+
+```
+Base Layer (vs/base/)
+  ↓
+Platform Services (vs/platform/)
+  ↓
+Workbench Services (vs/workbench/services/)
+  ↓
+Workbench Contributions (vs/workbench/contrib/)
+```
+
+Services should only depend on layers below them in this hierarchy.
+
+## Common Patterns
+
+### Combining Services
+
+```typescript
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
+import { INotificationService } from 'vs/platform/notification/common/notification';
+
+class FileSaveHandler {
+  constructor(
+    @IEditorService private readonly editorService: IEditorService,
+    @ITextFileService private readonly textFileService: ITextFileService,
+    @INotificationService private readonly notificationService: INotificationService
+  ) {}
+
+  async saveActiveEditor(): Promise<void> {
+    const activeEditor = this.editorService.activeEditor;
+    if (!activeEditor) {
+      this.notificationService.info('No active editor');
+      return;
+    }
+
+    const uri = activeEditor.resource;
+    if (!uri) {
+      return;
+    }
+
+    try {
+      await this.textFileService.save(uri);
+      this.notificationService.info('File saved successfully');
+    } catch (error) {
+      this.notificationService.error('Failed to save file');
+    }
+  }
+}
+```
+
+### Event Coordination
+
+```typescript
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { IViewsService } from 'vs/workbench/services/views/common/viewsService';
+import { Disposable } from 'vs/base/common/lifecycle';
+
+class EditorViewCoordinator extends Disposable {
+  constructor(
+    @IEditorService private readonly editorService: IEditorService,
+    @IViewsService private readonly viewsService: IViewsService
+  ) {
+    super();
+
+    this._register(
+      this.editorService.onDidActiveEditorChange(() => {
+        this.updateView();
+      })
+    );
+  }
+
+  private updateView(): void {
+    const editor = this.editorService.activeEditor;
+    if (editor?.resource) {
+      // Update a custom view based on active editor
+      this.viewsService.openView('myCustomView', false);
+    }
+  }
+}
+```
+
+## Related Resources
+
+- [Platform Services](/api/platform-services) - Core platform service APIs
+- [Editor APIs](/api/editor-api) - Monaco editor interfaces
+- [Base Layer APIs](/api/base) - Foundational utilities
+- [VS Code Architecture](https://github.com/microsoft/vscode/wiki/Source-Code-Organization) - Understanding the codebase structure
+
+## Source Code References
+
+- `src/vs/workbench/services/editor/common/editorService.ts` - Editor service
+- `src/vs/workbench/services/views/common/viewsService.ts` - Views service
+- `src/vs/workbench/services/activity/common/activity.ts` - Activity service
+- `src/vs/workbench/services/textfile/common/textfiles.ts` - Text file service
+- `src/vs/workbench/services/workingCopy/common/workingCopyService.ts` - Working copy service

@@ -1,0 +1,496 @@
+---
+title: Platform Services
+description: Core platform services that provide fundamental functionality across VS Code
+---
+
+# Platform Services
+
+Platform services (`src/vs/platform/`) provide core functionality that is available throughout VS Code. These services are framework-level abstractions that handle fundamental operations like file access, logging, configuration, and commands.
+
+## What are Platform Services?
+
+Platform services are:
+
+- **Environment-agnostic**: Work in browser, Electron, and remote contexts
+- **Dependency-injected**: Accessed through VS Code's DI system
+- **Singleton-scoped**: Typically one instance per application/window
+- **Interface-based**: Defined by TypeScript interfaces with multiple implementations
+
+## Accessing Services
+
+Services are accessed through dependency injection:
+
+```typescript
+import { IFileService } from 'vs/platform/files/common/files';
+import { ILogService } from 'vs/platform/log/common/log';
+
+class MyClass {
+  constructor(
+    @IFileService private readonly fileService: IFileService,
+    @ILogService private readonly logService: ILogService
+  ) {
+    this.logService.info('MyClass initialized');
+  }
+
+  async readFile(uri: URI): Promise<string> {
+    const content = await this.fileService.readFile(uri);
+    return content.value.toString();
+  }
+}
+```
+
+## Key Platform Services
+
+### IFileService
+
+The file service provides file system operations across all platforms.
+
+```typescript
+// From src/vs/platform/files/common/files.ts
+export const IFileService = createDecorator<IFileService>('fileService');
+
+export interface IFileService {
+  // Events
+  readonly onDidFilesChange: Event<FileChangesEvent>;
+  readonly onDidRunOperation: Event<FileOperationEvent>;
+
+  // File operations
+  resolve(resource: URI, options?: IResolveFileOptions): Promise<IFileStat>;
+  stat(resource: URI): Promise<IFileStatWithPartialMetadata>;
+  exists(resource: URI): Promise<boolean>;
+
+  readFile(resource: URI, options?: IReadFileOptions): Promise<IFileContent>;
+  readFileStream(resource: URI, options?: IReadFileStreamOptions): Promise<IFileStreamContent>;
+
+  writeFile(resource: URI, bufferOrReadable: VSBuffer | VSBufferReadable, options?: IWriteFileOptions): Promise<IFileStatWithMetadata>;
+
+  // Directory operations
+  createFolder(resource: URI): Promise<IFileStatWithMetadata>;
+  del(resource: URI, options?: IDeleteOptions): Promise<void>;
+  copy(source: URI, target: URI, overwrite?: boolean): Promise<IFileStatWithMetadata>;
+  move(source: URI, target: URI, overwrite?: boolean): Promise<IFileStatWithMetadata>;
+
+  // File watching
+  watch(resource: URI, options?: IWatchOptions): IDisposable;
+}
+```
+
+#### Using IFileService
+
+```typescript
+import { IFileService } from 'vs/platform/files/common/files';
+import { URI } from 'vs/base/common/uri';
+import { VSBuffer } from 'vs/base/common/buffer';
+
+class FileManager {
+  constructor(
+    @IFileService private readonly fileService: IFileService
+  ) {}
+
+  async readConfiguration(): Promise<any> {
+    const uri = URI.file('/path/to/config.json');
+    const content = await this.fileService.readFile(uri);
+    return JSON.parse(content.value.toString());
+  }
+
+  async saveData(uri: URI, data: string): Promise<void> {
+    await this.fileService.writeFile(
+      uri,
+      VSBuffer.fromString(data)
+    );
+  }
+
+  async watchFile(uri: URI): Promise<void> {
+    const disposable = this.fileService.watch(uri);
+    this.fileService.onDidFilesChange(event => {
+      if (event.contains(uri)) {
+        console.log('File changed!');
+      }
+    });
+  }
+}
+```
+
+### ILogService
+
+Provides logging functionality with multiple log levels.
+
+```typescript
+// From src/vs/platform/log/common/log.ts
+export const ILogService = createDecorator<ILogService>('logService');
+
+export interface ILogService extends ILogger {
+  readonly _serviceBrand: undefined;
+}
+
+export interface ILogger extends IDisposable {
+  readonly onDidChangeLogLevel: Event<LogLevel>;
+  getLevel(): LogLevel;
+  setLevel(level: LogLevel): void;
+
+  trace(message: string, ...args: unknown[]): void;
+  debug(message: string, ...args: unknown[]): void;
+  info(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  error(message: string | Error, ...args: unknown[]): void;
+
+  flush(): void;
+}
+
+export enum LogLevel {
+  Off,
+  Trace,
+  Debug,
+  Info,
+  Warning,
+  Error
+}
+```
+
+#### Using ILogService
+
+```typescript
+import { ILogService } from 'vs/platform/log/common/log';
+
+class MyService {
+  constructor(
+    @ILogService private readonly logService: ILogService
+  ) {}
+
+  async doWork(): Promise<void> {
+    this.logService.info('Starting work...');
+
+    try {
+      await this.performTask();
+      this.logService.debug('Task completed successfully');
+    } catch (error) {
+      this.logService.error('Task failed', error);
+      throw error;
+    }
+  }
+
+  private async performTask(): Promise<void> {
+    this.logService.trace('performTask called');
+    // Implementation
+  }
+}
+```
+
+### IConfigurationService
+
+Accesses and manages configuration settings.
+
+```typescript
+// From src/vs/platform/configuration/common/configuration.ts
+export const IConfigurationService = createDecorator<IConfigurationService>('configurationService');
+
+export interface IConfigurationService {
+  readonly _serviceBrand: undefined;
+
+  readonly onDidChangeConfiguration: Event<IConfigurationChangeEvent>;
+
+  getValue<T>(): T;
+  getValue<T>(section: string): T;
+  getValue<T>(section: string, overrides: IConfigurationOverrides): T;
+
+  updateValue(key: string, value: any): Promise<void>;
+  updateValue(key: string, value: any, target: ConfigurationTarget): Promise<void>;
+  updateValue(key: string, value: any, overrides: IConfigurationOverrides, target: ConfigurationTarget): Promise<void>;
+
+  inspect<T>(key: string): IConfigurationValue<T>;
+}
+
+export enum ConfigurationTarget {
+  APPLICATION = 1,
+  USER,
+  USER_LOCAL,
+  USER_REMOTE,
+  WORKSPACE,
+  WORKSPACE_FOLDER,
+  DEFAULT,
+  MEMORY
+}
+```
+
+#### Using IConfigurationService
+
+```typescript
+import { IConfigurationService, ConfigurationTarget } from 'vs/platform/configuration/common/configuration';
+
+class SettingsManager {
+  constructor(
+    @IConfigurationService private readonly configService: IConfigurationService
+  ) {
+    // Listen for configuration changes
+    configService.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('myExtension.setting')) {
+        this.onSettingChanged();
+      }
+    });
+  }
+
+  getSetting(): boolean {
+    return this.configService.getValue<boolean>('myExtension.setting');
+  }
+
+  async updateSetting(value: boolean): Promise<void> {
+    await this.configService.updateValue(
+      'myExtension.setting',
+      value,
+      ConfigurationTarget.USER
+    );
+  }
+
+  inspectSetting() {
+    const inspection = this.configService.inspect('myExtension.setting');
+    console.log('Default:', inspection.defaultValue);
+    console.log('User:', inspection.userValue);
+    console.log('Workspace:', inspection.workspaceValue);
+    console.log('Effective:', inspection.value);
+  }
+}
+```
+
+### ICommandService
+
+Executes and registers commands.
+
+```typescript
+// From src/vs/platform/commands/common/commands.ts
+export const ICommandService = createDecorator<ICommandService>('commandService');
+
+export interface ICommandService {
+  readonly _serviceBrand: undefined;
+  readonly onWillExecuteCommand: Event<ICommandEvent>;
+  readonly onDidExecuteCommand: Event<ICommandEvent>;
+  executeCommand<R = unknown>(commandId: string, ...args: unknown[]): Promise<R | undefined>;
+}
+
+// Register commands
+CommandsRegistry.registerCommand({
+  id: 'myCommand',
+  handler: (accessor: ServicesAccessor, ...args: any[]) => {
+    const logService = accessor.get(ILogService);
+    logService.info('Command executed', args);
+  }
+});
+```
+
+#### Using ICommandService
+
+```typescript
+import { ICommandService } from 'vs/platform/commands/common/commands';
+
+class CommandHandler {
+  constructor(
+    @ICommandService private readonly commandService: ICommandService
+  ) {}
+
+  async executeCommand(): Promise<void> {
+    // Execute a command
+    await this.commandService.executeCommand('workbench.action.files.save');
+
+    // Execute with arguments
+    const result = await this.commandService.executeCommand(
+      'vscode.open',
+      URI.file('/path/to/file')
+    );
+  }
+
+  listenToCommands(): void {
+    this.commandService.onDidExecuteCommand(e => {
+      console.log('Command executed:', e.commandId);
+    });
+  }
+}
+```
+
+### Other Important Platform Services
+
+#### IInstantiationService
+
+Creates instances with dependency injection:
+
+```typescript
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+
+class Factory {
+  constructor(
+    @IInstantiationService private readonly instantiationService: IInstantiationService
+  ) {}
+
+  createInstance(): MyClass {
+    // MyClass's dependencies are automatically injected
+    return this.instantiationService.createInstance(MyClass);
+  }
+}
+```
+
+#### INotificationService
+
+Display notifications to users:
+
+```typescript
+import { INotificationService, Severity } from 'vs/platform/notification/common/notification';
+
+class Notifier {
+  constructor(
+    @INotificationService private readonly notificationService: INotificationService
+  ) {}
+
+  showInfo(message: string): void {
+    this.notificationService.info(message);
+  }
+
+  showError(message: string): void {
+    this.notificationService.notify({
+      severity: Severity.Error,
+      message,
+      actions: {
+        primary: [{
+          id: 'action',
+          label: 'Fix It',
+          run: () => this.fixProblem()
+        }]
+      }
+    });
+  }
+}
+```
+
+#### IDialogService
+
+Show dialogs and prompts:
+
+```typescript
+import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
+
+class DialogHandler {
+  constructor(
+    @IDialogService private readonly dialogService: IDialogService
+  ) {}
+
+  async confirm(message: string): Promise<boolean> {
+    const result = await this.dialogService.confirm({
+      message,
+      primaryButton: 'Yes',
+      cancelButton: 'No'
+    });
+    return result.confirmed;
+  }
+}
+```
+
+#### IKeybindingService
+
+Handle keyboard shortcuts:
+
+```typescript
+import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
+
+class KeybindingHandler {
+  constructor(
+    @IKeybindingService private readonly keybindingService: IKeybindingService
+  ) {}
+
+  getKeybinding(commandId: string): string | undefined {
+    const bindings = this.keybindingService.lookupKeybindings(commandId);
+    return bindings[0]?.getLabel();
+  }
+}
+```
+
+## Creating a Service
+
+Here's how to define and implement a new platform service:
+
+```typescript
+// 1. Define the service interface
+import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
+
+export const IMyService = createDecorator<IMyService>('myService');
+
+export interface IMyService {
+  readonly _serviceBrand: undefined;
+  doSomething(): void;
+}
+
+// 2. Implement the service
+import { ILogService } from 'vs/platform/log/common/log';
+
+export class MyService implements IMyService {
+  declare readonly _serviceBrand: undefined;
+
+  constructor(
+    @ILogService private readonly logService: ILogService
+  ) {}
+
+  doSomething(): void {
+    this.logService.info('Doing something');
+  }
+}
+
+// 3. Register the service
+import { registerSingleton } from 'vs/platform/instantiation/common/extensions';
+
+registerSingleton(IMyService, MyService, InstantiationType.Delayed);
+```
+
+## Service Instantiation Types
+
+```typescript
+export enum InstantiationType {
+  /**
+   * Service is created when first requested
+   */
+  Delayed,
+  /**
+   * Service is created immediately when the service collection is created
+   */
+  Eager
+}
+```
+
+## Best Practices
+
+<Tip>
+  Always use dependency injection to access services. Avoid importing service implementations directly.
+</Tip>
+
+<Warning>
+  Platform services should not depend on workbench services. Keep the dependency hierarchy clean: base → platform → workbench.
+</Warning>
+
+<Info>
+  When creating new services, prefer `InstantiationType.Delayed` for better startup performance. Only use `Eager` when the service must initialize early.
+</Info>
+
+## Platform vs Workbench Services
+
+**Platform Services:**
+- Environment-agnostic fundamentals
+- Available in all contexts (browser, Electron, remote)
+- Examples: files, logging, configuration, commands
+- Located in `src/vs/platform/`
+
+**Workbench Services:**
+- UI and editor-specific functionality
+- Tied to the workbench context
+- Examples: editor service, views service, panels
+- Located in `src/vs/workbench/services/`
+
+See [Workbench Services](/api/workbench-services) for more details.
+
+## Related Resources
+
+- [Base Layer APIs](/api/base) - Foundational utilities used by platform services
+- [Workbench Services](/api/workbench-services) - Higher-level workbench-specific services
+- [Dependency Injection](https://github.com/microsoft/vscode/wiki/Dependency-Injection) - VS Code's DI system
+
+## Source Code References
+
+- `src/vs/platform/files/common/files.ts` - File service
+- `src/vs/platform/log/common/log.ts` - Logging service
+- `src/vs/platform/configuration/common/configuration.ts` - Configuration service
+- `src/vs/platform/commands/common/commands.ts` - Command service
+- `src/vs/platform/instantiation/common/instantiation.ts` - DI infrastructure

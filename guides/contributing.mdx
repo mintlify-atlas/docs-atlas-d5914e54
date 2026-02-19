@@ -1,0 +1,271 @@
+---
+title: Contributing to VS Code
+description: Learn how to contribute code, fix issues, and submit pull requests to Visual Studio Code
+---
+
+This guide covers the process of contributing code to the Visual Studio Code project, from finding issues to work on through the code review process.
+
+## Getting Started
+
+Before you start contributing, familiarize yourself with:
+
+- The [VS Code architecture](/concepts/architecture) and [layered design](/concepts/layered-design)
+- [Coding guidelines](/development/coding-guidelines) and style conventions
+- How to [build from source](/development/building-from-source)
+
+<Note>
+Have a question? Ask on [Stack Overflow](https://stackoverflow.com/questions/tagged/visual-studio-code) using the tag `visual-studio-code` rather than opening an issue.
+</Note>
+
+## Finding Issues to Work On
+
+### Good First Issues
+
+The best way to start contributing is to look for issues labeled `good first issue`:
+
+<Steps>
+  <Step title="Browse Issues">
+    Visit the [good first issue](https://github.com/microsoft/vscode/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) label on GitHub
+  </Step>
+  
+  <Step title="Check Related Projects">
+    If the issue isn't in the main repo, check the [Related Projects](https://github.com/microsoft/vscode/wiki/Related-Projects) list. Many features live in separate repositories.
+  </Step>
+  
+  <Step title="Comment on the Issue">
+    Comment that you'd like to work on the issue to avoid duplicate effort
+  </Step>
+</Steps>
+
+### Identifying the Right Repository
+
+VS Code is distributed across multiple repositories:
+
+- **Main repository** (`microsoft/vscode`) - Core editor and workbench
+- **Language services** - TypeScript, HTML, CSS features in separate repos
+- **Extensions** - Many built-in extensions have their own repositories
+- **Documentation** - The `vscode-docs` repository
+
+<Tip>
+Can you recreate the issue after [disabling all extensions](https://code.visualstudio.com/docs/editor/extension-gallery#_disable-an-extension)? If an extension causes it, file the issue on that extension's repository.
+</Tip>
+
+## Reporting Issues
+
+### Before Creating an Issue
+
+<Accordion title="Search for Existing Issues">
+  Search [open issues](https://github.com/microsoft/vscode/issues) to see if your bug or feature request already exists. Use reactions (👍/👎) instead of "+1" comments.
+</Accordion>
+
+<Accordion title="Use the Built-in Reporter">
+  Use **Help > Report Issue** in VS Code. This tool automatically includes your VS Code version, extensions, and system info, and searches for similar issues.
+</Accordion>
+
+### Writing Good Bug Reports
+
+Include the following in your bug report:
+
+```markdown
+**VS Code Version**: 1.85.0
+**OS Version**: macOS 14.0
+
+**Steps to Reproduce**:
+1. Open a TypeScript file
+2. Add a function with JSDoc
+3. Hover over the function name
+
+**Expected**: Should show JSDoc in hover
+**Actual**: Shows only function signature
+
+**Extensions**: List installed extensions
+```
+
+<Note>
+Provide code snippets as text, not screenshots. Developers need to copy and paste code to reproduce issues.
+</Note>
+
+## Submitting Pull Requests
+
+### Development Workflow
+
+<Steps>
+  <Step title="Fork and Clone">
+    Fork the repository and clone your fork locally
+    
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/vscode.git
+    cd vscode
+    ```
+  </Step>
+  
+  <Step title="Create a Branch">
+    Create a branch for your changes
+    
+    ```bash
+    git checkout -b fix/issue-12345
+    ```
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Install dependencies and build the project
+    
+    ```bash
+    npm install
+    npm run watch
+    ```
+    
+    See [Building from Source](/development/building-from-source) for detailed instructions.
+  </Step>
+  
+  <Step title="Make Changes">
+    Make your changes following the [coding guidelines](/development/coding-guidelines)
+    
+    - Use tabs for indentation
+    - Follow naming conventions (PascalCase for types, camelCase for functions)
+    - Add JSDoc comments for public APIs
+    - Localize user-facing strings with `nls.localize()`
+  </Step>
+  
+  <Step title="Test Your Changes">
+    Run relevant tests and ensure compilation succeeds
+    
+    ```bash
+    # Run unit tests
+    ./scripts/test.sh --grep "your test pattern"
+    
+    # Run integration tests
+    ./scripts/test-integration.sh
+    
+    # Check for layering violations
+    npm run valid-layers-check
+    ```
+  </Step>
+  
+  <Step title="Commit Changes">
+    Write a clear commit message following the repository's style
+    
+    ```bash
+    git add .
+    git commit -m "Fix #12345: Brief description of the fix"
+    ```
+  </Step>
+</Steps>
+
+### Pull Request Guidelines
+
+When creating your pull request:
+
+<CardGroup cols={2}>
+  <Card title="Title Format" icon="heading">
+    Use clear, descriptive titles: "Fix hover display for JSDoc comments"
+  </Card>
+  
+  <Card title="Description" icon="file-lines">
+    Explain what the PR does, why, and reference the issue number
+  </Card>
+  
+  <Card title="Small PRs" icon="minimize">
+    Keep PRs focused on a single issue or feature
+  </Card>
+  
+  <Card title="Tests" icon="flask">
+    Include tests for new functionality or bug fixes
+  </Card>
+</CardGroup>
+
+Example PR description:
+
+```markdown
+Fixes #12345
+
+This PR fixes the hover display for functions with JSDoc comments.
+
+**Changes**:
+- Updated hover provider to include JSDoc content
+- Added test case for JSDoc hover
+- Fixed TypeScript type annotations
+
+**Testing**:
+- Tested manually with various JSDoc formats
+- Added unit test in `src/vs/editor/contrib/hover/test/hover.test.ts`
+```
+
+### Code Review Process
+
+After submitting your PR:
+
+1. **Automated Checks** - CI builds and tests run automatically
+2. **Review Assignment** - A maintainer will be assigned to review
+3. **Feedback** - Address any feedback or requested changes
+4. **Approval** - Once approved, a maintainer will merge your PR
+
+<Warning>
+Be patient during code review. Maintainers review PRs as time permits. Complex changes may require multiple rounds of review.
+</Warning>
+
+## Contributing Guidelines from Source
+
+The VS Code team follows specific practices documented in `CONTRIBUTING.md`:
+
+<AccordionGroup>
+  <Accordion title="Issue Management">
+    - Issues marked `info-needed` are closed after 7 days without response
+    - Issues are automatically locked 45 days after closing
+    - Feature requests follow a specific [pipeline](https://github.com/microsoft/vscode/wiki/Issues-Triaging#managing-feature-requests)
+  </Accordion>
+  
+  <Accordion title="Wiki Resources">
+    Essential wiki pages for contributors:
+    
+    - [How to Contribute](https://github.com/microsoft/vscode/wiki/How-to-Contribute) - Complete contribution guide
+    - [Coding Guidelines](https://github.com/microsoft/vscode/wiki/Coding-Guidelines) - Code style and patterns
+    - [Issue Tracking](https://github.com/microsoft/vscode/wiki/Issue-Tracking) - Issue workflow
+    - [Feedback Channels](https://github.com/microsoft/vscode/wiki/Feedback-Channels) - Where to ask questions
+  </Accordion>
+  
+  <Accordion title="Final Checklist">
+    Before submitting your PR:
+    
+    - [ ] Search the issue repository to avoid duplicates
+    - [ ] Recreate the issue after disabling all extensions
+    - [ ] Simplify code to isolate the problem
+    - [ ] Follow coding guidelines (tabs, naming, comments)
+    - [ ] Run tests and check for compilation errors
+    - [ ] Write clear commit messages
+    - [ ] Reference the issue number in your PR
+  </Accordion>
+</AccordionGroup>
+
+## Community
+
+Connect with the VS Code community:
+
+- [GitHub Discussions](https://github.com/microsoft/vscode-discussions/discussions) - Extension authors and contributors
+- [Slack](https://aka.ms/vscode-dev-community) - Development community chat
+- [@code](https://x.com/code) on X (Twitter)
+- [Stack Overflow](https://stackoverflow.com/questions/tagged/visual-studio-code) - Technical questions
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="How to Contribute Wiki" icon="book" href="https://github.com/microsoft/vscode/wiki/How-to-Contribute">
+    Comprehensive contribution guide
+  </Card>
+  
+  <Card title="Related Projects" icon="diagram-project" href="https://github.com/microsoft/vscode/wiki/Related-Projects">
+    List of VS Code related repositories
+  </Card>
+  
+  <Card title="Issue Tracking" icon="circle-exclamation" href="https://github.com/microsoft/vscode/wiki/Issue-Tracking">
+    Understanding the issue workflow
+  </Card>
+  
+  <Card title="Roadmap" icon="map" href="https://github.com/microsoft/vscode/wiki/Roadmap">
+    VS Code product roadmap
+  </Card>
+</CardGroup>
+
+## Thank You
+
+Your contributions to open source, large or small, make great projects like VS Code possible. Thank you for taking the time to contribute!

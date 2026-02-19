@@ -1,0 +1,829 @@
+---
+title: Monaco Editor
+description: Architecture of the Monaco Editor, the powerful code editor that powers VS Code
+---
+
+The **Monaco Editor** is the heart of VS Code's editing experience. It's a standalone, browser-based code editor that provides rich IntelliSense, validation, and editing features. Located in `src/vs/editor/`, it can be used independently of VS Code.
+
+## What is Monaco?
+
+Monaco is the code editor that powers VS Code. Key characteristics:
+
+<CardGroup cols={2}>
+  <Card title="Standalone" icon="cube">
+    Can be embedded in any web application independently
+  </Card>
+  <Card title="Fast & Efficient" icon="bolt">
+    Optimized for large files with virtual scrolling and viewport rendering
+  </Card>
+  <Card title="Feature-Rich" icon="star">
+    IntelliSense, syntax highlighting, diff editor, and more
+  </Card>
+  <Card title="Extensible" icon="puzzle-piece">
+    Rich API for customization and extensions
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+<Steps>
+  <Step title="Text Model Layer">
+    Core data structures representing text content
+  </Step>
+  <Step title="View Model Layer">
+    Layout and visual representation of the text
+  </Step>
+  <Step title="View Layer">
+    Rendering and DOM manipulation
+  </Step>
+  <Step title="Controller Layer">
+    User input handling and command execution
+  </Step>
+  <Step title="Language Services">
+    Language-specific features (IntelliSense, validation, etc.)
+  </Step>
+</Steps>
+
+## Text Model
+
+The text model represents the actual document content and is completely independent of how it's displayed.
+
+**Location:** `src/vs/editor/common/model.ts`
+
+<CodeGroup>
+```typescript ITextModel Interface
+interface ITextModel extends ITextBuffer {
+  readonly uri: URI;
+  readonly id: string;
+  
+  // Content
+  getValue(): string;
+  getValueLength(): number;
+  getValueInRange(range: IRange): string;
+  getLineCount(): number;
+  getLineContent(lineNumber: number): string;
+  
+  // Editing
+  applyEdits(operations: IIdentifiedSingleEditOperation[]): void;
+  pushEditOperations(
+    beforeCursorState: Selection[],
+    editOperations: IIdentifiedSingleEditOperation[],
+    cursorStateComputer: ICursorStateComputer
+  ): Selection[] | null;
+  
+  // Events
+  readonly onDidChangeContent: Event<IModelContentChangedEvent>;
+  readonly onDidChangeLanguage: Event<IModelLanguageChangedEvent>;
+  readonly onDidChangeOptions: Event<IModelOptionsChangedEvent>;
+}
+```
+
+```typescript Creating a Text Model
+import { createTextModel } from 'vs/editor/common/model/textModel';
+
+const model = createTextModel(
+  'const x = 10;\nconsole.log(x);',
+  'javascript',
+  URI.file('/path/to/file.js')
+);
+
+// Read content
+console.log(model.getLineCount()); // 2
+console.log(model.getLineContent(1)); // 'const x = 10;'
+
+// Listen for changes
+model.onDidChangeContent(e => {
+  console.log('Content changed:', e.changes);
+});
+```
+
+```typescript Editing the Model
+// Single edit
+model.applyEdits([{
+  range: new Range(1, 1, 1, 1),
+  text: '// Comment\n'
+}]);
+
+// Batch edits with cursor tracking
+const newCursorState = model.pushEditOperations(
+  [new Selection(1, 1, 1, 1)],
+  [{
+    range: new Range(1, 7, 1, 7),
+    text: 'y = 20, '
+  }],
+  (inverseEditOperations) => {
+    // Compute new cursor position
+    return [new Selection(1, 15, 1, 15)];
+  }
+);
+```
+</CodeGroup>
+
+<Note>
+Text models use **piece table** data structures for efficient editing operations, supporting O(log n) complexity for most operations even on large files.
+</Note>
+
+### Text Buffer
+
+The underlying representation of text content:
+
+<CodeGroup>
+```typescript ITextBuffer
+interface ITextBuffer {
+  equals(other: ITextBuffer): boolean;
+  mightContainRTL(): boolean;
+  mightContainUnusualLineTerminators(): boolean;
+  getBOM(): string;
+  getEOL(): string;
+  
+  getLineCount(): number;
+  getLineLength(lineNumber: number): number;
+  getLineContent(lineNumber: number): string;
+  getLineCharCode(lineNumber: number, index: number): number;
+}
+```
+
+```typescript Efficient Line Access
+// Direct character code access (no string allocation)
+const charCode = model.getLineCharCode(lineNumber, columnIndex);
+
+// Check for specific characters without string operations
+if (charCode === CharCode.OpenBrace) {
+  // Handle opening brace
+}
+```
+</CodeGroup>
+
+## View Model
+
+The view model transforms the text model into visual representation, handling:
+
+- Line wrapping
+- Folding (code collapse)
+- Decorations (highlights, error squiggles)
+- Hidden areas
+- Viewport calculations
+
+**Location:** `src/vs/editor/common/viewModel.ts:31`
+
+<CodeGroup>
+```typescript IViewModel Interface
+interface IViewModel {
+  readonly model: ITextModel;
+  
+  // Coordinate conversion
+  convertViewPositionToModelPosition(viewPosition: Position): Position;
+  convertModelPositionToViewPosition(modelPosition: Position): Position;
+  
+  // View lines
+  getViewLineCount(): number;
+  getViewLineContent(viewLineNumber: number): string;
+  getViewLineMinColumn(viewLineNumber: number): number;
+  getViewLineMaxColumn(viewLineNumber: number): number;
+  
+  // Decorations
+  getDecorationsInViewport(range: Range): ViewModelDecoration[];
+  
+  // Events
+  readonly onEvent: Event<OutgoingViewModelEvent>;
+}
+```
+
+```typescript View-Model Coordinates
+// Model has 1 wrapped line that displays as 2 view lines
+// Model line 1: "This is a very long line that wraps"
+// View line 1:  "This is a very long"
+// View line 2:  "line that wraps"
+
+const modelPos = new Position(1, 25); // "line"
+const viewPos = viewModel.convertModelPositionToViewPosition(modelPos);
+// viewPos = Position(2, 1) - first char of second view line
+```
+</CodeGroup>
+
+### Decorations
+
+Decorations add visual elements to the editor (error squiggles, highlights, inline widgets, etc.)
+
+<CodeGroup>
+```typescript Decoration Types
+interface IModelDecoration {
+  readonly id: string;
+  readonly range: Range;
+  readonly options: IModelDecorationOptions;
+}
+
+interface IModelDecorationOptions {
+  // Appearance
+  className?: string;
+  glyphMarginClassName?: string;
+  
+  // Inline styling
+  inlineClassName?: string;
+  beforeContentClassName?: string;
+  afterContentClassName?: string;
+  
+  // Behavior
+  stickiness?: TrackedRangeStickiness;
+  hoverMessage?: IMarkdownString | IMarkdownString[];
+  
+  // Minimap
+  minimap?: IModelDecorationMinimapOptions;
+  overviewRuler?: IModelDecorationOverviewRulerOptions;
+}
+```
+
+```typescript Adding Decorations
+const decorations = editor.createDecorationsCollection([
+  {
+    range: new Range(1, 1, 1, 5),
+    options: {
+      inlineClassName: 'error-highlight',
+      hoverMessage: { value: 'Undefined variable' },
+      minimap: {
+        color: { id: 'minimap.errorHighlight' },
+        position: MinimapPosition.Inline
+      }
+    }
+  }
+]);
+
+// Update decorations
+decorations.set([/* new decorations */]);
+
+// Remove decorations
+decorations.clear();
+```
+</CodeGroup>
+
+See decoration enums in `src/vs/editor/common/model.ts:36-80`
+
+## Editor Architecture
+
+The editor is composed of multiple layers working together:
+
+<Steps>
+  <Step title="Code Editor Service">
+    Manages all editor instances and provides shared services
+  </Step>
+  
+  <Step title="Editor Widget">
+    The main editor UI component with view and controller
+  </Step>
+  
+  <Step title="View Parts">
+    Individual rendering components (lines, scrollbar, minimap, etc.)
+  </Step>
+  
+  <Step title="Contributions">
+    Pluggable features (find, hover, IntelliSense, etc.)
+  </Step>
+</Steps>
+
+### Code Editor
+
+<CodeGroup>
+```typescript ICodeEditor Interface
+interface ICodeEditor extends IEditor {
+  readonly _codeEditorBrand: undefined;
+  
+  // Model
+  getModel(): ITextModel | null;
+  setModel(model: ITextModel | null): void;
+  
+  // Selection & Cursor
+  getSelection(): Selection | null;
+  getSelections(): Selection[] | null;
+  setSelection(selection: IRange): void;
+  setSelections(selections: readonly ISelection[]): void;
+  
+  // Viewport
+  getVisibleRanges(): Range[];
+  getScrollTop(): number;
+  setScrollTop(scrollTop: number): void;
+  revealLine(lineNumber: number): void;
+  revealRange(range: IRange): void;
+  
+  // Editing
+  executeEdits(source: string, edits: IIdentifiedSingleEditOperation[]): boolean;
+  executeCommands(source: string, commands: ICommand[]): void;
+  
+  // Layout
+  layout(dimension?: IDimension): void;
+  focus(): void;
+}
+```
+
+```typescript Creating an Editor
+import { create } from 'monaco-editor';
+
+const editor = monaco.editor.create(container, {
+  value: 'console.log("Hello, Monaco!");',
+  language: 'javascript',
+  theme: 'vs-dark',
+  minimap: { enabled: true },
+  fontSize: 14,
+  lineNumbers: 'on',
+  automaticLayout: true
+});
+
+// Get/set content
+const value = editor.getValue();
+editor.setValue('new content');
+
+// Work with selections
+const selection = editor.getSelection();
+editor.setSelection(new Range(1, 1, 1, 10));
+
+// Listen for changes
+editor.onDidChangeModelContent(e => {
+  console.log('Changes:', e.changes);
+});
+```
+</CodeGroup>
+
+### Diff Editor
+
+Compare two text models side-by-side:
+
+<CodeGroup>
+```typescript IDiffEditor
+interface IDiffEditor extends IEditor {
+  // Models
+  getOriginalEditor(): ICodeEditor;
+  getModifiedEditor(): ICodeEditor;
+  setModel(model: IDiffEditorModel): void;
+  
+  // Diff navigation
+  getDiffComputationResult(): IDiffComputationResult | null;
+  getLineChanges(): ILineChange[] | null;
+  
+  // Navigation
+  goToDiff(target: DiffNavigationTarget): void;
+}
+
+interface IDiffEditorModel {
+  original: ITextModel;
+  modified: ITextModel;
+}
+```
+
+```typescript Creating a Diff Editor
+const diffEditor = monaco.editor.createDiffEditor(container, {
+  enableSplitViewResizing: true,
+  renderSideBySide: true
+});
+
+const originalModel = monaco.editor.createModel(
+  'const x = 1;',
+  'javascript'
+);
+
+const modifiedModel = monaco.editor.createModel(
+  'const x = 2;',
+  'javascript'
+);
+
+diffEditor.setModel({
+  original: originalModel,
+  modified: modifiedModel
+});
+```
+</CodeGroup>
+
+## Editor Contributions
+
+Contributions are pluggable features that extend the editor. Located in `src/vs/editor/contrib/`.
+
+<CardGroup cols={2}>
+  <Card title="find" icon="magnifying-glass">
+    Find and replace functionality
+  </Card>
+  <Card title="hover" icon="message">
+    Hover tooltips and information
+  </Card>
+  <Card title="suggest" icon="lightbulb">
+    IntelliSense/autocomplete suggestions
+  </Card>
+  <Card title="snippet" icon="code">
+    Snippet expansion and placeholders
+  </Card>
+  <Card title="folding" icon="compress">
+    Code folding/collapsing
+  </Card>
+  <Card title="bracketMatching" icon="brackets-curly">
+    Matching bracket highlighting
+  </Card>
+  <Card title="quickFix" icon="wrench">
+    Quick fixes and code actions
+  </Card>
+  <Card title="gotoSymbol" icon="location-dot">
+    Symbol navigation
+  </Card>
+</CardGroup>
+
+### Creating a Contribution
+
+<CodeGroup>
+```typescript Editor Contribution
+import { 
+  IEditorContribution,
+  EditorContributionInstantiation
+} from 'vs/editor/common/editorCommon';
+import { registerEditorContribution } from 'vs/editor/browser/editorExtensions';
+
+class MyEditorContribution implements IEditorContribution {
+  static readonly ID = 'editor.contrib.myFeature';
+
+  constructor(
+    private editor: ICodeEditor,
+    @IContextKeyService private contextKeyService: IContextKeyService
+  ) {
+    this.editor.onDidChangeModel(() => {
+      this.onModelChanged();
+    });
+  }
+
+  getId(): string {
+    return MyEditorContribution.ID;
+  }
+
+  dispose(): void {
+    // Cleanup
+  }
+
+  private onModelChanged(): void {
+    // Handle model change
+  }
+}
+
+// Register the contribution
+registerEditorContribution(
+  MyEditorContribution.ID,
+  MyEditorContribution,
+  EditorContributionInstantiation.Eager // or Lazy
+);
+```
+
+```typescript Editor Action
+import { EditorAction, registerEditorAction } from 'vs/editor/browser/editorExtensions';
+
+class MyEditorAction extends EditorAction {
+  constructor() {
+    super({
+      id: 'editor.action.myAction',
+      label: 'My Custom Action',
+      alias: 'My Custom Action',
+      precondition: ContextKeyExpr.and(
+        EditorContextKeys.writable,
+        EditorContextKeys.hasNonEmptySelection
+      ),
+      kbOpts: {
+        kbExpr: EditorContextKeys.textInputFocus,
+        primary: KeyMod.CtrlCmd | KeyCode.KeyK,
+        weight: KeybindingWeight.EditorContrib
+      }
+    });
+  }
+
+  run(accessor: ServicesAccessor, editor: ICodeEditor): void {
+    const selection = editor.getSelection();
+    if (!selection) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const text = model.getValueInRange(selection);
+    // Process text...
+  }
+}
+
+registerEditorAction(MyEditorAction);
+```
+</CodeGroup>
+
+## Language Services
+
+Language features provide IntelliSense, validation, formatting, and other language-specific functionality.
+
+### Language Service Providers
+
+<Accordion title="Completion Provider">
+Provides IntelliSense/autocomplete suggestions.
+
+```typescript
+monaco.languages.registerCompletionItemProvider('javascript', {
+  provideCompletionItems: (model, position, context, token) => {
+    const suggestions = [
+      {
+        label: 'console',
+        kind: monaco.languages.CompletionItemKind.Keyword,
+        insertText: 'console.log($1);',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        documentation: 'Log to console'
+      }
+    ];
+    
+    return { suggestions };
+  }
+});
+```
+</Accordion>
+
+<Accordion title="Hover Provider">
+Shows information when hovering over code.
+
+```typescript
+monaco.languages.registerHoverProvider('javascript', {
+  provideHover: (model, position, token) => {
+    const word = model.getWordAtPosition(position);
+    if (!word) return null;
+
+    return {
+      range: new monaco.Range(
+        position.lineNumber,
+        word.startColumn,
+        position.lineNumber,
+        word.endColumn
+      ),
+      contents: [
+        { value: '**' + word.word + '**' },
+        { value: 'Detailed information about ' + word.word }
+      ]
+    };
+  }
+});
+```
+</Accordion>
+
+<Accordion title="Diagnostic Provider (Validation)">
+Provides error and warning markers.
+
+```typescript
+monaco.editor.onDidCreateModel(model => {
+  function validate() {
+    const markers: monaco.editor.IMarkerData[] = [];
+    const text = model.getValue();
+    
+    // Simple validation: find 'TODO' comments
+    const lines = text.split('\n');
+    lines.forEach((line, i) => {
+      if (line.includes('TODO')) {
+        markers.push({
+          severity: monaco.MarkerSeverity.Warning,
+          message: 'TODO found',
+          startLineNumber: i + 1,
+          startColumn: line.indexOf('TODO') + 1,
+          endLineNumber: i + 1,
+          endColumn: line.indexOf('TODO') + 5
+        });
+      }
+    });
+
+    monaco.editor.setModelMarkers(model, 'myValidator', markers);
+  }
+
+  let handle: any;
+  model.onDidChangeContent(() => {
+    clearTimeout(handle);
+    handle = setTimeout(validate, 500);
+  });
+  
+  validate();
+});
+```
+</Accordion>
+
+<Accordion title="Code Action Provider">
+Provides quick fixes and refactorings.
+
+```typescript
+monaco.languages.registerCodeActionProvider('javascript', {
+  provideCodeActions: (model, range, context, token) => {
+    const actions: monaco.languages.CodeAction[] = [];
+    
+    // Add action for each diagnostic
+    for (const marker of context.markers) {
+      if (marker.message.includes('TODO')) {
+        actions.push({
+          title: 'Remove TODO',
+          kind: 'quickfix',
+          diagnostics: [marker],
+          edit: {
+            edits: [{
+              resource: model.uri,
+              textEdit: {
+                range: marker,
+                text: ''
+              }
+            }]
+          }
+        });
+      }
+    }
+    
+    return {
+      actions,
+      dispose: () => {}
+    };
+  }
+});
+```
+</Accordion>
+
+### All Language Features
+
+<CardGroup cols={3}>
+  <Card title="Completion" icon="list">
+    IntelliSense suggestions
+  </Card>
+  <Card title="Hover" icon="info">
+    Hover information
+  </Card>
+  <Card title="Signature Help" icon="signature">
+    Parameter hints
+  </Card>
+  <Card title="Definition" icon="arrow-pointer">
+    Go to definition
+  </Card>
+  <Card title="References" icon="link">
+    Find all references
+  </Card>
+  <Card title="Highlighting" icon="highlighter">
+    Highlight occurrences
+  </Card>
+  <Card title="Code Actions" icon="wand-magic-sparkles">
+    Quick fixes
+  </Card>
+  <Card title="Formatting" icon="text">
+    Document formatting
+  </Card>
+  <Card title="Rename" icon="pen-to-square">
+    Symbol renaming
+  </Card>
+  <Card title="Folding" icon="compress">
+    Code folding ranges
+  </Card>
+  <Card title="Links" icon="link">
+    Clickable links
+  </Card>
+  <Card title="Colors" icon="palette">
+    Color decorations
+  </Card>
+</CardGroup>
+
+## Editor Options
+
+The editor is highly configurable:
+
+<CodeGroup>
+```typescript Common Options
+interface IEditorOptions {
+  // Basic
+  value?: string;
+  language?: string;
+  theme?: string;
+  
+  // Display
+  lineNumbers?: 'on' | 'off' | 'relative' | 'interval';
+  fontSize?: number;
+  fontFamily?: string;
+  lineHeight?: number;
+  letterSpacing?: number;
+  
+  // Behavior
+  readOnly?: boolean;
+  wordWrap?: 'off' | 'on' | 'wordWrapColumn' | 'bounded';
+  tabSize?: number;
+  insertSpaces?: boolean;
+  
+  // Features
+  minimap?: IEditorMinimapOptions;
+  scrollbar?: IEditorScrollbarOptions;
+  find?: IEditorFindOptions;
+  suggest?: ISuggestOptions;
+  
+  // Layout
+  automaticLayout?: boolean;
+  dimension?: IDimension;
+}
+```
+
+```typescript Updating Options
+// Set options during creation
+const editor = monaco.editor.create(container, {
+  fontSize: 16,
+  minimap: { enabled: false },
+  wordWrap: 'on'
+});
+
+// Update options later
+editor.updateOptions({
+  fontSize: 18,
+  theme: 'vs-dark'
+});
+
+// Get current options
+const options = editor.getOptions();
+const fontSize = options.get(EditorOption.fontSize);
+```
+</CodeGroup>
+
+## Performance Optimizations
+
+Monaco is optimized for performance:
+
+<CardGroup cols={2}>
+  <Card title="Virtual Scrolling" icon="scroll">
+    Only renders visible lines, enabling smooth scrolling of huge files
+  </Card>
+  <Card title="Incremental Tokenization" icon="bolt">
+    Tokenizes code lazily as you scroll
+  </Card>
+  <Card title="View Zones" icon="window-maximize">
+    Efficient insertion of custom UI elements between lines
+  </Card>
+  <Card title="Piece Table" icon="table">
+    Efficient text buffer using piece table data structure
+  </Card>
+</CardGroup>
+
+<Note>
+Monaco can handle files with hundreds of thousands of lines smoothly, thanks to these optimizations.
+</Note>
+
+## Standalone Monaco Editor
+
+Monaco can be used outside VS Code:
+
+<CodeGroup>
+```html Basic HTML Setup
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="monaco-editor/min/vs/editor/editor.main.css">
+</head>
+<body>
+  <div id="container" style="width:800px;height:600px;"></div>
+  
+  <script src="monaco-editor/min/vs/loader.js"></script>
+  <script>
+    require.config({ paths: { vs: 'monaco-editor/min/vs' } });
+    
+    require(['vs/editor/editor.main'], function() {
+      var editor = monaco.editor.create(
+        document.getElementById('container'),
+        {
+          value: 'function hello() {\n\tconsole.log("Hello, Monaco!");\n}',
+          language: 'javascript',
+          theme: 'vs-dark'
+        }
+      );
+    });
+  </script>
+</body>
+</html>
+```
+
+```typescript TypeScript/Webpack Setup
+import * as monaco from 'monaco-editor';
+
+// Create editor
+const editor = monaco.editor.create(container, {
+  value: 'console.log("Hello");',
+  language: 'typescript',
+  automaticLayout: true
+});
+
+// Use editor
+editor.onDidChangeModelContent(() => {
+  const value = editor.getValue();
+  console.log('Current value:', value);
+});
+```
+</CodeGroup>
+
+## Key Files Reference
+
+| Path | Description |
+|------|-------------|
+| `editor/common/model.ts` | Text model interface (line 1-80) |
+| `editor/common/viewModel.ts` | View model interface (line 31) |
+| `editor/browser/codeEditor.ts` | Code editor implementation |
+| `editor/browser/widget/` | Editor widget components |
+| `editor/contrib/` | Editor contributions (features) |
+| `editor/standalone/` | Standalone editor setup |
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Platform Layer" icon="layer-group" href="/architecture/platform-layer">
+    Learn about platform services
+  </Card>
+  <Card title="Workbench" icon="window" href="/architecture/workbench">
+    Explore the workbench UI
+  </Card>
+  <Card title="Extensions" icon="puzzle-piece" href="/architecture/extensions">
+    Understand extension system
+  </Card>
+</CardGroup>

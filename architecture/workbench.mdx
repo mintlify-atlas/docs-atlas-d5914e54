@@ -1,0 +1,851 @@
+---
+title: Workbench
+description: The workbench layer that composes VS Code's main UI with parts, panels, and contributions
+---
+
+The **workbench** is VS Code's main UI shell that brings together the editor, sidebar, panels, and other visual components. Located in `src/vs/workbench/`, it sits above the platform and editor layers to create the complete VS Code experience.
+
+## Workbench Architecture
+
+The workbench is organized into distinct visual **parts** that users see and interact with:
+
+<Frame>
+```
+┌─────────────────────────────────────────────────────┐
+│                    Title Bar                         │
+├──────┬──────────────────────────────────┬───────────┤
+│      │                                   │ Auxiliary │
+│  A   │                                   │    Bar    │
+│  c   │                                   │           │
+│  t   │         Editor Area               │           │
+│  i   │                                   │           │
+│  v   │                                   │           │
+│  i   │                                   │           │
+│  t   ├───────────────────────────────────┤           │
+│  y   │                                   │           │
+│      │           Panel                   │           │
+│  B   │                                   │           │
+│  a   │                                   │           │
+│  r   │                                   │           │
+├──────┴───────────────────────────────────┴───────────┤
+│                   Status Bar                         │
+└─────────────────────────────────────────────────────┘
+```
+</Frame>
+
+## Workbench Parts
+
+Each part is a distinct UI region with specific responsibilities. Located in `src/vs/workbench/browser/parts/`.
+
+### Activity Bar
+
+The vertical bar on the left (or right) that switches between views.
+
+<CodeGroup>
+```typescript Activity Bar Part
+// src/vs/workbench/browser/parts/activitybar/
+interface IActivityBarPart extends IPart {
+  // Show/hide activity bar
+  readonly onDidChange: Event<void>;
+  
+  // Get visible actions
+  getActions(): readonly IAction[];
+  
+  // Focus
+  focus(): void;
+}
+```
+
+```typescript Activity Bar Actions
+// Each icon in the activity bar
+interface IActivity {
+  id: string;
+  name: string;
+  keybindingId?: string;
+  cssClass?: string;
+  iconUrl?: URI;
+}
+
+// Register a new activity
+ActivityRegistry.registerActivity({
+  id: 'workbench.view.extension.myView',
+  name: 'My View',
+  iconUrl: URI.parse('myicon.svg')
+});
+```
+</CodeGroup>
+
+<Note>
+The Activity Bar can be positioned on the left (default) or right, or hidden entirely. Users control this via View menu.
+</Note>
+
+### Sidebar (Primary Sidebar)
+
+The collapsible panel on the left that hosts **viewlets** (Explorer, Search, SCM, Debug, Extensions).
+
+<CodeGroup>
+```typescript Sidebar Part
+// Composite part that hosts viewlets
+interface ISidebarPart extends IPaneCompositePart {
+  // Open a viewlet
+  openViewlet(id: string, focus?: boolean): Promise<IViewlet | undefined>;
+  
+  // Get active viewlet
+  getActiveViewlet(): IViewlet | undefined;
+  
+  // Hide/show
+  setVisible(visible: boolean): void;
+}
+```
+
+```typescript Creating a Viewlet
+class MyViewlet extends Viewlet {
+  static readonly ID = 'workbench.view.myViewlet';
+
+  constructor(
+    @ITelemetryService telemetryService: ITelemetryService,
+    @IThemeService themeService: IThemeService,
+    @IStorageService storageService: IStorageService
+  ) {
+    super(MyViewlet.ID, telemetryService, themeService, storageService);
+  }
+
+  protected createViewPaneContainer(parent: HTMLElement): ViewPaneContainer {
+    return this.instantiationService.createInstance(
+      MyViewPaneContainer,
+      parent
+    );
+  }
+}
+
+// Register the viewlet
+Registry.as<ViewletRegistry>(ViewletExtensions.Viewlets).registerViewlet(
+  ViewletDescriptor.create(
+    MyViewlet,
+    MyViewlet.ID,
+    'My Viewlet',
+    'myViewletIcon',
+    5 // Order
+  )
+);
+```
+</CodeGroup>
+
+Built-in viewlets in `src/vs/workbench/contrib/`:
+- **Explorer** (`files/`) - File tree navigation
+- **Search** (`search/`) - Global search and replace
+- **Source Control** (`scm/`) - Git and version control
+- **Debug** (`debug/`) - Debugging UI
+- **Extensions** (`extensions/`) - Extension marketplace
+
+### Editor Area
+
+The central area that hosts one or more editor groups in split layouts.
+
+<CodeGroup>
+```typescript Editor Part
+interface IEditorPart extends IEditorGroupsService {
+  // Editor groups
+  readonly groups: readonly IEditorGroup[];
+  readonly activeGroup: IEditorGroup;
+  readonly count: number;
+  
+  // Group management
+  addGroup(
+    location: IEditorGroup | GroupDirection,
+    direction: GroupDirection
+  ): IEditorGroup;
+  
+  removeGroup(group: IEditorGroup): void;
+  moveGroup(group: IEditorGroup, location: IEditorGroup, direction: GroupDirection): void;
+  
+  // Layout
+  readonly orientation: GroupOrientation;
+  setGroupOrientation(orientation: GroupOrientation): void;
+  
+  // Events
+  readonly onDidAddGroup: Event<IEditorGroup>;
+  readonly onDidRemoveGroup: Event<IEditorGroup>;
+  readonly onDidActiveGroupChange: Event<IEditorGroup>;
+}
+```
+
+```typescript Editor Groups
+interface IEditorGroup {
+  readonly id: number;
+  readonly index: number;
+  readonly label: string;
+  
+  // Editors in this group
+  readonly editors: readonly IEditorInput[];
+  readonly activeEditor: IEditorInput | null;
+  readonly count: number;
+  
+  // Open/close editors
+  openEditor(
+    editor: IEditorInput,
+    options?: IEditorOptions
+  ): Promise<IEditorPane | undefined>;
+  
+  closeEditor(editor?: IEditorInput): Promise<void>;
+  closeAllEditors(): Promise<void>;
+  
+  // Events
+  readonly onDidOpenEditor: Event<IEditorOpenEvent>;
+  readonly onDidCloseEditor: Event<IEditorCloseEvent>;
+  readonly onDidActiveEditorChange: Event<void>;
+}
+```
+
+```typescript Opening Editors
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+
+class MyComponent {
+  constructor(
+    @IEditorService private editorService: IEditorService
+  ) {}
+
+  async openFile(uri: URI) {
+    // Open in active group
+    await this.editorService.openEditor({
+      resource: uri,
+      options: { pinned: true }
+    });
+    
+    // Open in specific group
+    const group = this.editorService.editorGroups.groups[0];
+    await this.editorService.openEditor({
+      resource: uri
+    }, group);
+    
+    // Open to the side
+    await this.editorService.openEditor({
+      resource: uri
+    }, SIDE_GROUP);
+  }
+}
+```
+</CodeGroup>
+
+<Tip>
+Editor groups support complex layouts: horizontal splits, vertical splits, and grid layouts with any number of groups.
+</Tip>
+
+### Panel
+
+The bottom panel that hosts terminals, output, debug console, and problems.
+
+<CodeGroup>
+```typescript Panel Part
+interface IPanelPart extends IPaneCompositePart {
+  // Open a panel
+  openPanel(id: string, focus?: boolean): Promise<IPanel | undefined>;
+  
+  // Get active panel
+  getActivePanel(): IPanel | undefined;
+  
+  // Panel position
+  readonly position: Position;
+  setPosition(position: Position): void;
+  
+  // Visibility
+  setVisible(visible: boolean): void;
+  isVisible(): boolean;
+}
+```
+
+```typescript Creating a Panel
+class MyPanel extends Panel {
+  static readonly ID = 'workbench.panel.myPanel';
+
+  constructor(
+    @ITelemetryService telemetryService: ITelemetryService,
+    @IThemeService themeService: IThemeService
+  ) {
+    super(MyPanel.ID, telemetryService, themeService);
+  }
+
+  protected renderBody(container: HTMLElement): void {
+    // Render panel content
+    container.textContent = 'My custom panel';
+  }
+
+  layout(dimension: Dimension): void {
+    // Handle resize
+  }
+}
+
+// Register the panel
+Registry.as<PanelRegistry>(PanelExtensions.Panels).registerPanel(
+  PanelDescriptor.create(
+    MyPanel,
+    MyPanel.ID,
+    'My Panel',
+    'myPanelIcon',
+    10 // Order
+  )
+);
+```
+</CodeGroup>
+
+Built-in panels:
+- **Terminal** - Integrated terminal
+- **Output** - Extension and process output
+- **Debug Console** - REPL during debugging
+- **Problems** - Errors and warnings
+
+### Auxiliary Bar (Secondary Sidebar)
+
+An additional sidebar that can be shown on the opposite side of the primary sidebar.
+
+<CodeGroup>
+```typescript Auxiliary Bar
+interface IAuxiliaryBarPart extends IPaneCompositePart {
+  // Similar to sidebar, but on the opposite side
+  openViewlet(id: string, focus?: boolean): Promise<IViewlet | undefined>;
+  setVisible(visible: boolean): void;
+}
+```
+</CodeGroup>
+
+<Note>
+The Auxiliary Bar was added in VS Code 1.64 to provide more flexible layouts. It mirrors the sidebar's capabilities.
+</Note>
+
+### Title Bar
+
+The top bar showing the window title, menu, and window controls.
+
+<CodeGroup>
+```typescript Title Bar Part
+interface ITitleBarPart extends IPart {
+  // Update title
+  updateTitle(title: string): void;
+  
+  // Menu visibility
+  readonly onMenubarVisibilityChange: Event<boolean>;
+  
+  // Custom title bar (non-native)
+  updateStyles(): void;
+}
+```
+</CodeGroup>
+
+### Status Bar
+
+The bottom bar showing status items, notifications, and indicators.
+
+<CodeGroup>
+```typescript Status Bar Part
+interface IStatusbarPart extends IPart {
+  // Add status bar entry
+  addEntry(
+    entry: IStatusbarEntry,
+    id: string,
+    alignment: StatusbarAlignment,
+    priority?: number
+  ): IStatusbarEntryAccessor;
+  
+  // Focus
+  focus(preserveEntryFocus?: boolean): void;
+}
+
+interface IStatusbarEntry {
+  readonly name: string;
+  readonly text: string;
+  readonly ariaLabel?: string;
+  readonly tooltip?: string | IMarkdownString;
+  readonly command?: string | Command;
+  readonly backgroundColor?: string | ThemeColor;
+  readonly color?: string | ThemeColor;
+}
+```
+
+```typescript Adding Status Bar Item
+import { IStatusbarService, StatusbarAlignment } from 'vs/workbench/services/statusbar/browser/statusbar';
+
+class MyContribution {
+  constructor(
+    @IStatusbarService statusbarService: IStatusbarService
+  ) {
+    statusbarService.addEntry(
+      {
+        name: 'My Status',
+        text: '$(sync~spin) Processing...',
+        ariaLabel: 'Processing',
+        tooltip: 'Task in progress',
+        command: 'myExtension.showProgress'
+      },
+      'myExtension.status',
+      StatusbarAlignment.LEFT,
+      100 // Priority
+    );
+  }
+}
+```
+</CodeGroup>
+
+## Views & View Containers
+
+Views are the building blocks of viewlets and panels. They provide tree views, welcome content, and custom UI.
+
+<CodeGroup>
+```typescript View Containers
+// Register a view container
+const VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(
+  ViewContainerExtensions.ViewContainersRegistry
+).registerViewContainer(
+  {
+    id: 'myViewContainer',
+    title: 'My Views',
+    icon: myIcon,
+    order: 5,
+    ctorDescriptor: new SyncDescriptor(ViewPaneContainer)
+  },
+  ViewContainerLocation.Sidebar
+);
+```
+
+```typescript Registering Views
+// Register a view in the container
+const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
+
+viewsRegistry.registerViews([
+  {
+    id: 'myView',
+    name: 'My View',
+    containerIcon: myIcon,
+    canToggleVisibility: true,
+    canMoveView: true,
+    ctorDescriptor: new SyncDescriptor(MyTreeView)
+  }
+], VIEW_CONTAINER);
+```
+
+```typescript Creating a Tree View
+class MyTreeView extends TreeView {
+  constructor(
+    @IInstantiationService instantiationService: IInstantiationService,
+    @IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+    @IThemeService themeService: IThemeService
+  ) {
+    super('myView', 'My View', instantiationService, viewDescriptorService, themeService);
+  }
+
+  protected renderBody(container: HTMLElement): void {
+    super.renderBody(container);
+    
+    // Set up tree data provider
+    this.dataProvider = new MyTreeDataProvider();
+    this.refresh();
+  }
+
+  protected layoutBody(height: number, width: number): void {
+    super.layoutBody(height, width);
+  }
+}
+
+class MyTreeDataProvider implements ITreeViewDataProvider {
+  async getChildren(element?: TreeNode): Promise<TreeNode[]> {
+    if (!element) {
+      // Root nodes
+      return [
+        { id: '1', label: 'Item 1' },
+        { id: '2', label: 'Item 2' }
+      ];
+    }
+    
+    // Child nodes
+    return [];
+  }
+}
+```
+</CodeGroup>
+
+## Services vs Contributions
+
+The workbench distinguishes between **services** and **contributions**:
+
+<CardGroup cols={2}>
+  <Card title="Services" icon="gear">
+    **Workbench Services** provide functionality that can be used by multiple parts of the workbench.
+    
+    Located in: `src/vs/workbench/services/`
+    
+    Examples:
+    - Editor service
+    - View service  
+    - Lifecycle service
+    - Theme service
+  </Card>
+  
+  <Card title="Contributions" icon="puzzle-piece">
+    **Workbench Contributions** extend the workbench with new features, views, and commands.
+    
+    Located in: `src/vs/workbench/contrib/`
+    
+    Examples:
+    - Terminal
+    - Debug
+    - Extensions
+    - Settings editor
+  </Card>
+</CardGroup>
+
+### Workbench Services
+
+Key services in `src/vs/workbench/services/`:
+
+<AccordionGroup>
+  <Accordion title="Editor Service (IEditorService)">
+    Manages editor instances, groups, and editor lifecycle.
+    
+    ```typescript
+    interface IEditorService {
+      // Open editors
+      openEditor(editor: IEditorInput, options?: IEditorOptions): Promise<IEditorPane | undefined>;
+      openEditors(editors: IEditorInputWithOptions[]): Promise<IEditorPane[]>;
+      
+      // Active editor
+      readonly activeEditor: IEditorInput | undefined;
+      readonly activeEditorPane: IEditorPane | undefined;
+      
+      // Editor groups
+      readonly editorGroups: IEditorGroupsService;
+      
+      // Events
+      readonly onDidActiveEditorChange: Event<void>;
+      readonly onDidVisibleEditorsChange: Event<void>;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="View Service (IViewsService)">
+    Manages views in view containers (sidebar, panel).
+    
+    ```typescript
+    interface IViewsService {
+      // Open a view
+      openView<T extends IView>(id: string, focus?: boolean): Promise<T | null>;
+      
+      // Get view
+      getActiveViewWithId<T extends IView>(id: string): T | null;
+      
+      // View visibility
+      isViewVisible(id: string): boolean;
+      
+      // Progress
+      getViewProgressIndicator(id: string): IProgressIndicator | undefined;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Lifecycle Service (ILifecycleService)">
+    Manages application lifecycle phases and shutdown.
+    
+    ```typescript
+    interface ILifecycleService {
+      // Lifecycle phase
+      readonly phase: LifecyclePhase;
+      readonly onBeforeShutdown: Event<BeforeShutdownEvent>;
+      readonly onWillShutdown: Event<WillShutdownEvent>;
+      readonly onDidShutdown: Event<void>;
+      
+      // Prevent shutdown
+      when(phase: LifecyclePhase): Promise<void>;
+    }
+    
+    enum LifecyclePhase {
+      Starting = 1,
+      Ready = 2,
+      Restored = 3,
+      Eventually = 4
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Theme Service (IThemeService)">
+    Manages color themes and provides theme colors.
+    
+    ```typescript
+    interface IThemeService {
+      // Current theme
+      getColorTheme(): IColorTheme;
+      readonly onDidColorThemeChange: Event<IColorTheme>;
+      
+      // Get theme color
+      getColor(id: string): Color | undefined;
+      
+      // Set theme
+      setColorTheme(id: string, settingsTarget: ConfigurationTarget): Promise<IColorTheme | null>;
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Workbench Contributions
+
+Major contributions in `src/vs/workbench/contrib/`:
+
+<CardGroup cols={3}>
+  <Card title="files" icon="folder">
+    File Explorer and file operations
+  </Card>
+  <Card title="search" icon="magnifying-glass">
+    Global search and replace
+  </Card>
+  <Card title="scm" icon="code-branch">
+    Source control management
+  </Card>
+  <Card title="debug" icon="bug">
+    Debugging infrastructure
+  </Card>
+  <Card title="terminal" icon="terminal">
+    Integrated terminal
+  </Card>
+  <Card title="extensions" icon="puzzle-piece">
+    Extension management UI
+  </Card>
+  <Card title="preferences" icon="gear">
+    Settings editor
+  </Card>
+  <Card title="snippets" icon="code">
+    Code snippets
+  </Card>
+  <Card title="markers" icon="triangle-exclamation">
+    Problems/markers view
+  </Card>
+  <Card title="output" icon="file-lines">
+    Output channels
+  </Card>
+  <Card title="tasks" icon="list-check">
+    Task runner
+  </Card>
+  <Card title="chat" icon="comments">
+    AI chat interface
+  </Card>
+</CardGroup>
+
+### Creating a Contribution
+
+<CodeGroup>
+```typescript IWorkbenchContribution
+import { IWorkbenchContribution, IWorkbenchContributionsRegistry, Extensions as WorkbenchExtensions } from 'vs/workbench/common/contributions';
+import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
+import { Registry } from 'vs/platform/registry/common/platform';
+
+class MyWorkbenchContribution implements IWorkbenchContribution {
+  constructor(
+    @IEditorService private editorService: IEditorService,
+    @INotificationService private notificationService: INotificationService
+  ) {
+    this.initialize();
+  }
+
+  private initialize(): void {
+    // Listen for editor changes
+    this.editorService.onDidActiveEditorChange(() => {
+      const editor = this.editorService.activeEditor;
+      if (editor) {
+        this.notificationService.info(`Active editor: ${editor.getName()}`);
+      }
+    });
+  }
+}
+
+// Register the contribution
+Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench)
+  .registerWorkbenchContribution(
+    MyWorkbenchContribution,
+    LifecyclePhase.Restored // When to instantiate
+  );
+```
+
+```typescript Lifecycle Phases
+enum LifecyclePhase {
+  // Before workbench UI is created
+  Starting = 1,
+  
+  // After workbench UI is created but before restoration
+  Ready = 2,
+  
+  // After editors and views are restored
+  Restored = 3,
+  
+  // Eventually (low priority, after everything else)
+  Eventually = 4
+}
+
+// Choose the right phase:
+// - Starting: Critical infrastructure
+// - Ready: UI contributions that should be visible immediately
+// - Restored: Most contributions (wait for user data to load)
+// - Eventually: Nice-to-have features, telemetry, etc.
+```
+</CodeGroup>
+
+## Workbench Layout
+
+The workbench layout is managed by the layout service:
+
+<CodeGroup>
+```typescript IWorkbenchLayoutService
+interface IWorkbenchLayoutService {
+  // Main container
+  readonly container: HTMLElement;
+  
+  // Part visibility
+  isVisible(part: Parts): boolean;
+  setPartHidden(hidden: boolean, part: Parts): void;
+  
+  // Focus
+  focus(): void;
+  focusPart(part: Parts): void;
+  
+  // Dimensions
+  getDimension(part: Parts): Dimension | undefined;
+  
+  // Sidebar
+  readonly onDidChangeSideBarPosition: Event<Position>;
+  getSideBarPosition(): Position;
+  
+  // Panel
+  readonly onDidChangePanelPosition: Event<Position>;
+  getPanelPosition(): Position;
+  setPanelPosition(position: Position): void;
+  
+  // Layout
+  layout(): void;
+}
+
+enum Parts {
+  TITLEBAR_PART,
+  ACTIVITYBAR_PART,
+  SIDEBAR_PART,
+  PANEL_PART,
+  AUXILIARYBAR_PART,
+  EDITOR_PART,
+  STATUSBAR_PART
+}
+```
+
+```typescript Using Layout Service
+class MyComponent {
+  constructor(
+    @IWorkbenchLayoutService private layoutService: IWorkbenchLayoutService
+  ) {}
+
+  toggleSidebar(): void {
+    const isVisible = this.layoutService.isVisible(Parts.SIDEBAR_PART);
+    this.layoutService.setPartHidden(isVisible, Parts.SIDEBAR_PART);
+  }
+
+  movePanelToRight(): void {
+    this.layoutService.setPanelPosition(Position.RIGHT);
+  }
+}
+```
+</CodeGroup>
+
+## Context Keys
+
+Context keys enable conditional UI and keybindings based on application state:
+
+<CodeGroup>
+```typescript Using Context Keys
+import { IContextKeyService, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
+
+// Define context key
+const IsMyViewVisible = new RawContextKey<boolean>('myView.visible', false);
+
+class MyView {
+  private isVisibleContext: IContextKey<boolean>;
+
+  constructor(
+    @IContextKeyService contextKeyService: IContextKeyService
+  ) {
+    // Bind context key
+    this.isVisibleContext = IsMyViewVisible.bindTo(contextKeyService);
+  }
+
+  setVisible(visible: boolean): void {
+    this.isVisibleContext.set(visible);
+  }
+}
+```
+
+```typescript Context Key Expressions
+import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
+
+// Simple expression
+const expr1 = ContextKeyExpr.equals('myView.visible', true);
+
+// Complex expression
+const expr2 = ContextKeyExpr.and(
+  ContextKeyExpr.equals('myView.visible', true),
+  ContextKeyExpr.not('editorReadonly'),
+  ContextKeyExpr.regex('resourceScheme', /^file$/)
+);
+
+// Use in commands
+CommandsRegistry.registerCommand({
+  id: 'myView.action',
+  handler: () => { /* ... */ },
+  precondition: expr2
+});
+```
+</CodeGroup>
+
+Built-in context keys:
+- `editorTextFocus` - Editor has focus
+- `editorReadonly` - Editor is read-only
+- `resourceScheme` - Resource URI scheme
+- `isInDiffEditor` - Currently in diff editor
+- And hundreds more...
+
+## Entry Points
+
+The workbench has different entry points for different environments:
+
+<CardGroup cols={3}>
+  <Card title="Desktop" icon="desktop">
+    `workbench.desktop.main.ts`
+    
+    Electron-based VS Code
+  </Card>
+  <Card title="Web" icon="globe">
+    `workbench.web.main.ts`
+    
+    Browser-based VS Code (vscode.dev)
+  </Card>
+  <Card title="Common" icon="layer-group">
+    `workbench.common.main.ts`
+    
+    Shared initialization code
+  </Card>
+</CardGroup>
+
+## Key Files Reference
+
+| Path | Description |
+|------|-------------|
+| `browser/workbench.ts` | Main workbench class |
+| `browser/layout.ts` | Layout management |
+| `browser/parts/` | All workbench parts |
+| `services/` | Workbench services |
+| `contrib/` | Feature contributions |
+| `common/contributions.ts` | Contribution registry |
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Platform Layer" icon="layer-group" href="/architecture/platform-layer">
+    Review platform services
+  </Card>
+  <Card title="Editor" icon="code" href="/architecture/editor">
+    Understand Monaco Editor
+  </Card>
+  <Card title="Extensions" icon="puzzle-piece" href="/architecture/extensions">
+    Learn about extensions
+  </Card>
+</CardGroup>

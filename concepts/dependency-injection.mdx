@@ -1,0 +1,690 @@
+---
+title: Dependency Injection System
+description: Understanding VS Code's powerful dependency injection container and service architecture
+icon: 'syringe'
+---
+
+## Overview
+
+VS Code uses a sophisticated **dependency injection (DI)** system that enables:
+
+- Loose coupling between components
+- Easy testing through mocking
+- Lazy service instantiation
+- Service lifecycle management
+- Type-safe service resolution
+
+<Info>
+  The DI system is implemented in `src/vs/platform/instantiation/` and is used throughout VS Code.
+</Info>
+
+## Core Concepts
+
+<CardGroup cols={3}>
+  <Card title="Service Identifiers" icon="fingerprint">
+    Unique tokens that identify services
+  </Card>
+  <Card title="Service Decorators" icon="at">
+    `@IServiceName` decorators mark injection points
+  </Card>
+  <Card title="Instantiation Service" icon="bolt">
+    Container that creates instances with dependencies
+  </Card>
+</CardGroup>
+
+## Creating a Service
+
+### Step 1: Define the Service Interface
+
+```typescript
+// src/vs/platform/myservice/common/myservice.ts
+import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
+
+// Create a unique service identifier
+export const IMyService = createDecorator<IMyService>('myService');
+
+export interface IMyService {
+  // Required for type branding
+  readonly _serviceBrand: undefined;
+  
+  // Service methods
+  doSomething(input: string): Promise<string>;
+  getValue(): number;
+}
+```
+
+<Accordion title="Why the _serviceBrand property?">
+  The `_serviceBrand` property is used for **type branding** to ensure type safety:
+  
+  ```typescript
+  export type BrandedService = { _serviceBrand: undefined };
+  
+  // This prevents you from accidentally using a plain object
+  // that happens to have the same shape as the service interface
+  const fake = { doSomething: () => Promise.resolve('') };
+  const service: IMyService = fake; // ❌ Type error!
+  ```
+  
+  Each service interface must include this property for the DI system to work correctly.
+</Accordion>
+
+### Step 2: Implement the Service
+
+```typescript
+// src/vs/platform/myservice/common/myserviceImpl.ts
+import { IMyService } from './myservice';
+import { ILogService } from 'vs/platform/log/common/log';
+import { IFileService } from 'vs/platform/files/common/files';
+
+export class MyService implements IMyService {
+  declare readonly _serviceBrand: undefined;
+  
+  constructor(
+    @ILogService private readonly logService: ILogService,
+    @IFileService private readonly fileService: IFileService
+  ) {
+    this.logService.info('MyService created');
+  }
+  
+  async doSomething(input: string): Promise<string> {
+    this.logService.trace('doSomething called with:', input);
+    const result = await this.processInput(input);
+    return result;
+  }
+  
+  getValue(): number {
+    return 42;
+  }
+  
+  private async processInput(input: string): Promise<string> {
+    // Can use injected services
+    const files = await this.fileService.resolve(URI.file('/'));
+    return `Processed: ${input}`;
+  }
+}
+```
+
+<Note>
+  Services are injected via **constructor parameters** decorated with `@IServiceName`. The decorator tells the DI container which service to inject.
+</Note>
+
+### Step 3: Register the Service
+
+```typescript
+// During application startup
+import { InstantiationService } from 'vs/platform/instantiation/common/instantiationService';
+import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
+import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
+
+const services = new ServiceCollection();
+
+// Register as a descriptor (lazy - instantiated when first requested)
+services.set(IMyService, new SyncDescriptor(MyService));
+
+// Or register an instance directly (eager - instantiated now)
+services.set(IMyService, new MyService(logService, fileService));
+
+// Create the instantiation service
+const instantiationService = new InstantiationService(services);
+```
+
+## Using Services
+
+### Method 1: Constructor Injection (Recommended)
+
+```typescript
+import { IMyService } from 'vs/platform/myservice/common/myservice';
+import { ILogService } from 'vs/platform/log/common/log';
+
+class MyComponent {
+  constructor(
+    @IMyService private readonly myService: IMyService,
+    @ILogService private readonly logService: ILogService
+  ) { }
+  
+  async performAction(): Promise<void> {
+    const result = await this.myService.doSomething('input');
+    this.logService.info('Result:', result);
+  }
+}
+
+// Create instance with DI
+const component = instantiationService.createInstance(MyComponent);
+```
+
+<Check>
+  **Best Practice**: Always use constructor injection for services. This makes dependencies explicit and enables easy testing.
+</Check>
+
+### Method 2: Service Accessor (For Functions)
+
+```typescript
+import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
+
+function myFunction(accessor: ServicesAccessor) {
+  const myService = accessor.get(IMyService);
+  const logService = accessor.get(ILogService);
+  
+  logService.info('Value:', myService.getValue());
+}
+
+// Invoke the function with DI
+instantiationService.invokeFunction(myFunction);
+```
+
+### Method 3: Non-Service Parameters
+
+<Warning>
+  If your class needs both **service** and **non-service** parameters, non-service parameters must come **first**:
+</Warning>
+
+```typescript
+class MyComponent {
+  constructor(
+    // Non-service parameters FIRST
+    private readonly name: string,
+    private readonly config: IConfig,
+    // Service parameters LAST
+    @IMyService private readonly myService: IMyService,
+    @ILogService private readonly logService: ILogService
+  ) { }
+}
+
+// Provide non-service parameters when creating instance
+const component = instantiationService.createInstance(
+  MyComponent,
+  'componentName',  // name parameter
+  { timeout: 5000 }  // config parameter
+  // Services are injected automatically
+);
+```
+
+## IInstantiationService Deep Dive
+
+The `IInstantiationService` is the core of the DI system:
+
+```typescript
+// From src/vs/platform/instantiation/common/instantiation.ts
+export interface IInstantiationService {
+  readonly _serviceBrand: undefined;
+  
+  /**
+   * Synchronously creates an instance that is denoted by the descriptor
+   */
+  createInstance<T>(
+    descriptor: SyncDescriptor0<T>
+  ): T;
+  
+  createInstance<Ctor extends new (...args: any[]) => unknown>(
+    ctor: Ctor,
+    ...args: GetLeadingNonServiceArgs<ConstructorParameters<Ctor>>
+  ): InstanceType<Ctor>;
+  
+  /**
+   * Calls a function with a service accessor.
+   */
+  invokeFunction<R, TS extends any[] = []>(
+    fn: (accessor: ServicesAccessor, ...args: TS) => R,
+    ...args: TS
+  ): R;
+  
+  /**
+   * Creates a child of this service which inherits all current services
+   * and adds/overwrites the given services.
+   */
+  createChild(
+    services: ServiceCollection,
+    store?: DisposableStore
+  ): IInstantiationService;
+  
+  /**
+   * Disposes this instantiation service.
+   */
+  dispose(): void;
+}
+```
+
+## Service Lifecycle
+
+<Steps>
+  <Step title="Registration">
+    Services are registered in a `ServiceCollection` during application startup.
+    
+    ```typescript
+    const services = new ServiceCollection();
+    services.set(IFileService, new SyncDescriptor(FileService));
+    services.set(ILogService, new SyncDescriptor(LogService));
+    ```
+  </Step>
+  
+  <Step title="Lazy Instantiation">
+    When registered as a `SyncDescriptor`, services are **not** instantiated immediately. They are created only when first requested.
+    
+    ```typescript
+    // Service not yet created
+    services.set(IMyService, new SyncDescriptor(MyService));
+    
+    // Service created now (first access)
+    const myService = instantiationService.createInstance(SomeClass);
+    // SomeClass depends on IMyService, so MyService is instantiated
+    ```
+  </Step>
+  
+  <Step title="Singleton Pattern">
+    Each service is instantiated **once** and reused for all consumers.
+    
+    ```typescript
+    const component1 = instantiationService.createInstance(Component1);
+    const component2 = instantiationService.createInstance(Component2);
+    
+    // Both components receive the SAME instance of IMyService
+    ```
+  </Step>
+  
+  <Step title="Disposal">
+    When the instantiation service is disposed, all services it created are also disposed (if they implement `IDisposable`).
+    
+    ```typescript
+    instantiationService.dispose();
+    // All services implementing IDisposable have their dispose() method called
+    ```
+  </Step>
+</Steps>
+
+## Advanced: Delayed Instantiation
+
+For performance-critical services, VS Code supports **delayed instantiation** where the service is wrapped in a proxy and only instantiated when a property is accessed:
+
+```typescript
+// Register with delayed instantiation
+services.set(
+  IMyService,
+  new SyncDescriptor(MyService, [], true) // true = supports delayed instantiation
+);
+
+// Service is NOT instantiated yet
+const myService = accessor.get(IMyService);
+
+// Service IS instantiated now (first property access)
+const value = myService.getValue();
+```
+
+<Accordion title="How Delayed Instantiation Works">
+  From `src/vs/platform/instantiation/common/instantiationService.ts`:
+  
+  ```typescript
+  // Service is wrapped in a Proxy
+  const idle = new GlobalIdleValue<any>(() => {
+    // Actual service created during idle time or on first access
+    return child._createInstance<T>(ctor, args, _trace);
+  });
+  
+  return <T>new Proxy(Object.create(null), {
+    get(target: any, key: PropertyKey): unknown {
+      // Intercept property access
+      if (!idle.isInitialized) {
+        // Handle events specially (register listeners before instantiation)
+        if (typeof key === 'string' && (key.startsWith('onDid') || key.startsWith('onWill'))) {
+          // Return event wrapper
+        }
+      }
+      
+      // Instantiate service and return property
+      const obj = idle.value; // Triggers instantiation
+      return obj[key];
+    }
+  });
+  ```
+</Accordion>
+
+## Real-World Examples from VS Code
+
+### Example 1: File Service
+
+```typescript
+// From src/vs/platform/files/common/files.ts
+export const IFileService = createDecorator<IFileService>('fileService');
+
+export interface IFileService {
+  readonly _serviceBrand: undefined;
+  
+  // File operations
+  resolve(resource: URI, options?: IResolveFileOptions): Promise<IFileStat>;
+  readFile(resource: URI): Promise<IFileContent>;
+  writeFile(resource: URI, bufferOrReadable: VSBuffer | VSBufferReadable): Promise<IFileStatWithMetadata>;
+  delete(resource: URI, options?: Partial<IFileDeleteOptions>): Promise<void>;
+  
+  // Watching
+  createWatcher(resource: URI): IFileSystemWatcher;
+  
+  // Events
+  readonly onDidFilesChange: Event<FileChangesEvent>;
+  readonly onDidRunOperation: Event<FileOperationEvent>;
+}
+```
+
+### Example 2: Configuration Service
+
+```typescript
+// From src/vs/platform/configuration/common/configuration.ts
+export const IConfigurationService = createDecorator<IConfigurationService>('configurationService');
+
+export interface IConfigurationService {
+  readonly _serviceBrand: undefined;
+  
+  getValue<T>(): T;
+  getValue<T>(section: string): T;
+  getValue<T>(overrides: IConfigurationOverrides): T;
+  getValue<T>(section: string, overrides: IConfigurationOverrides): T;
+  
+  updateValue(key: string, value: any): Promise<void>;
+  updateValue(key: string, value: any, target: ConfigurationTarget): Promise<void>;
+  
+  readonly onDidChangeConfiguration: Event<IConfigurationChangeEvent>;
+}
+```
+
+### Example 3: Editor Service Usage
+
+```typescript
+// From src/vs/workbench/contrib/files/browser/fileActions.ts
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { IFileService } from 'vs/platform/files/common/files';
+
+export class OpenFileAction {
+  constructor(
+    @IEditorService private readonly editorService: IEditorService,
+    @IFileService private readonly fileService: IFileService
+  ) { }
+  
+  async run(resource: URI): Promise<void> {
+    // Check if file exists
+    const stat = await this.fileService.resolve(resource);
+    
+    if (stat.isFile) {
+      // Open in editor
+      await this.editorService.openEditor({
+        resource,
+        options: { pinned: true }
+      });
+    }
+  }
+}
+```
+
+## Circular Dependencies
+
+<Warning>
+  The DI system **detects circular dependencies** at runtime and throws an error.
+</Warning>
+
+```typescript
+// BAD: Circular dependency
+class ServiceA {
+  constructor(
+    @IServiceB private readonly serviceB: IServiceB
+  ) { }
+}
+
+class ServiceB {
+  constructor(
+    @IServiceA private readonly serviceA: IServiceA
+  ) { }
+}
+
+// ERROR: CyclicDependencyError
+// cyclic dependency between services
+```
+
+**Solution**: Refactor to break the cycle:
+
+```typescript
+// GOOD: Use events or introduce a third service
+class ServiceA {
+  private readonly _onDidChange = new Emitter<void>();
+  readonly onDidChange = this._onDidChange.event;
+  
+  constructor(
+    @ILogService private readonly logService: ILogService
+  ) { }
+}
+
+class ServiceB {
+  constructor(
+    @IServiceA private readonly serviceA: IServiceA
+  ) {
+    // Listen to events instead of calling methods
+    serviceA.onDidChange(() => this.handleChange());
+  }
+  
+  private handleChange(): void { /* ... */ }
+}
+```
+
+## Child Instantiation Services
+
+You can create **child** instantiation services that inherit parent services but can override them:
+
+```typescript
+// Parent services
+const parentServices = new ServiceCollection();
+parentServices.set(ILogService, new SyncDescriptor(LogService));
+parentServices.set(IFileService, new SyncDescriptor(FileService));
+
+const parentInstantiationService = new InstantiationService(parentServices);
+
+// Child services (inherits parent + overrides)
+const childServices = new ServiceCollection();
+childServices.set(IFileService, new SyncDescriptor(InMemoryFileService)); // Override
+
+const childInstantiationService = parentInstantiationService.createChild(childServices);
+
+// Child uses InMemoryFileService, parent uses FileService
+```
+
+<Accordion title="Use Case: Testing">
+  Child instantiation services are perfect for **testing** where you want to mock specific services:
+  
+  ```typescript
+  // In test
+  const testServices = new ServiceCollection();
+  testServices.set(IFileService, new MockFileService()); // Mock
+  testServices.set(ILogService, new NullLogService()); // Null implementation
+  
+  const testInstantiationService = instantiationService.createChild(testServices);
+  
+  // Create component with mocked services
+  const component = testInstantiationService.createInstance(MyComponent);
+  ```
+</Accordion>
+
+## Service Decorators Reference
+
+<CodeGroup>
+```typescript Creating Service Identifier
+import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
+
+// Create a unique service identifier
+export const IMyService = createDecorator<IMyService>('myService');
+
+export interface IMyService {
+  _serviceBrand: undefined;
+  // ... methods
+}
+```
+
+```typescript Using Service Decorator
+class MyClass {
+  constructor(
+    @IMyService private readonly myService: IMyService,
+    @ILogService private readonly logService: ILogService
+  ) { }
+}
+```
+
+```typescript Refining Service Types
+import { refineServiceDecorator } from 'vs/platform/instantiation/common/instantiation';
+
+// Base service
+export const IBaseService = createDecorator<IBaseService>('baseService');
+
+// Refined service (more specific type)
+export const IRefinedService = refineServiceDecorator<IBaseService, IRefinedService>(IBaseService);
+
+export interface IRefinedService extends IBaseService {
+  additionalMethod(): void;
+}
+```
+</CodeGroup>
+
+## Testing with DI
+
+<Tabs>
+  <Tab title="Unit Testing">
+    ```typescript
+    import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
+    
+    suite('MyComponent', () => {
+      let instantiationService: TestInstantiationService;
+      
+      setup(() => {
+        instantiationService = new TestInstantiationService();
+        
+        // Register mocks
+        instantiationService.stub(ILogService, new MockLogService());
+        instantiationService.stub(IFileService, new MockFileService());
+      });
+      
+      test('should do something', async () => {
+        const component = instantiationService.createInstance(MyComponent);
+        
+        const result = await component.performAction();
+        
+        assert.strictEqual(result, 'expected');
+      });
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Integration Testing">
+    ```typescript
+    // Use real services but with test configuration
+    const services = new ServiceCollection();
+    services.set(IFileService, new SyncDescriptor(FileService));
+    services.set(ILogService, new SyncDescriptor(NullLogService)); // Null logger
+    
+    const instantiationService = new InstantiationService(services);
+    const component = instantiationService.createInstance(MyComponent);
+    
+    // Test with real file system
+    await component.performAction();
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Keep Constructors Simple" icon="feather">
+    Do minimal work in constructors. Heavy initialization should be in methods or lazy properties.
+  </Card>
+  
+  <Card title="Inject Interfaces, Not Classes" icon="shapes">
+    Always inject service interfaces, never concrete classes. This enables mocking.
+  </Card>
+  
+  <Card title="Non-Services Go First" icon="arrow-up-1-9">
+    If mixing service and non-service parameters, non-services must come first in the constructor.
+  </Card>
+  
+  <Card title="Avoid Circular Dependencies" icon="ban">
+    Use events or introduce mediator services to break circular dependencies.
+  </Card>
+  
+  <Card title="Use Child Services for Testing" icon="vial">
+    Create child instantiation services to override specific services with mocks.
+  </Card>
+  
+  <Card title="Brand Your Services" icon="stamp">
+    Always include `_serviceBrand: undefined` in service interfaces for type safety.
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+<AccordionGroup>
+  <Accordion title="Service with Events">
+    ```typescript
+    export class MyService implements IMyService {
+      declare readonly _serviceBrand: undefined;
+      
+      private readonly _onDidChange = new Emitter<string>();
+      readonly onDidChange: Event<string> = this._onDidChange.event;
+      
+      constructor(
+        @ILogService private readonly logService: ILogService
+      ) { }
+      
+      updateValue(value: string): void {
+        this._onDidChange.fire(value);
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Disposable Service">
+    ```typescript
+    export class MyService extends Disposable implements IMyService {
+      declare readonly _serviceBrand: undefined;
+      
+      constructor(
+        @IFileService private readonly fileService: IFileService
+      ) {
+        super();
+        
+        // Register disposables
+        this._register(fileService.onDidFilesChange(e => this.handleChange(e)));
+      }
+      
+      private handleChange(event: FileChangesEvent): void {
+        // Handle file changes
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Service Factory">
+    ```typescript
+    export const IWidgetFactory = createDecorator<IWidgetFactory>('widgetFactory');
+    
+    export interface IWidgetFactory {
+      _serviceBrand: undefined;
+      createWidget(options: IWidgetOptions): IWidget;
+    }
+    
+    export class WidgetFactory implements IWidgetFactory {
+      declare readonly _serviceBrand: undefined;
+      
+      constructor(
+        @IInstantiationService private readonly instantiationService: IInstantiationService
+      ) { }
+      
+      createWidget(options: IWidgetOptions): IWidget {
+        // Use instantiation service to create widget with DI
+        return this.instantiationService.createInstance(Widget, options);
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Contribution Model" icon="plug" href="./contribution-model">
+    Learn how features contribute to the workbench
+  </Card>
+  <Card title="Architecture Overview" icon="building" href="./architecture">
+    Back to architecture overview
+  </Card>
+</CardGroup>

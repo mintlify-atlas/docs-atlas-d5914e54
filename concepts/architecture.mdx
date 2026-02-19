@@ -1,0 +1,323 @@
+---
+title: VS Code Architecture
+description: Understanding the architectural foundations of Visual Studio Code
+icon: 'building'
+---
+
+## Overview
+
+Visual Studio Code is built using **TypeScript**, **web technologies**, and **Electron**, combining the flexibility of web development with native application capabilities. The architecture is designed to work seamlessly across multiple platforms - desktop (Windows, macOS, Linux) and web browsers.
+
+## Electron-Based Architecture
+
+<CardGroup cols={3}>
+  <Card title="Main Process" icon="microchip">
+    The Electron main process manages application lifecycle, native menus, windows, and system integrations.
+  </Card>
+  <Card title="Renderer Process" icon="window-restore">
+    Runs the UI code in a Chromium browser environment, handling all visual elements and user interactions.
+  </Card>
+  <Card title="Extension Host" icon="puzzle-piece">
+    Isolated Node.js process that runs extension code, preventing extensions from blocking the UI.
+  </Card>
+</CardGroup>
+
+### Main Process
+
+The main process is the entry point for the desktop application, implemented in `src/vs/code/electron-main/main.ts`. It:
+
+- Initializes core platform services using dependency injection
+- Manages application lifecycle and windows
+- Handles IPC communication between processes
+- Provides native system integrations
+
+```typescript
+// Example from src/vs/code/electron-main/main.ts
+import { InstantiationService } from '../../platform/instantiation/common/instantiationService.js';
+import { ServiceCollection } from '../../platform/instantiation/common/serviceCollection.js';
+
+// Services are registered in a ServiceCollection
+const services = new ServiceCollection();
+services.set(IEnvironmentMainService, new EnvironmentMainService());
+services.set(ILifecycleMainService, new LifecycleMainService());
+services.set(IConfigurationService, new ConfigurationService());
+
+// InstantiationService creates instances with dependencies injected
+const instantiationService = new InstantiationService(services);
+```
+
+### Renderer Process
+
+The renderer process hosts the workbench UI and editor. It runs in a Chromium browser context but with Node.js integration (in desktop mode). The renderer:
+
+- Renders the VS Code workbench UI
+- Handles editor functionality
+- Manages views, panels, and sidebars
+- Communicates with the main process via IPC
+
+### Extension Host
+
+The extension host is a separate Node.js process that:
+
+- Runs all extension code in isolation
+- Prevents extensions from blocking the UI thread
+- Provides the VS Code Extension API
+- Communicates with the workbench via message passing
+
+<Warning>
+  Extensions run in a separate process to ensure that poorly-performing or misbehaving extensions cannot freeze the main UI.
+</Warning>
+
+## Web vs Desktop Implementation
+
+VS Code's architecture supports both desktop and web deployments through careful abstraction:
+
+<Accordion title="Desktop Implementation">
+  Desktop VS Code uses Electron to provide:
+  - Full Node.js API access
+  - Native file system access
+  - System clipboard integration
+  - Native menus and dialogs
+  - Process management for extension host
+  
+  Code location: `src/vs/code/electron-main/` and `src/vs/workbench/electron-sandbox/`
+</Accordion>
+
+<Accordion title="Web Implementation">
+  Web VS Code runs entirely in the browser with:
+  - File System Access API for file operations
+  - Virtual file systems for remote resources
+  - Web Workers for extension host
+  - Browser APIs instead of native integrations
+  
+  Code location: `src/vs/workbench/browser/` and `src/vs/server/`
+</Accordion>
+
+<CodeGroup>
+```typescript Platform Abstraction
+// Platform services provide abstractions
+interface IFileService {
+  readFile(resource: URI): Promise<IFileContent>;
+  writeFile(resource: URI, content: VSBuffer): Promise<void>;
+}
+
+// Desktop: Uses Node.js fs module
+class DiskFileSystemProvider implements IFileService { ... }
+
+// Web: Uses browser File System Access API
+class BrowserFileSystemProvider implements IFileService { ... }
+```
+
+```typescript Service Registration
+// The workbench registers the appropriate implementation
+if (isElectron) {
+  serviceCollection.set(IFileService, new DiskFileSystemProvider());
+} else {
+  serviceCollection.set(IFileService, new BrowserFileSystemProvider());
+}
+```
+</CodeGroup>
+
+## Source Code Structure
+
+The VS Code source is organized into clearly defined layers:
+
+<Steps>
+  <Step title="Root Directories">
+    - `src/` - Main TypeScript source code with unit tests
+    - `extensions/` - Built-in extensions (Git, TypeScript, themes, etc.)
+    - `build/` - Build scripts and CI/CD configuration
+    - `test/` - Integration tests and test infrastructure
+    - `out/` - Compiled JavaScript output (generated)
+  </Step>
+  
+  <Step title="Core Architecture (src/vs/)">
+    - `base/` - Foundation utilities and cross-platform abstractions
+    - `platform/` - Platform services and dependency injection
+    - `editor/` - Monaco editor implementation
+    - `workbench/` - Main application UI and features
+    - `code/` - Electron main process implementation
+    - `server/` - VS Code Server for web/remote scenarios
+  </Step>
+  
+  <Step title="Workbench Structure (src/vs/workbench/)">
+    - `browser/` - Core workbench UI components
+    - `services/` - Workbench service implementations
+    - `contrib/` - Feature contributions (Git, Debug, Search, etc.)
+    - `api/` - Extension host and VS Code Extension API
+  </Step>
+</Steps>
+
+### Directory Deep Dive
+
+<Tabs>
+  <Tab title="src/vs/base/">
+    Foundation layer providing:
+    - Common utilities (`arrays.ts`, `strings.ts`, `async.ts`)
+    - Data structures (`linkedList.ts`, `map.ts`, `tree.ts`)
+    - Event system (`event.ts`)
+    - Lifecycle management (`lifecycle.ts`, `disposable.ts`)
+    - Platform detection and abstractions
+    
+    This layer has **no dependencies** on other VS Code layers.
+  </Tab>
+  
+  <Tab title="src/vs/platform/">
+    Platform services including:
+    - Dependency injection (`instantiation/`)
+    - File system (`files/`)
+    - Configuration (`configuration/`)
+    - Logging (`log/`)
+    - Telemetry (`telemetry/`)
+    - State management (`state/`)
+    - Key bindings (`keybinding/`)
+    
+    Services use the **BrandedService** pattern for type-safe injection.
+  </Tab>
+  
+  <Tab title="src/vs/editor/">
+    The Monaco editor:
+    - Text buffer and editing (`common/model/`)
+    - Language services (`common/languages/`)
+    - Syntax highlighting (`common/languages/monarch/`)
+    - Editor widgets and UI (`browser/widget/`)
+    - Commands and actions (`browser/editorExtensions.ts`)
+    
+    Can be used **standalone** outside of VS Code.
+  </Tab>
+  
+  <Tab title="src/vs/workbench/">
+    The full VS Code application:
+    - Layout system (`browser/layout.ts`)
+    - Views and panels (`browser/parts/`)
+    - Feature contributions (`contrib/`)
+    - Extension API implementation (`api/`)
+    - Service implementations (`services/`)
+  </Tab>
+</Tabs>
+
+## Built-in Extensions
+
+The `extensions/` folder contains first-party extensions that ship with VS Code:
+
+<CardGroup cols={2}>
+  <Card title="Language Support" icon="code">
+    - `typescript-language-features/` - TypeScript/JavaScript
+    - `html-language-features/` - HTML
+    - `css-language-features/` - CSS/SCSS/Less
+    - `json-language-features/` - JSON
+    - `markdown-language-features/` - Markdown
+  </Card>
+  
+  <Card title="Core Features" icon="toolbox">
+    - `git/` - Git integration
+    - `debug-auto-launch/` - Node.js debugging
+    - `emmet/` - Emmet support
+    - `extension-editing/` - Extension development tools
+  </Card>
+  
+  <Card title="Themes" icon="palette">
+    - `theme-defaults/` - Default themes
+    - `theme-monokai/` - Monokai theme
+    - `theme-solarized-dark/` - Solarized themes
+  </Card>
+  
+  <Card title="Developer Tools" icon="wrench">
+    - `vscode-api-tests/` - Extension API tests
+    - `extension-editing/` - Extension authoring support
+  </Card>
+</CardGroup>
+
+### Extension Structure Example
+
+```json
+// extensions/git/package.json
+{
+  "name": "git",
+  "main": "./out/main",
+  "activationEvents": ["*"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "git.clone",
+        "title": "Clone",
+        "category": "Git"
+      }
+    ],
+    "views": {
+      "scm": [
+        {
+          "id": "workbench.scm",
+          "name": "Source Control"
+        }
+      ]
+    }
+  }
+}
+```
+
+<Info>
+  Each built-in extension follows the same structure and APIs as third-party extensions, ensuring API consistency.
+</Info>
+
+## Key Architectural Principles
+
+<AccordionGroup>
+  <Accordion title="Layered Architecture">
+    Code is organized in layers where each layer can only depend on layers below it:
+    
+    `workbench` → `editor` → `platform` → `base`
+    
+    This ensures clean separation of concerns and prevents circular dependencies. Use `npm run valid-layers-check` to validate layering.
+  </Accordion>
+  
+  <Accordion title="Dependency Injection">
+    Services are injected through constructor parameters using decorators:
+    
+    ```typescript
+    constructor(
+      @IFileService private readonly fileService: IFileService,
+      @ILogService private readonly logService: ILogService
+    ) { }
+    ```
+    
+    This enables testability and loose coupling between components.
+  </Accordion>
+  
+  <Accordion title="Contribution Model">
+    Features register themselves in registries and extension points rather than being hard-coded:
+    
+    ```typescript
+    registerWorkbenchContribution2(
+      'workbench.contrib.git',
+      GitContribution,
+      WorkbenchPhase.AfterRestored
+    );
+    ```
+    
+    This allows for a plugin-like architecture even for built-in features.
+  </Accordion>
+  
+  <Accordion title="Cross-Platform Compatibility">
+    Platform-specific code is abstracted behind interfaces:
+    - `common/` - Platform-agnostic code
+    - `browser/` - Browser/web-specific code
+    - `electron-main/` - Electron main process code
+    - `electron-sandbox/` - Electron renderer process code
+    - `node/` - Node.js-specific code
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Layered Design" icon="layer-group" href="./layered-design">
+    Explore the layered architecture in detail
+  </Card>
+  <Card title="Dependency Injection" icon="syringe" href="./dependency-injection">
+    Learn about the DI system and service decorators
+  </Card>
+  <Card title="Contribution Model" icon="plug" href="./contribution-model">
+    Understand how features plug into the workbench
+  </Card>
+</CardGroup>

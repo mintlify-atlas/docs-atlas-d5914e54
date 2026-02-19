@@ -1,0 +1,641 @@
+---
+title: Platform Layer
+description: Service infrastructure and dependency injection in VS Code
+---
+
+The **platform layer** provides VS Code's service infrastructure, implementing core services that abstract platform-specific functionality. Located in `src/vs/platform/`, this layer sits above the base layer and below the workbench.
+
+## Service Architecture
+
+VS Code uses **dependency injection** to manage services, enabling loose coupling, testability, and modularity throughout the codebase.
+
+<Steps>
+  <Step title="Service Definition">
+    Services are defined using TypeScript interfaces with a unique service identifier
+  </Step>
+  <Step title="Service Registration">
+    Services are registered in the dependency injection container
+  </Step>
+  <Step title="Service Injection">
+    Services are injected into classes via constructor parameters
+  </Step>
+</Steps>
+
+## Dependency Injection System
+
+Located in `src/vs/platform/instantiation/`, this is VS Code's custom DI framework.
+
+### Creating a Service
+
+<CodeGroup>
+```typescript Service Interface
+// src/vs/platform/files/common/files.ts:26
+import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
+
+export const IFileService = createDecorator<IFileService>('fileService');
+
+export interface IFileService {
+  readonly _serviceBrand: undefined; // Brand for type safety
+
+  // Service methods
+  resolve(resource: URI): Promise<IFileStat>;
+  readFile(resource: URI): Promise<IFileContent>;
+  writeFile(resource: URI, content: VSBuffer): Promise<void>;
+  delete(resource: URI): Promise<void>;
+  
+  // Events
+  readonly onDidFilesChange: Event<FileChangesEvent>;
+}
+```
+
+```typescript Service Implementation
+class FileService implements IFileService {
+  readonly _serviceBrand: undefined;
+
+  constructor(
+    @ILogService private logService: ILogService,
+    @IEnvironmentService private envService: IEnvironmentService
+  ) {
+    // Constructor injection
+  }
+
+  async readFile(resource: URI): Promise<IFileContent> {
+    this.logService.trace('Reading file', resource.toString());
+    // Implementation...
+  }
+}
+```
+
+```typescript Service Registration
+import { registerSingleton } from 'vs/platform/instantiation/common/extensions';
+
+registerSingleton(IFileService, FileService);
+```
+</CodeGroup>
+
+<Note>
+The `createDecorator` function creates both:
+- A unique service identifier
+- A parameter decorator for constructor injection
+</Note>
+
+See implementation in `src/vs/platform/instantiation/common/instantiation.ts:41-100`
+
+### Using Services
+
+<CodeGroup>
+```typescript Constructor Injection
+class MyWorkbenchContribution {
+  constructor(
+    @IFileService private fileService: IFileService,
+    @INotificationService private notificationService: INotificationService
+  ) {
+    // Services are automatically injected
+  }
+
+  async saveFile(uri: URI, content: string) {
+    try {
+      await this.fileService.writeFile(uri, VSBuffer.fromString(content));
+      this.notificationService.info('File saved successfully');
+    } catch (err) {
+      this.notificationService.error('Failed to save file');
+    }
+  }
+}
+```
+
+```typescript Manual Instantiation
+import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
+
+class Factory {
+  constructor(
+    @IInstantiationService private instantiationService: IInstantiationService
+  ) {}
+
+  createWidget(): Widget {
+    // Create instance with DI
+    return this.instantiationService.createInstance(Widget);
+  }
+}
+```
+
+```typescript Function Invocation
+instantiationService.invokeFunction((accessor) => {
+  const fileService = accessor.get(IFileService);
+  const logService = accessor.get(ILogService);
+  
+  // Use services...
+});
+```
+</CodeGroup>
+
+## Core Platform Services
+
+The platform layer contains 90+ services. Here are the most important ones:
+
+### File System Services
+
+<Card title="IFileService" icon="folder">
+
+The file service abstracts file system operations across multiple schemes (file, http, vscode-userdata, etc.)
+
+**Location:** `src/vs/platform/files/common/files.ts:26`
+
+<CodeGroup>
+```typescript Key Methods
+interface IFileService {
+  // File operations
+  resolve(resource: URI, options?: IResolveMetadataFileOptions): Promise<IFileStat>;
+  exists(resource: URI): Promise<boolean>;
+  readFile(resource: URI): Promise<IFileContent>;
+  writeFile(resource: URI, content: VSBuffer): Promise<IFileStatWithMetadata>;
+  createFile(resource: URI, content?: VSBuffer): Promise<IFileStatWithMetadata>;
+  delete(resource: URI, options?: IDeleteOptions): Promise<void>;
+  
+  // Watching
+  watch(resource: URI): IDisposable;
+  readonly onDidFilesChange: Event<FileChangesEvent>;
+  
+  // Provider registration
+  registerProvider(scheme: string, provider: IFileSystemProvider): IDisposable;
+}
+```
+
+```typescript Example Usage
+// Read a file
+const content = await fileService.readFile(URI.file('/path/to/file.txt'));
+console.log(content.value.toString());
+
+// Watch for changes
+const disposable = fileService.onDidFilesChange(event => {
+  for (const change of event.changes) {
+    console.log(`${change.resource.toString()} was ${change.type}`);
+  }
+});
+```
+</CodeGroup>
+</Card>
+
+### Configuration Service
+
+<Card title="IConfigurationService" icon="gear">
+
+Manages user and workspace settings with strong typing and change notifications.
+
+**Location:** `src/vs/platform/configuration/common/configuration.ts`
+
+<CodeGroup>
+```typescript Configuration Access
+interface IConfigurationService {
+  getValue<T>(section: string): T;
+  getValue<T>(section: string, overrides: IConfigurationOverrides): T;
+  
+  updateValue(key: string, value: any, target?: ConfigurationTarget): Promise<void>;
+  
+  readonly onDidChangeConfiguration: Event<IConfigurationChangeEvent>;
+}
+```
+
+```typescript Example Usage
+// Get configuration
+const fontSize = configService.getValue<number>('editor.fontSize');
+const formatOnSave = configService.getValue<boolean>('editor.formatOnSave');
+
+// Update configuration
+await configService.updateValue(
+  'editor.fontSize', 
+  14, 
+  ConfigurationTarget.USER
+);
+
+// Listen for changes
+configService.onDidChangeConfiguration(e => {
+  if (e.affectsConfiguration('editor.fontSize')) {
+    updateEditorFontSize();
+  }
+});
+```
+</CodeGroup>
+</Card>
+
+### Logging Service
+
+<Card title="ILogService" icon="file-lines">
+
+Centralized logging with multiple log levels and extensible log channels.
+
+**Location:** `src/vs/platform/log/common/log.ts`
+
+<CodeGroup>
+```typescript Log Levels
+interface ILogService {
+  readonly onDidChangeLogLevel: Event<LogLevel>;
+  getLevel(): LogLevel;
+  setLevel(level: LogLevel): void;
+  
+  trace(message: string, ...args: any[]): void;
+  debug(message: string, ...args: any[]): void;
+  info(message: string, ...args: any[]): void;
+  warn(message: string, ...args: any[]): void;
+  error(message: string | Error, ...args: any[]): void;
+}
+
+enum LogLevel {
+  Off,
+  Trace,
+  Debug,
+  Info,
+  Warning,
+  Error
+}
+```
+
+```typescript Example Usage
+class ExtensionService {
+  constructor(
+    @ILogService private logService: ILogService
+  ) {}
+
+  activateExtension(id: string) {
+    this.logService.trace('Activating extension', id);
+    
+    try {
+      // Activate...
+      this.logService.info('Extension activated', id);
+    } catch (err) {
+      this.logService.error('Failed to activate extension', err);
+    }
+  }
+}
+```
+</CodeGroup>
+</Card>
+
+### Instantiation Service
+
+<Card title="IInstantiationService" icon="puzzle-piece">
+
+Creates instances with dependency injection.
+
+**Location:** `src/vs/platform/instantiation/common/instantiation.ts:41`
+
+<CodeGroup>
+```typescript Interface
+interface IInstantiationService {
+  readonly _serviceBrand: undefined;
+
+  createInstance<T>(
+    descriptor: SyncDescriptor<T>
+  ): T;
+  
+  createInstance<Ctor extends new (...args: any[]) => any>(
+    ctor: Ctor, 
+    ...args: GetLeadingNonServiceArgs<ConstructorParameters<Ctor>>
+  ): InstanceType<Ctor>;
+
+  invokeFunction<R>(
+    fn: (accessor: ServicesAccessor, ...args: any[]) => R, 
+    ...args: any[]
+  ): R;
+
+  createChild(services: ServiceCollection): IInstantiationService;
+}
+```
+
+```typescript Usage Patterns
+// Create instance
+const widget = instantiationService.createInstance(Widget, 'title', 100);
+
+// Invoke function with service accessor
+const result = instantiationService.invokeFunction((accessor) => {
+  const fileService = accessor.get(IFileService);
+  return fileService.exists(uri);
+});
+
+// Create child scope
+const child = instantiationService.createChild(
+  new ServiceCollection([ILogService, customLogService])
+);
+```
+</CodeGroup>
+</Card>
+
+### Storage Service
+
+<Card title="IStorageService" icon="database">
+
+Persistent key-value storage at workspace and global scopes.
+
+**Location:** `src/vs/platform/storage/common/storage.ts`
+
+<CodeGroup>
+```typescript Storage Interface
+interface IStorageService {
+  get(key: string, scope: StorageScope, fallbackValue?: string): string | undefined;
+  getBoolean(key: string, scope: StorageScope, fallbackValue?: boolean): boolean;
+  getNumber(key: string, scope: StorageScope, fallbackValue?: number): number;
+  
+  store(key: string, value: string | boolean | number, scope: StorageScope, target: StorageTarget): void;
+  remove(key: string, scope: StorageScope): void;
+  
+  readonly onDidChangeValue: Event<IStorageValueChangeEvent>;
+}
+
+enum StorageScope {
+  PROFILE,    // User profile scope
+  WORKSPACE,  // Workspace scope
+  APPLICATION // Application scope
+}
+```
+
+```typescript Example Usage
+// Store values
+storageService.store(
+  'lastOpenedFile', 
+  '/path/to/file.ts',
+  StorageScope.WORKSPACE,
+  StorageTarget.USER
+);
+
+// Retrieve values
+const lastFile = storageService.get(
+  'lastOpenedFile',
+  StorageScope.WORKSPACE
+);
+
+// Listen for changes
+storageService.onDidChangeValue(e => {
+  if (e.key === 'theme') {
+    applyTheme();
+  }
+});
+```
+</CodeGroup>
+</Card>
+
+## More Platform Services
+
+<AccordionGroup>
+  <Accordion title="UI Services">
+    - **INotificationService** - Toast notifications and prompts
+    - **IDialogService** - Modal dialogs and confirmations
+    - **IQuickInputService** - Quick pick and input boxes
+    - **IProgressService** - Progress indicators
+    - **IContextMenuService** - Context menus
+  </Accordion>
+
+  <Accordion title="Workbench Services">
+    - **IWorkspaceContextService** - Workspace information
+    - **IEnvironmentService** - Environment variables and paths
+    - **ILifecycleService** - Application lifecycle events
+    - **IWindowService** - Window management
+  </Accordion>
+
+  <Accordion title="Extension Services">
+    - **IExtensionService** - Extension activation and management
+    - **IExtensionManagementService** - Install/uninstall extensions
+    - **IExtensionRecommendationsService** - Extension recommendations
+  </Accordion>
+
+  <Accordion title="Editor Services">
+    - **ITextModelService** - Text model management
+    - **ICodeEditorService** - Code editor instances
+    - **ILanguageService** - Language modes and detection
+    - **IModeService** - (deprecated) Language mode service
+  </Accordion>
+
+  <Accordion title="Network & Remote Services">
+    - **IRequestService** - HTTP requests
+    - **IDownloadService** - File downloads
+    - **IRemoteAgentService** - Remote development connections
+    - **ITunnelService** - Port forwarding
+  </Accordion>
+</AccordionGroup>
+
+## Service Lifecycle
+
+<Steps>
+  <Step title="Service Registration">
+    Services are registered as singletons or on-demand instances
+    ```typescript
+    registerSingleton(IFileService, FileService);
+    ```
+  </Step>
+
+  <Step title="Service Instantiation">
+    Services are instantiated on first use (lazy initialization)
+  </Step>
+
+  <Step title="Service Usage">
+    Services are injected into constructors and used throughout the application
+  </Step>
+
+  <Step title="Service Disposal">
+    Services implementing `IDisposable` are disposed when the service container is disposed
+  </Step>
+</Steps>
+
+## Service Decorator Pattern
+
+<CodeGroup>
+```typescript Service Decorator
+// Decorate an existing service
+class LoggingFileService implements IFileService {
+  readonly _serviceBrand: undefined;
+
+  constructor(
+    @IFileService private readonly fileService: IFileService,
+    @ILogService private readonly logService: ILogService
+  ) {}
+
+  async readFile(resource: URI): Promise<IFileContent> {
+    this.logService.trace('readFile', resource.toString());
+    const result = await this.fileService.readFile(resource);
+    this.logService.trace('readFile completed', resource.toString());
+    return result;
+  }
+
+  // Delegate other methods...
+}
+```
+
+```typescript Registration
+// Override default service with decorator
+const collection = new ServiceCollection();
+collection.set(IFileService, new LoggingFileService(
+  originalFileService,
+  logService
+));
+```
+</CodeGroup>
+
+## Service Collections
+
+<CodeGroup>
+```typescript Creating Collections
+import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
+
+const services = new ServiceCollection();
+
+// Add services
+services.set(IFileService, fileService);
+services.set(ILogService, logService);
+
+// Create instantiation service
+const instantiationService = new InstantiationService(services);
+```
+
+```typescript Child Services
+// Create child with overrides
+const childServices = new ServiceCollection();
+childServices.set(ILogService, customLogService);
+
+const childInstantiationService = 
+  instantiationService.createChild(childServices);
+
+// Child inherits parent services but uses custom log service
+```
+</CodeGroup>
+
+## Testing with Services
+
+<CodeGroup>
+```typescript Mock Services
+import { mock } from 'vs/base/test/common/mock';
+
+class TestFileService implements IFileService {
+  readonly _serviceBrand: undefined;
+  
+  async readFile(resource: URI): Promise<IFileContent> {
+    return {
+      resource,
+      value: VSBuffer.fromString('test content'),
+      // ... other properties
+    };
+  }
+  
+  // Implement other required methods...
+}
+```
+
+```typescript Test Setup
+suite('MyComponent', () => {
+  let instantiationService: TestInstantiationService;
+  let fileService: TestFileService;
+
+  setup(() => {
+    fileService = new TestFileService();
+    
+    instantiationService = new TestInstantiationService();
+    instantiationService.stub(IFileService, fileService);
+  });
+
+  test('should read file', async () => {
+    const component = instantiationService.createInstance(MyComponent);
+    const result = await component.loadFile(URI.file('test.txt'));
+    
+    assert.strictEqual(result, 'test content');
+  });
+});
+```
+</CodeGroup>
+
+## Design Principles
+
+<CardGroup cols={2}>
+  <Card title="Dependency Inversion" icon="arrow-down-up-across-line">
+    Depend on interfaces, not implementations. Services define contracts that can have multiple implementations.
+  </Card>
+  
+  <Card title="Single Responsibility" icon="bullseye">
+    Each service has a focused responsibility. Large services are split into multiple smaller services.
+  </Card>
+  
+  <Card title="Lazy Initialization" icon="hourglass">
+    Services are created on first use, reducing startup time and memory usage.
+  </Card>
+  
+  <Card title="Testability" icon="flask">
+    Services can be easily mocked or stubbed for testing, enabling isolated unit tests.
+  </Card>
+</CardGroup>
+
+## Platform Directory Structure
+
+```
+src/vs/platform/
+├── files/              # File system abstraction
+├── configuration/      # Configuration management
+├── instantiation/      # Dependency injection
+├── log/               # Logging infrastructure
+├── storage/           # Persistent storage
+├── keybinding/        # Keybinding service
+├── contextkey/        # Context key service
+├── commands/          # Command registry
+├── notification/      # Notification service
+├── dialogs/           # Dialog service
+├── quickinput/        # Quick pick/input
+├── theme/             # Theming service
+├── telemetry/         # Telemetry service
+├── workspace/         # Workspace service
+├── environment/       # Environment service
+├── lifecycle/         # Lifecycle management
+└── ... (90+ services)
+```
+
+## Key Concepts
+
+<Accordion title="Service Brand">
+The `_serviceBrand: undefined` property is a TypeScript trick to ensure nominal typing. Without it, any object with matching methods would be considered compatible.
+
+```typescript
+interface IFileService {
+  readonly _serviceBrand: undefined; // Makes this a unique type
+  readFile(uri: URI): Promise<IFileContent>;
+}
+```
+</Accordion>
+
+<Accordion title="Service Overrides">
+Services can be overridden at different scopes (application, window, editor) to provide custom behavior.
+
+```typescript
+// Override in specific context
+const overrides = new ServiceCollection();
+overrides.set(ILogService, consoleLogService);
+const scopedInstantiationService = instantiationService.createChild(overrides);
+```
+</Accordion>
+
+<Accordion title="Circular Dependencies">
+The DI system detects circular dependencies at runtime and throws clear errors. Break circles by using service accessors or events.
+
+```typescript
+// BAD: Circular dependency
+class A { constructor(@IServiceB b) {} }
+class B { constructor(@IServiceA a) {} }
+
+// GOOD: Break with accessor
+class A {
+  constructor(@IInstantiationService instantiation) {
+    instantiation.invokeFunction(accessor => {
+      const b = accessor.get(IServiceB);
+    });
+  }
+}
+```
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Base Layer" icon="foundation" href="/architecture/base-layer">
+    Review foundation utilities
+  </Card>
+  <Card title="Editor" icon="code" href="/architecture/editor">
+    Explore Monaco Editor architecture
+  </Card>
+  <Card title="Workbench" icon="window" href="/architecture/workbench">
+    Learn about the workbench layer
+  </Card>
+</CardGroup>

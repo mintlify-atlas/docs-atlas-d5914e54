@@ -4,8 +4,13 @@
   "theme": "aspen",
   "colors": {
     "primary": "#007ACC",
-    "light": "#61DAFB",
+    "light": "#4EC9B0",
     "dark": "#005A9E"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
   },
   "navbar": {
     "primary": {
@@ -32,142 +37,76 @@
             ]
           },
           {
-            "group": "Architecture",
-            "pages": [
-              "architecture/overview",
-              "architecture/layers",
-              "architecture/dependency-injection",
-              "architecture/contribution-model"
-            ]
-          },
-          {
             "group": "Core Concepts",
             "pages": [
-              "concepts/workbench",
-              "concepts/editor",
-              "concepts/extensions",
-              "concepts/services"
+              "concepts/architecture",
+              "concepts/layered-design",
+              "concepts/dependency-injection",
+              "concepts/contribution-model"
             ]
           },
           {
-            "group": "Building from Source",
+            "group": "Development",
             "pages": [
-              "building/setup",
-              "building/compile",
-              "building/debugging",
-              "building/tests"
+              "development/building-from-source",
+              "development/debugging",
+              "development/testing",
+              "development/coding-guidelines"
             ]
           },
           {
-            "group": "Contributing",
+            "group": "Architecture",
             "pages": [
-              "contributing/guidelines",
-              "contributing/code-style",
-              "contributing/pull-requests",
-              "contributing/issue-tracking"
+              "architecture/base-layer",
+              "architecture/platform-layer",
+              "architecture/editor",
+              "architecture/workbench",
+              "architecture/extensions"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/contributing",
+              "guides/extension-development",
+              "guides/workbench-contributions",
+              "guides/service-implementation"
             ]
           }
         ]
       },
       {
-        "tab": "Extension API",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Extension API",
             "pages": [
               "api/overview",
-              "api/your-first-extension",
-              "api/extension-structure"
+              "api/extension-api",
+              "api/proposed-apis"
             ]
           },
           {
-            "group": "API Reference",
+            "group": "Core APIs",
             "pages": [
-              "api/commands",
-              "api/text-editor",
-              "api/workspace",
-              "api/languages",
-              "api/debug",
-              "api/scm"
-            ]
-          },
-          {
-            "group": "Extension Guides",
-            "pages": [
-              "api/guides/command-palette",
-              "api/guides/webviews",
-              "api/guides/tree-views",
-              "api/guides/language-server",
-              "api/guides/debugger-extension"
-            ]
-          },
-          {
-            "group": "Publishing",
-            "pages": [
-              "api/publishing/overview",
-              "api/publishing/marketplace"
+              "api/base",
+              "api/platform-services",
+              "api/editor-api",
+              "api/workbench-services"
             ]
           }
         ]
       },
       {
-        "tab": "Components",
+        "tab": "CLI",
         "groups": [
           {
-            "group": "Core Layers",
+            "group": "CLI Reference",
             "pages": [
-              "components/base",
-              "components/platform",
-              "components/editor",
-              "components/workbench"
-            ]
-          },
-          {
-            "group": "Workbench Features",
-            "pages": [
-              "components/debug",
-              "components/terminal",
-              "components/search",
-              "components/git",
-              "components/tasks",
-              "components/testing"
-            ]
-          },
-          {
-            "group": "Built-in Extensions",
-            "pages": [
-              "components/language-features",
-              "components/themes",
-              "components/snippets"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Advanced",
-        "groups": [
-          {
-            "group": "Deep Dives",
-            "pages": [
-              "advanced/electron-integration",
-              "advanced/monaco-editor",
-              "advanced/language-services",
-              "advanced/remote-development"
-            ]
-          },
-          {
-            "group": "Performance",
-            "pages": [
-              "advanced/performance/startup",
-              "advanced/performance/memory",
-              "advanced/performance/profiling"
-            ]
-          },
-          {
-            "group": "Security",
-            "pages": [
-              "advanced/security/overview",
-              "advanced/security/sandboxing"
+              "cli/overview",
+              "cli/installation",
+              "cli/commands",
+              "cli/server-mode"
             ]
           }
         ]

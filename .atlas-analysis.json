@@ -1,10 +1,10 @@
 {
   "projectType": "general",
   "projectName": "Visual Studio Code",
-  "projectDescription": "A powerful, extensible code editor built on Electron for modern development workflows.",
-  "theme": "palm",
+  "projectDescription": "A powerful, extensible code editor built on Electron combining web technologies with native capabilities",
+  "theme": "aspen",
   "primaryColor": "#007ACC",
-  "lightColor": "#0098FF",
+  "lightColor": "#4EC9B0",
   "darkColor": "#005A9E",
   "navigation": {
     "tabs": [
@@ -12,7 +12,7 @@
         "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Get Started",
             "pages": [
               "introduction",
               "quickstart",
@@ -20,88 +20,40 @@
             ]
           },
           {
-            "group": "Building VS Code",
-            "pages": [
-              "building/prerequisites",
-              "building/build-from-source",
-              "building/development-workflow"
-            ]
-          },
-          {
-            "group": "Architecture",
-            "pages": [
-              "architecture/overview",
-              "architecture/electron-main-process",
-              "architecture/renderer-process",
-              "architecture/workbench",
-              "architecture/editor",
-              "architecture/extensions"
-            ]
-          },
-          {
             "group": "Core Concepts",
             "pages": [
-              "concepts/command-palette",
-              "concepts/settings",
-              "concepts/keybindings",
-              "concepts/tasks",
-              "concepts/debugging"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Extension Development",
-        "groups": [
-          {
-            "group": "Getting Started",
-            "pages": [
-              "extensions/overview",
-              "extensions/your-first-extension",
-              "extensions/extension-anatomy"
-            ]
-          },
-          {
-            "group": "Extension Capabilities",
-            "pages": [
-              "extensions/capabilities/common-capabilities",
-              "extensions/capabilities/theming",
-              "extensions/capabilities/language-extensions",
-              "extensions/capabilities/debugger-extensions",
-              "extensions/capabilities/webview"
-            ]
-          },
-          {
-            "group": "Extension Guides",
-            "pages": [
-              "extensions/guides/commands",
-              "extensions/guides/tree-view",
-              "extensions/guides/custom-editors",
-              "extensions/guides/testing",
-              "extensions/guides/publishing"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Contributing",
-        "groups": [
-          {
-            "group": "Get Involved",
-            "pages": [
-              "contributing/how-to-contribute",
-              "contributing/coding-guidelines",
-              "contributing/submitting-bugs",
-              "contributing/pull-requests"
+              "concepts/architecture",
+              "concepts/layered-design",
+              "concepts/dependency-injection",
+              "concepts/contribution-model"
             ]
           },
           {
             "group": "Development",
             "pages": [
-              "contributing/development-setup",
-              "contributing/debugging",
-              "contributing/running-tests",
-              "contributing/code-organization"
+              "development/building-from-source",
+              "development/debugging",
+              "development/testing",
+              "development/coding-guidelines"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/base-layer",
+              "architecture/platform-layer",
+              "architecture/editor",
+              "architecture/workbench",
+              "architecture/extensions"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/contributing",
+              "guides/extension-development",
+              "guides/workbench-contributions",
+              "guides/service-implementation"
             ]
           }
         ]
@@ -112,19 +64,32 @@
           {
             "group": "Extension API",
             "pages": [
-              "api/vscode-api",
-              "api/commands",
-              "api/activation-events",
-              "api/contribution-points"
+              "api/overview",
+              "api/extension-api",
+              "api/proposed-apis"
             ]
           },
           {
-            "group": "Advanced",
+            "group": "Core APIs",
             "pages": [
-              "api/language-extensions",
-              "api/theme-color-reference",
-              "api/icon-reference",
-              "api/extension-manifest"
+              "api/base",
+              "api/platform-services",
+              "api/editor-api",
+              "api/workbench-services"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI",
+        "groups": [
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/overview",
+              "cli/installation",
+              "cli/commands",
+              "cli/server-mode"
             ]
           }
         ]
@@ -132,27 +97,24 @@
     ]
   },
   "keyFeatures": [
-    "IntelliSense code completion",
-    "Built-in Git integration",
-    "Extensive extension marketplace",
-    "Multi-cursor editing",
-    "Integrated terminal",
-    "Cross-platform support",
-    "Remote development",
-    "Customizable themes and keybindings"
+    "Monaco Editor - Advanced text editing engine",
+    "Extension API - Extensible plugin architecture",
+    "Language Server Protocol support",
+    "Integrated debugging capabilities",
+    "Source control integration",
+    "Terminal integration",
+    "Multi-platform support (Windows, macOS, Linux)",
+    "Remote development capabilities",
+    "Workbench customization"
   ],
   "publicApiSurface": [
-    "vscode.commands.registerCommand",
-    "vscode.window.showInformationMessage",
-    "vscode.workspace.openTextDocument",
-    "vscode.languages.registerCompletionItemProvider",
-    "vscode.languages.registerHoverProvider",
-    "vscode.languages.registerDefinitionProvider",
-    "vscode.debug.registerDebugConfigurationProvider",
-    "vscode.extensions.getExtension",
-    "vscode.window.createTreeView",
-    "vscode.window.registerWebviewViewProvider",
-    "vscode.tasks.registerTaskProvider",
-    "vscode.authentication.registerAuthenticationProvider"
+    "vscode.d.ts - Main Extension API",
+    "vscode.proposed.* - Proposed APIs",
+    "Monaco Editor APIs",
+    "Workbench Services (IFileService, IEditorService, etc.)",
+    "Platform Services (IInstantiationService, ILogService, etc.)",
+    "Language Server Protocol APIs",
+    "Debug Adapter Protocol APIs",
+    "CLI commands (code, code-server, code-tunnel)"
   ]
 }
